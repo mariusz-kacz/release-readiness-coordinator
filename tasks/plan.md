@@ -43,7 +43,7 @@ Official references:
 
 ```mermaid
 flowchart TD
-    A[Solution and command baseline] --> B[MAF fan-out/fan-in proof]
+    A[Solution and command baseline] --> B[MAF conditional-routing/fan-in proof]
     B --> C[MAF request/checkpoint proof]
     C --> D[Domain vocabulary and fingerprints]
     D --> E[SQLite schema and bounded data service]
@@ -65,14 +65,14 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 1: Fail-Fast Framework Foundation
 
-- [ ] Task 1: Bootstrap the .NET 10 solution and command baseline
-- [ ] Task 2: Prove the fixed MAF four-branch graph
+- [x] Task 1: Bootstrap the .NET 10 solution and command baseline
+- [x] Task 2: Prove the fixed MAF four-branch graph
 - [ ] Task 3: Prove typed waits and checkpoint rehydration
 
 ### Checkpoint A: Framework Viability
 
 - [ ] Exact MAF 1.17.0 reference restores and compiles
-- [ ] A real graph emits exactly four branch results before aggregation
+- [x] A real graph emits exactly four branch results before aggregation
 - [ ] A pending typed request survives filesystem-checkpoint rehydration
 - [ ] Human review confirms no version or topology deviation is required
 

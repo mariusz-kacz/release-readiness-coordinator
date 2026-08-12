@@ -8,16 +8,16 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] `ReleaseReadinessCoordinator.slnx` contains exactly the web and test projects, both targeting .NET 10.
-- [ ] The web project directly pins `Microsoft.Agents.AI.Workflows` to `1.17.0` and includes only spec-justified EF Core/SQLite and `IChatClient` dependencies.
-- [ ] `AGENTS.md` records the four required root commands and the one-app architecture boundary.
+- [x] `ReleaseReadinessCoordinator.slnx` contains exactly the web and test projects, both targeting .NET 10.
+- [x] The web project directly pins `Microsoft.Agents.AI.Workflows` to `1.17.0` and includes only spec-justified EF Core/SQLite and `IChatClient` dependencies.
+- [x] `AGENTS.md` records the four required root commands and the one-app architecture boundary.
 
 **Verification:**
 
-- [ ] `dotnet restore`
-- [ ] `dotnet build --no-restore`
-- [ ] `dotnet test --no-build`
-- [ ] `dotnet format --verify-no-changes`
+- [x] `dotnet restore`
+- [x] `dotnet build --no-restore`
+- [x] `dotnet test --no-build`
+- [x] `dotnet format --verify-no-changes`
 
 **Dependencies:** None
 
@@ -33,19 +33,19 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Task 2: Prove the fixed MAF four-branch graph
 
-**Description:** Build the smallest production-shaped static MAF graph with stable executor IDs and typed planner/work/result messages. Prove that one planner emission fans out to four branch executors in one evaluation round and the aggregator runs only after all four results exist.
+**Description:** Build the smallest production-shaped static MAF graph with stable executor IDs, typed planner/work/result messages, and one explicit conditional edge per readiness branch. Prove that one planner invocation routes work to four branch executors in one evaluation round and the aggregator runs only after all four results exist.
 
 **Acceptance criteria:**
 
-- [ ] The planner emits exactly one Test, Security, Change, and Dependency `BranchWorkItem` with an Execute/Reuse disposition.
-- [ ] Four stable-ID executors each emit exactly one typed `BranchResult`; the aggregator rejects duplicates, omissions, and impossible branch identities as technical failures.
-- [ ] A real MAF 1.17.0 test demonstrates complete four-source fan-in and no pre-fan-in external request.
+- [x] The planner emits exactly one Test, Security, Change, and Dependency `BranchWorkItem` with an Execute/Reuse disposition.
+- [x] Four stable-ID executors each emit exactly one typed `BranchResult`; the aggregator rejects duplicates, omissions, and impossible branch identities as technical failures.
+- [x] A real MAF 1.17.0 test demonstrates complete four-source fan-in and no pre-fan-in external request.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowTopology"`
-- [ ] `dotnet build --no-restore`
-- [ ] Inspect emitted executor events to confirm all four branch IDs precede aggregation.
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowTopology"`
+- [x] `dotnet build --no-restore`
+- [x] Inspect emitted executor events to confirm all four branch IDs precede aggregation.
 
 **Dependencies:** Task 1
 

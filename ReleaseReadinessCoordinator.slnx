@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ReleaseReadinessCoordinator/ReleaseReadinessCoordinator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ReleaseReadinessCoordinator.Tests/ReleaseReadinessCoordinator.Tests.csproj" />
+  </Folder>
+</Solution>
