@@ -11,6 +11,7 @@ public static class ReleaseWorkflowExecutorIds
     public const string Change = "change-readiness";
     public const string Dependency = "dependency-readiness";
     public const string Aggregator = "readiness-aggregator";
+    public const string ApprovalCompletion = "approval-completion";
 
     public static IReadOnlyDictionary<ReadinessBranch, string> Branches { get; } =
         new ReadOnlyDictionary<ReadinessBranch, string>(
@@ -21,6 +22,12 @@ public static class ReleaseWorkflowExecutorIds
                 [ReadinessBranch.Change] = Change,
                 [ReadinessBranch.Dependency] = Dependency,
             });
+}
+
+public static class ReleaseWorkflowPortIds
+{
+    public const string Remediation = "remediation-request";
+    public const string Approval = "approval-request";
 }
 
 public sealed partial class ReadinessPlanner : Executor
@@ -36,6 +43,11 @@ public sealed partial class ReadinessPlanner : Executor
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
+        if (!Enum.IsDefined(plan.WaitKind))
+        {
+            throw new InvalidOperationException($"Impossible external wait kind '{plan.WaitKind}'.");
+        }
+
         foreach (var branch in ReleaseWorkflowExecutorIds.Branches.Keys)
         {
             var disposition = plan.DispositionFor(branch);
@@ -46,10 +58,17 @@ public sealed partial class ReadinessPlanner : Executor
             }
 
             await context.SendMessageAsync(
-                new BranchWorkItem(plan.RoundNumber, branch, disposition),
+                new BranchWorkItem(plan.RoundNumber, branch, disposition, plan.WaitKind),
                 cancellationToken);
         }
     }
+
+    [MessageHandler(Send = [typeof(BranchWorkItem)])]
+    private ValueTask PlanAfterRemediationAsync(
+        RemediationResponse response,
+        IWorkflowContext context,
+        CancellationToken cancellationToken) =>
+        PlanAsync(response.NextRound, context, cancellationToken);
 }
 
 public sealed partial class ReadinessBranchExecutor : Executor
@@ -77,7 +96,13 @@ public sealed partial class ReadinessBranchExecutor : Executor
                 $"Branch '{workItem.Branch}' has impossible disposition '{workItem.Disposition}'.");
         }
 
-        return new BranchResult(workItem.RoundNumber, _branch, workItem.Disposition, Id);
+        if (!Enum.IsDefined(workItem.WaitKind))
+        {
+            throw new InvalidOperationException(
+                $"Branch '{workItem.Branch}' has impossible external wait kind '{workItem.WaitKind}'.");
+        }
+
+        return new BranchResult(workItem.RoundNumber, _branch, workItem.Disposition, Id, workItem.WaitKind);
     }
 }
 
@@ -90,7 +115,9 @@ public sealed partial class ReadinessAggregator : Executor, IResettableExecutor
     {
     }
 
-    [MessageHandler(Yield = [typeof(EvaluationRoundResult)])]
+    [MessageHandler(
+        Send = [typeof(RemediationRequest), typeof(ApprovalRequest)],
+        Yield = [typeof(EvaluationRoundResult)])]
     private async ValueTask ReceiveAsync(
         BranchResult result,
         IWorkflowContext context,
@@ -107,7 +134,17 @@ public sealed partial class ReadinessAggregator : Executor, IResettableExecutor
         _results.Add(result);
         if (_results.Count == ReleaseWorkflowExecutorIds.Branches.Count)
         {
-            await context.YieldOutputAsync(Aggregate(_results), cancellationToken);
+            var round = Aggregate(_results);
+            await context.YieldOutputAsync(round, cancellationToken);
+            await context.SendMessageAsync(
+                round.WaitKind switch
+                {
+                    ExternalWaitKind.Remediation => new RemediationRequest(round.RoundNumber),
+                    ExternalWaitKind.Approval => new ApprovalRequest(round.RoundNumber),
+                    _ => throw new InvalidOperationException(
+                        $"Impossible external wait kind '{round.WaitKind}'."),
+                },
+                cancellationToken);
             _results.Clear();
         }
     }
@@ -150,9 +187,16 @@ public sealed partial class ReadinessAggregator : Executor, IResettableExecutor
             throw new InvalidOperationException("Branch results belong to different evaluation rounds.");
         }
 
+        var waitKind = results.First().WaitKind;
+        if (!Enum.IsDefined(waitKind) || results.Any(result => result.WaitKind != waitKind))
+        {
+            throw new InvalidOperationException("Branch results contain inconsistent external wait kinds.");
+        }
+
         return new EvaluationRoundResult(
             roundNumber,
-            results.OrderBy(result => result.Branch).ToArray());
+            results.OrderBy(result => result.Branch).ToArray(),
+            waitKind);
     }
 
     private static void ValidateIdentity(BranchResult result)
@@ -175,4 +219,15 @@ public sealed partial class ReadinessAggregator : Executor, IResettableExecutor
                 $"Branch '{result.Branch}' has impossible disposition '{result.Disposition}'.");
         }
     }
+}
+
+public sealed partial class ApprovalCompletionExecutor : Executor
+{
+    public ApprovalCompletionExecutor()
+        : base(ReleaseWorkflowExecutorIds.ApprovalCompletion)
+    {
+    }
+
+    [MessageHandler]
+    private ApprovalResponse Complete(ApprovalResponse response, IWorkflowContext context) => response;
 }

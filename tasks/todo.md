@@ -64,15 +64,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] Remediation and approval have distinct typed request/response contracts and occur only after fan-in.
-- [ ] A pending request, including identity and type, is recovered from `FileSystemJsonCheckpointStore` after disposing the first run and rebuilding the graph.
-- [ ] Missing, corrupt, mismatched, or incompatible continuation state produces a visible technical failure and never starts a new workflow.
+- [x] Remediation and approval have distinct typed request/response contracts and occur only after fan-in.
+- [x] A pending request, including identity and type, is recovered from `FileSystemJsonCheckpointStore` after disposing the first run and rebuilding the graph.
+- [x] Missing, corrupt, mismatched, or incompatible continuation state produces a visible technical failure and never starts a new workflow.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~CheckpointContract"`
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~ExternalRequestContract"`
-- [ ] Manually inspect the temporary checkpoint directory and restored request correlation.
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~CheckpointContract"`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~ExternalRequestContract"`
+- [x] Manually inspect the temporary checkpoint directory and restored request correlation.
 
 **Dependencies:** Task 2
 
@@ -87,9 +87,9 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint A: Framework viability
 
-- [ ] Tasks 1-3 acceptance criteria are met.
-- [ ] All root commands pass.
-- [ ] MAF 1.17.0 topology, external-request, rehydration, and stable-ID assumptions are proven in executable tests.
+- [x] Tasks 1-3 acceptance criteria are met.
+- [x] All root commands pass.
+- [x] MAF 1.17.0 topology, external-request, rehydration, and stable-ID assumptions are proven in executable tests.
 - [ ] Human review approves continuation without changing the pinned version or graph strategy.
 
 ## Task 4: Define the release-readiness domain vocabulary

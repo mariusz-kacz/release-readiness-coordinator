@@ -45,7 +45,8 @@ public sealed class WorkflowTopologyTests
             Test: BranchDisposition.Execute,
             Security: BranchDisposition.Reuse,
             Change: BranchDisposition.Execute,
-            Dependency: BranchDisposition.Reuse);
+            Dependency: BranchDisposition.Reuse,
+            WaitKind: ExternalWaitKind.Approval);
 
         await using var run = await InProcessExecution.RunAsync(workflow, input);
         var events = run.NewEvents.ToArray();
@@ -66,7 +67,12 @@ public sealed class WorkflowTopologyTests
             executorId => Assert.True(
                 Array.FindIndex(completions, completion => completion.ExecutorId == executorId) < aggregationIndex));
 
-        Assert.DoesNotContain(events, workflowEvent => workflowEvent is RequestInfoEvent);
+        var requestIndex = Array.FindIndex(events, workflowEvent => workflowEvent is RequestInfoEvent);
+        var aggregationEventIndex = Array.FindIndex(
+            events,
+            workflowEvent => workflowEvent is ExecutorCompletedEvent completion
+                && completion.ExecutorId == ReleaseWorkflowExecutorIds.Aggregator);
+        Assert.True(requestIndex > aggregationEventIndex);
 
         var output = Assert.Single(events.OfType<WorkflowOutputEvent>());
         var round = Assert.IsType<EvaluationRoundResult>(output.Data);
@@ -84,9 +90,9 @@ public sealed class WorkflowTopologyTests
 
     private static BranchResult[] CompleteResults() =>
     [
-        new(3, ReadinessBranch.Test, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Test),
-        new(3, ReadinessBranch.Security, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Security),
-        new(3, ReadinessBranch.Change, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Change),
-        new(3, ReadinessBranch.Dependency, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Dependency),
+        new(3, ReadinessBranch.Test, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Test, ExternalWaitKind.Approval),
+        new(3, ReadinessBranch.Security, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Security, ExternalWaitKind.Approval),
+        new(3, ReadinessBranch.Change, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Change, ExternalWaitKind.Approval),
+        new(3, ReadinessBranch.Dependency, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Dependency, ExternalWaitKind.Approval),
     ];
 }

@@ -14,12 +14,19 @@ public enum BranchDisposition
     Reuse = 2,
 }
 
+public enum ExternalWaitKind
+{
+    Remediation = 1,
+    Approval = 2,
+}
+
 public sealed record EvaluationRoundPlan(
     int RoundNumber,
     BranchDisposition Test,
     BranchDisposition Security,
     BranchDisposition Change,
-    BranchDisposition Dependency)
+    BranchDisposition Dependency,
+    ExternalWaitKind WaitKind)
 {
     public BranchDisposition DispositionFor(ReadinessBranch branch) => branch switch
     {
@@ -34,14 +41,25 @@ public sealed record EvaluationRoundPlan(
 public sealed record BranchWorkItem(
     int RoundNumber,
     ReadinessBranch Branch,
-    BranchDisposition Disposition);
+    BranchDisposition Disposition,
+    ExternalWaitKind WaitKind);
 
 public sealed record BranchResult(
     int RoundNumber,
     ReadinessBranch Branch,
     BranchDisposition Disposition,
-    string ExecutorId);
+    string ExecutorId,
+    ExternalWaitKind WaitKind);
 
 public sealed record EvaluationRoundResult(
     int RoundNumber,
-    IReadOnlyList<BranchResult> Results);
+    IReadOnlyList<BranchResult> Results,
+    ExternalWaitKind WaitKind);
+
+public sealed record RemediationRequest(int RoundNumber);
+
+public sealed record RemediationResponse(EvaluationRoundPlan NextRound);
+
+public sealed record ApprovalRequest(int RoundNumber);
+
+public sealed record ApprovalResponse(bool Approved);

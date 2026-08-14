@@ -67,13 +67,13 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 - [x] Task 1: Bootstrap the .NET 10 solution and command baseline
 - [x] Task 2: Prove the fixed MAF four-branch graph
-- [ ] Task 3: Prove typed waits and checkpoint rehydration
+- [x] Task 3: Prove typed waits and checkpoint rehydration
 
 ### Checkpoint A: Framework Viability
 
-- [ ] Exact MAF 1.17.0 reference restores and compiles
+- [x] Exact MAF 1.17.0 reference restores and compiles
 - [x] A real graph emits exactly four branch results before aggregation
-- [ ] A pending typed request survives filesystem-checkpoint rehydration
+- [x] A pending typed request survives filesystem-checkpoint rehydration
 - [ ] Human review confirms no version or topology deviation is required
 
 ### Phase 2: Domain and Durable Business History
