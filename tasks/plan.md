@@ -7,7 +7,7 @@ Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application
 ## Planning Basis
 
 - `SPEC.md` is the sole authoritative product and architecture specification.
-- The repository is greenfield: only `SPEC.md`, a placeholder `README.md`, and `.gitignore` exist.
+- Tasks 1-7 are implemented and verified in the current repository; remaining work starts with the durable SQLite foundation.
 - The NuGet V3 package index was checked on 2026-08-11 and includes `Microsoft.Agents.AI.Workflows` version `1.17.0`.
 - Official MAF documentation confirms the planned superstep synchronization barrier, typed `RequestPort` external requests, checkpoint capture of pending requests, stable topology/executor identity requirements during rehydration, and the process-exclusive/non-thread-safe filesystem checkpoint store. Because some API reference pages display an older package label, Tasks 2 and 3 require compiled 1.17.0 contract tests before feature implementation continues.
 
@@ -32,7 +32,7 @@ Official references:
   - `/Releases/{releaseId}/{revision}/Decision`
 - One bounded application data service uses EF Core directly. There are no generic repositories, CQRS layers, event sourcing, workers, queues, or additional deployables.
 - Built-in `TimeProvider` is injected for all time-sensitive logic.
-- Canonical UTF-8 serialization plus SHA-256 produces evidence, release-input, result, rollback-content, and decision-brief fingerprints.
+- Release metadata is immutable within a revision. Remediation replaces only immutable/versioned branch evidence, rollback text belongs to Change evidence, and planner reuse compares current evidence IDs, evaluator versions, and `ValidUntil` deadlines.
 - Policy versions and `AnalyzerVersion` are code-owned constants. Initial identifiers use explicit semantic strings such as `test-policy/1` and `rollback-analyzer/1`.
 - Local simulated providers implement typed evidence-source contracts. Only known typed transient failures receive one initial attempt plus two immediate retries.
 - The LLM integration consumes an injected `IChatClient`; deterministic fakes/recorded responses are used in normal tests. Provider-specific registration remains a documented composition choice after the owner identifies the available provider/deployment.
@@ -45,10 +45,14 @@ Official references:
 flowchart TD
     A[Solution and command baseline] --> B[MAF conditional-routing/fan-in proof]
     B --> C[MAF request/checkpoint proof]
-    C --> D[Domain vocabulary and fingerprints]
-    D --> E[SQLite schema and bounded data service]
+    C --> D[Immutable release and evidence contracts]
+    D --> EV[Evaluation and reuse contracts]
+    EV --> DE[Decision and audit contracts]
+    EV --> FR[Evidence identity and freshness rules]
+    DE --> E[SQLite schema and bounded data service]
+    FR --> E
     E --> F[Release submission]
-    D --> G[Test, Security, Change, Dependency slices]
+    FR --> G[Test, Security, Change, Dependency slices]
     F --> H[Selective round planner]
     G --> H
     H --> I[Complete aggregation and remediation]
@@ -78,16 +82,19 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 2: Domain and Durable Business History
 
-- [ ] Task 4: Define the release-readiness domain vocabulary
-- [ ] Task 5: Implement fingerprints, validity, and invalidation primitives
+- [x] Task 4: Model immutable releases and versioned evidence
+- [x] Task 5: Define evaluation and selective-reuse contracts
+- [x] Task 6: Define decision, correlation, and audit contracts
+- [x] Task 7: Establish evidence-identity and freshness rules
 
 ### Checkpoint B1: Domain Semantics
 
-- [ ] Domain types keep phase, outcome, disposition, and validity separate
-- [ ] The explicit invalidation map is covered by deterministic tests
+- [x] Immutable releases/evidence and durable decision/audit vocabulary are defined
+- [x] Phase, outcome, disposition, and planning reason remain separate bounded concepts
+- [x] Evidence-identity and freshness-deadline rules are covered by deterministic tests
 
-- [ ] Task 6: Create the SQLite schema and migrations
-- [ ] Task 7: Implement the bounded idempotent application data service
+- [ ] Task 8: Create the SQLite schema and migrations
+- [ ] Task 9: Implement the bounded idempotent application data service
 
 ### Checkpoint B2: Durable Foundation
 
@@ -96,18 +103,18 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 3: Submission and Four Readiness Slices
 
-- [ ] Task 8: Deliver release submission and demo fixtures
-- [ ] Task 9: Deliver the Test readiness slice
-- [ ] Task 10: Deliver the Security readiness slice
+- [ ] Task 10: Deliver release submission and demo fixtures
+- [ ] Task 11: Deliver the Test readiness slice
+- [ ] Task 12: Deliver the Security readiness slice
 
 ### Checkpoint C1: Submission and First Policies
 
 - [ ] A release can be submitted once and starts a correlated workflow
 - [ ] Test and Security boundaries/outcome mappings are verified
 
-- [ ] Task 11: Deliver validated and cached rollback analysis
-- [ ] Task 12: Deliver the Change readiness slice
-- [ ] Task 13: Deliver the Dependency readiness slice
+- [ ] Task 13: Deliver validated and cached rollback analysis
+- [ ] Task 14: Deliver the Change readiness slice
+- [ ] Task 15: Deliver the Dependency readiness slice
 
 ### Checkpoint C2: Deterministic Readiness
 
@@ -117,9 +124,9 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 4: Selective Workflow and Human Integrity
 
-- [ ] Task 14: Implement selective execution and safe reuse planning
-- [ ] Task 15: Complete aggregation and remediation resumption
-- [ ] Task 16: Build immutable snapshots and handle human decisions
+- [ ] Task 16: Implement selective execution and safe reuse planning
+- [ ] Task 17: Complete aggregation and remediation resumption
+- [ ] Task 18: Build immutable snapshots and handle human decisions
 
 ### Checkpoint D: Core End-to-End Workflow
 
@@ -130,16 +137,16 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 5: Recovery and Minimal Razor UI
 
-- [ ] Task 17: Add restart recovery, synchronization, and reconciliation
-- [ ] Task 18: Build release detail and timeline UI
+- [ ] Task 19: Add restart recovery, synchronization, and reconciliation
+- [ ] Task 20: Build release detail and timeline UI
 
 ### Checkpoint E1: Recovery and Read Model
 
 - [ ] Stop/restart/resume works for remediation and approval waits
 - [ ] The detail page explains current state and immutable history
 
-- [ ] Task 19: Build remediation interaction UI
-- [ ] Task 20: Build decision interaction UI
+- [ ] Task 21: Build remediation interaction UI
+- [ ] Task 22: Build decision interaction UI
 
 ### Checkpoint E2: Demonstrable MVP
 
@@ -148,16 +155,16 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 6: Evaluation and Delivery
 
-- [ ] Task 21: Complete real-graph workflow scenario coverage
-- [ ] Task 22: Add the curated rollback-analysis evaluation corpus
-- [ ] Task 23: Add minimal browser smoke coverage
+- [ ] Task 23: Complete real-graph workflow scenario coverage
+- [ ] Task 24: Add the curated rollback-analysis evaluation corpus
+- [ ] Task 25: Add minimal browser smoke coverage
 
 ### Checkpoint F1: Evaluation
 
 - [ ] Required workflow, LLM, and browser scenarios pass
 - [ ] Test evidence covers orchestration risks and both user journeys
 
-- [ ] Task 24: Finish documentation, full verification, and spec audit
+- [ ] Task 26: Finish documentation, full verification, and spec audit
 
 ### Checkpoint F2: Complete
 
@@ -174,7 +181,8 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 | MAF 1.17.0 APIs differ from current documentation examples | High | Tasks 2-3 compile and execute version-pinned topology, request, checkpoint, and stable-ID probes before domain implementation. Any conflict is reported; the version is never changed silently. |
 | SQLite writes and filesystem checkpoints cannot be atomic | High | Use stable operation keys, unique constraints, replay-safe upserts, correlation verification, and explicit reconciliation tests. |
 | Reuse accidentally calls providers, policies, or the analyser | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
-| A stale human response is accepted | High | Bind responses to request ID, snapshot ID, concurrency token, hashes, versions, deadlines, and brief hash; persist declined responses with reason codes. |
+| Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate revision without adding supersession/cancellation behavior to the MVP. |
+| A stale human response is accepted | High | Bind responses to request ID, snapshot ID, concurrency token, current evidence IDs, evaluator versions, and deadlines; persist declined responses with bounded reason codes. |
 | LLM output invents or misquotes rollback evidence | High | Strict schema/item allowlist, exact substring/offset checks, abstention rules, recorded adversarial corpus, and deterministic Change policy. |
 | Mutable release/evidence data erases audit history | Medium | Append immutable/versioned records and expose current projections without updating historical facts. |
 | Checkpoint store is accessed concurrently or from multiple instances | Medium | Register one application-lifetime store, guard all start/resume access, document the single-process constraint, and test concurrent response handling. |
