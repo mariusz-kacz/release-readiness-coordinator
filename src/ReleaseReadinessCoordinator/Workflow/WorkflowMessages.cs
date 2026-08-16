@@ -5,7 +5,6 @@ public enum ReadinessBranch
     Test = 1,
     Security = 2,
     Change = 3,
-    Dependency = 4,
 }
 
 public enum BranchDisposition
@@ -25,7 +24,6 @@ public sealed record EvaluationRoundPlan(
     BranchDisposition Test,
     BranchDisposition Security,
     BranchDisposition Change,
-    BranchDisposition Dependency,
     ExternalWaitKind WaitKind)
 {
     public BranchDisposition DispositionFor(ReadinessBranch branch) => branch switch
@@ -33,7 +31,6 @@ public sealed record EvaluationRoundPlan(
         ReadinessBranch.Test => Test,
         ReadinessBranch.Security => Security,
         ReadinessBranch.Change => Change,
-        ReadinessBranch.Dependency => Dependency,
         _ => throw new InvalidOperationException($"Unknown readiness branch '{branch}'."),
     };
 }

@@ -9,7 +9,6 @@ public sealed record DemoReleaseFixture(
     string ReleaseVersion,
     DateTimeOffset DeploymentWindowStart,
     DateTimeOffset DeploymentWindowEnd,
-    IReadOnlyDictionary<string, string> DependencyRequirements,
     bool IncludeTestEvidence,
     string? TestRunVersion,
     DateTimeOffset? TestCompletedAt,
@@ -24,10 +23,7 @@ public sealed record DemoReleaseFixture(
     bool IncludeChangeEvidence,
     bool ChangeApproved,
     DateTimeOffset? ChangeWindowStart,
-    DateTimeOffset? ChangeWindowEnd,
-    bool IncludeDependencyEvidence,
-    DateTimeOffset? DependencyObservedAt,
-    string? DependencyStates);
+    DateTimeOffset? ChangeWindowEnd);
 
 public static class DemoReleaseFixtures
 {
@@ -45,10 +41,6 @@ public static class DemoReleaseFixtures
         "2.4.0",
         WindowStart,
         WindowEnd,
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["inventory"] = "3.x",
-        },
         true,
         "2.4.0",
         new DateTimeOffset(2026, 8, 20, 8, 0, 0, TimeSpan.Zero),
@@ -63,10 +55,7 @@ public static class DemoReleaseFixtures
         true,
         true,
         WindowStart.AddHours(-1),
-        WindowEnd.AddHours(1),
-        true,
-        new DateTimeOffset(2026, 8, 20, 9, 0, 0, TimeSpan.Zero),
-        "inventory|3.2.0|2026-08-20T19:00:00Z|2026-08-20T22:00:00Z||");
+        WindowEnd.AddHours(1));
 
     public static DemoReleaseFixture MissingEvidence { get; } = new(
         "missing",
@@ -77,10 +66,6 @@ public static class DemoReleaseFixtures
         "2.4.0",
         WindowStart,
         WindowEnd,
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["inventory"] = "3.x",
-        },
         false,
         null,
         null,
@@ -93,9 +78,6 @@ public static class DemoReleaseFixtures
         null,
         null,
         false,
-        false,
-        null,
-        null,
         false,
         null,
         null);

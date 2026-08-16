@@ -6,10 +6,18 @@ namespace ReleaseReadinessCoordinator.Tests.Workflow;
 public sealed class WorkflowTopologyTests
 {
     [Fact]
+    public void Workflow_exposes_exactly_three_readiness_branches()
+    {
+        Assert.Equal(
+            [ReadinessBranch.Test, ReadinessBranch.Security, ReadinessBranch.Change],
+            ReleaseWorkflowExecutorIds.Branches.Keys);
+    }
+
+    [Fact]
     public void Aggregator_rejects_duplicate_branch_results()
     {
         var results = CompleteResults()
-            .Select(result => result.Branch == ReadinessBranch.Dependency
+            .Select(result => result.Branch == ReadinessBranch.Change
                 ? result with { Branch = ReadinessBranch.Test, ExecutorId = ReleaseWorkflowExecutorIds.Test }
                 : result)
             .ToArray();
@@ -21,7 +29,7 @@ public sealed class WorkflowTopologyTests
     public void Aggregator_rejects_omitted_branch_results()
     {
         var results = CompleteResults()
-            .Where(result => result.Branch != ReadinessBranch.Dependency)
+            .Where(result => result.Branch != ReadinessBranch.Change)
             .ToArray();
 
         Assert.Throws<InvalidOperationException>(() => ReadinessAggregator.Aggregate(results));
@@ -31,7 +39,7 @@ public sealed class WorkflowTopologyTests
     public void Aggregator_rejects_impossible_branch_identities()
     {
         var results = CompleteResults();
-        results[3] = results[3] with { Branch = (ReadinessBranch)999 };
+        results[2] = results[2] with { Branch = (ReadinessBranch)999 };
 
         Assert.Throws<InvalidOperationException>(() => ReadinessAggregator.Aggregate(results));
     }
@@ -45,7 +53,6 @@ public sealed class WorkflowTopologyTests
             Test: BranchDisposition.Execute,
             Security: BranchDisposition.Reuse,
             Change: BranchDisposition.Execute,
-            Dependency: BranchDisposition.Reuse,
             WaitKind: ExternalWaitKind.Approval);
 
         await using var run = await InProcessExecution.RunAsync(workflow, input);
@@ -83,7 +90,6 @@ public sealed class WorkflowTopologyTests
                 (ReadinessBranch.Test, BranchDisposition.Execute),
                 (ReadinessBranch.Security, BranchDisposition.Reuse),
                 (ReadinessBranch.Change, BranchDisposition.Execute),
-                (ReadinessBranch.Dependency, BranchDisposition.Reuse),
             },
             round.Results.Select(result => (result.Branch, result.Disposition)));
     }
@@ -93,6 +99,5 @@ public sealed class WorkflowTopologyTests
         new(3, ReadinessBranch.Test, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Test, ExternalWaitKind.Approval),
         new(3, ReadinessBranch.Security, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Security, ExternalWaitKind.Approval),
         new(3, ReadinessBranch.Change, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Change, ExternalWaitKind.Approval),
-        new(3, ReadinessBranch.Dependency, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Dependency, ExternalWaitKind.Approval),
     ];
 }

@@ -394,7 +394,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         ReleaseVersion = submission.ReleaseVersion,
         RequestedWindowStartUtc = submission.RequestedDeploymentWindow.Start.Value,
         RequestedWindowEndUtc = submission.RequestedDeploymentWindow.End.Value,
-        DependencyRequirementsJson = SerializeDictionary(submission.DependencyRequirements),
         SubmittedAtUtc = submission.SubmittedAt.Value,
         Phase = ProcessPhase.Evaluating,
         PhaseChangedAtUtc = submission.SubmittedAt.Value,
@@ -444,7 +443,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             row.ServiceName,
             row.ReleaseVersion,
             new UtcInterval(new UtcInstant(row.RequestedWindowStartUtc), new UtcInstant(row.RequestedWindowEndUtc)),
-            DeserializeDictionary(row.DependencyRequirementsJson),
             new UtcInstant(row.SubmittedAtUtc));
         return RehydrateRelease(row, submission);
     }
@@ -462,7 +460,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         EvidenceKind.Test => ToTestEvidence(row, Deserialize<TestEvidencePayload>(row.PayloadJson)),
         EvidenceKind.Security => ToSecurityEvidence(row, Deserialize<SecurityEvidencePayload>(row.PayloadJson)),
         EvidenceKind.Change => ToChangeEvidence(row, Deserialize<ChangeEvidencePayload>(row.PayloadJson)),
-        EvidenceKind.Dependency => ToDependencyEvidence(row, Deserialize<DependencyEvidencePayload>(row.PayloadJson)),
         _ => throw new InvalidOperationException($"Unknown evidence kind '{row.Kind}' in durable state."),
     };
 
@@ -505,23 +502,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             payload.IsApproved,
             ToInterval(payload.ApprovedWindow));
 
-    private static DependencyEvidenceRecord ToDependencyEvidence(
-        EvidenceRecordRow row,
-        DependencyEvidencePayload payload) => new(
-            row.Id,
-            new ReleaseRevisionKey(row.ReleaseId, row.Revision),
-            row.Version,
-            new UtcInstant(row.RecordedAtUtc),
-            row.SupersedesEvidenceId,
-            ToInstant(payload.ObservedAtUtc),
-            payload.Dependencies?.ToDictionary(
-                item => item.Name,
-                item => new DependencyState(
-                    item.AvailableVersion,
-                    ToIntervals(item.AvailabilityIntervals),
-                    ToIntervals(item.MaintenanceIntervals)),
-                StringComparer.Ordinal));
-
     private static TimelineEntry ToDomain(TimelineEntryRow row) => new(
         row.Id,
         new ReleaseRevisionKey(row.ReleaseId, row.Revision),
@@ -560,18 +540,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
                     ? null
                     : new IntervalPayload(item.ApprovedWindow.Start.Value, item.ApprovedWindow.End.Value)),
             JsonOptions),
-        DependencyEvidenceRecord item => JsonSerializer.Serialize(
-            new DependencyEvidencePayload(
-                item.ObservedAt?.Value,
-                item.Dependencies?
-                    .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                    .Select(pair => new DependencyPayload(
-                        pair.Key,
-                        pair.Value.AvailableVersion,
-                        ToPayloads(pair.Value.AvailabilityIntervals),
-                        ToPayloads(pair.Value.MaintenanceIntervals)))
-                    .ToArray()),
-            JsonOptions),
         _ => throw new ArgumentOutOfRangeException(nameof(evidence)),
     };
 
@@ -582,8 +550,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         && row.ReleaseVersion == submission.ReleaseVersion
         && row.RequestedWindowStartUtc == submission.RequestedDeploymentWindow.Start.Value
         && row.RequestedWindowEndUtc == submission.RequestedDeploymentWindow.End.Value
-        && row.SubmittedAtUtc == submission.SubmittedAt.Value
-        && DictionaryEquals(DeserializeDictionary(row.DependencyRequirementsJson), submission.DependencyRequirements);
+        && row.SubmittedAtUtc == submission.SubmittedAt.Value;
 
     private static bool EvidenceEquals(EvidenceRecord left, EvidenceRecord right) =>
         left.Id == right.Id
@@ -610,12 +577,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
     private static Dictionary<string, string> DeserializeDictionary(string json) =>
         Deserialize<Dictionary<string, string>>(json);
 
-    private static bool DictionaryEquals(
-        IReadOnlyDictionary<string, string> left,
-        IReadOnlyDictionary<string, string> right) =>
-        left.Count == right.Count
-        && left.All(pair => right.TryGetValue(pair.Key, out var value) && value == pair.Value);
-
     private static T Deserialize<T>(string json) =>
         JsonSerializer.Deserialize<T>(json, JsonOptions)
         ?? throw new InvalidOperationException($"Durable JSON for '{typeof(T).Name}' is null or invalid.");
@@ -627,14 +588,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         value is null
             ? null
             : new UtcInterval(new UtcInstant(value.StartUtc), new UtcInstant(value.EndUtc));
-
-    private static IEnumerable<UtcInterval>? ToIntervals(IntervalPayload[]? values) =>
-        values?.Select(value => new UtcInterval(
-            new UtcInstant(value.StartUtc),
-            new UtcInstant(value.EndUtc)));
-
-    private static IntervalPayload[]? ToPayloads(ImmutableArray<UtcInterval>? values) =>
-        values?.Select(value => new IntervalPayload(value.Start.Value, value.End.Value)).ToArray();
 
     private static string RequireOperationKey(string operationKey)
     {
@@ -691,16 +644,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
     private sealed record ChangeEvidencePayload(
         bool? IsApproved,
         IntervalPayload? ApprovedWindow);
-
-    private sealed record DependencyEvidencePayload(
-        DateTimeOffset? ObservedAtUtc,
-        DependencyPayload[]? Dependencies);
-
-    private sealed record DependencyPayload(
-        string Name,
-        string? AvailableVersion,
-        IntervalPayload[]? AvailabilityIntervals,
-        IntervalPayload[]? MaintenanceIntervals);
 
     private sealed record IntervalPayload(DateTimeOffset StartUtc, DateTimeOffset EndUtc);
 }

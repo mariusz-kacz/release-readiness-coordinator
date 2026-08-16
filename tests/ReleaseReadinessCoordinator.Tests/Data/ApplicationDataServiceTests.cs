@@ -75,7 +75,6 @@ public sealed class ApplicationDataServiceTests
             "different-service",
             submission.ReleaseVersion,
             submission.RequestedDeploymentWindow,
-            submission.DependencyRequirements,
             submission.SubmittedAt);
 
         var conflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(() =>
@@ -122,7 +121,6 @@ public sealed class ApplicationDataServiceTests
         Assert.Equal(submission.ServiceName, detail.Release.Submission.ServiceName);
         Assert.Equal(submission.ReleaseVersion, detail.Release.Submission.ReleaseVersion);
         Assert.Equal(submission.RequestedDeploymentWindow, detail.Release.Submission.RequestedDeploymentWindow);
-        Assert.Equal(submission.DependencyRequirements, detail.Release.Submission.DependencyRequirements);
         Assert.Equal(submission.SubmittedAt, detail.Release.Submission.SubmittedAt);
         Assert.Equal(2, detail.EvidenceHistory.Length);
         var current = Assert.IsType<TestEvidenceRecord>(detail.CurrentEvidence[EvidenceKind.Test]);
@@ -254,7 +252,7 @@ public sealed class ApplicationDataServiceTests
         Assert.Equal(6, detail.Timeline.Length);
 
         Assert.Equal(1, await context.EvaluationRounds.CountAsync());
-        Assert.Equal(4, await context.BranchResults.CountAsync());
+        Assert.Equal(3, await context.BranchResults.CountAsync());
         Assert.Equal(1, await context.RemediationSubmissions.CountAsync());
         Assert.Equal(1, await context.WorkflowCorrelations.CountAsync());
     }
@@ -326,7 +324,7 @@ public sealed class ApplicationDataServiceTests
         Assert.Single(detail.HumanResponses);
         Assert.Equal(4, detail.Timeline.Length);
         Assert.Equal(1, await context.DecisionSnapshots.CountAsync());
-        Assert.Equal(4, await context.DecisionSnapshotSources.CountAsync());
+        Assert.Equal(3, await context.DecisionSnapshotSources.CountAsync());
         Assert.Equal(1, await context.HumanResponses.CountAsync());
     }
 
@@ -359,7 +357,7 @@ public sealed class ApplicationDataServiceTests
 
         Assert.Equal(ApplicationDataConflictKind.OperationKeyReused, conflict.Kind);
         Assert.Equal(1, await context.EvaluationRounds.CountAsync());
-        Assert.Equal(4, await context.BranchResults.CountAsync());
+        Assert.Equal(3, await context.BranchResults.CountAsync());
         Assert.Equal(2, await context.TimelineEntries.CountAsync());
     }
 
@@ -382,13 +380,6 @@ public sealed class ApplicationDataServiceTests
             Guid.NewGuid(), key, 1, Utc(2026, 8, 16, 8), null,
             true,
             new UtcInterval(Utc(2026, 8, 17, 8), Utc(2026, 8, 17, 9))),
-        new DependencyEvidenceRecord(
-            Guid.NewGuid(), key, 1, Utc(2026, 8, 16, 8), null,
-            Utc(2026, 8, 16, 8),
-            new Dictionary<string, DependencyState>
-            {
-                ["inventory"] = new DependencyState("2.1.0", null, null),
-            }),
     ];
 
     private static EvaluationRound CreateRound(
@@ -413,7 +404,6 @@ public sealed class ApplicationDataServiceTests
                 ReadinessCheck.Test => EvidenceKind.Test,
                 ReadinessCheck.Security => EvidenceKind.Security,
                 ReadinessCheck.Change => EvidenceKind.Change,
-                ReadinessCheck.Dependency => EvidenceKind.Dependency,
                 _ => throw new ArgumentOutOfRangeException(nameof(check)),
             };
             evidenceByKind.TryGetValue(kind, out var source);
@@ -449,7 +439,6 @@ public sealed class ApplicationDataServiceTests
         new UtcInterval(
             Utc(2026, 8, 17, 8),
             Utc(2026, 8, 17, 9)),
-        new Dictionary<string, string> { ["inventory"] = "2.x" },
         Utc(2026, 8, 16, 8));
 
     private static TestEvidenceRecord CreateTestEvidence(

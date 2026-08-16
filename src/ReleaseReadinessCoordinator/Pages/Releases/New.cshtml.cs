@@ -76,9 +76,6 @@ public sealed class NewModel(
 
         public DateTimeOffset DeploymentWindowEnd { get; set; }
 
-        [Required]
-        public string DependencyRequirements { get; set; } = string.Empty;
-
         public bool IncludeTestEvidence { get; set; }
 
         public string? TestRunVersion { get; set; }
@@ -110,12 +107,6 @@ public sealed class NewModel(
 
         public DateTimeOffset? ChangeWindowEnd { get; set; }
 
-        public bool IncludeDependencyEvidence { get; set; }
-
-        public DateTimeOffset? DependencyObservedAt { get; set; }
-
-        public string? DependencyStates { get; set; }
-
         public static InputModel FromFixture(DemoReleaseFixture fixture) => new()
         {
             ReleaseId = fixture.ReleaseId,
@@ -124,9 +115,6 @@ public sealed class NewModel(
             ReleaseVersion = fixture.ReleaseVersion,
             DeploymentWindowStart = fixture.DeploymentWindowStart,
             DeploymentWindowEnd = fixture.DeploymentWindowEnd,
-            DependencyRequirements = string.Join(
-                Environment.NewLine,
-                fixture.DependencyRequirements.Select(pair => $"{pair.Key}={pair.Value}")),
             IncludeTestEvidence = fixture.IncludeTestEvidence,
             TestRunVersion = fixture.TestRunVersion,
             TestCompletedAt = fixture.TestCompletedAt,
@@ -142,9 +130,6 @@ public sealed class NewModel(
             ChangeApproved = fixture.ChangeApproved,
             ChangeWindowStart = fixture.ChangeWindowStart,
             ChangeWindowEnd = fixture.ChangeWindowEnd,
-            IncludeDependencyEvidence = fixture.IncludeDependencyEvidence,
-            DependencyObservedAt = fixture.DependencyObservedAt,
-            DependencyStates = fixture.DependencyStates,
         };
 
         internal ReleaseSubmission ToSubmission(UtcInstant submittedAt)
@@ -155,7 +140,6 @@ public sealed class NewModel(
                 ServiceName,
                 ReleaseVersion,
                 Interval(DeploymentWindowStart, DeploymentWindowEnd),
-                ParseKeyValues(DependencyRequirements, "dependency requirements"),
                 submittedAt);
         }
 
@@ -193,14 +177,6 @@ public sealed class NewModel(
                     OptionalInterval(ChangeWindowStart, ChangeWindowEnd, "change approval window")));
             }
 
-            if (IncludeDependencyEvidence)
-            {
-                evidence.Add(new DependencyEvidenceRecord(
-                    Guid.NewGuid(), key, 1, recordedAt, null,
-                    Instant(DependencyObservedAt),
-                    ParseDependencyStates(DependencyStates)));
-            }
-
             return evidence;
         }
 
@@ -231,26 +207,6 @@ public sealed class NewModel(
             return Interval(start.Value, end.Value);
         }
 
-        private static IReadOnlyDictionary<string, string> ParseKeyValues(string text, string fieldName)
-        {
-            var values = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var line in Lines(text))
-            {
-                var fields = line.Split('=', 2, StringSplitOptions.TrimEntries);
-                if (fields.Length != 2 || fields.Any(string.IsNullOrWhiteSpace))
-                {
-                    throw new FormatException($"Each {fieldName} line must use name=value.");
-                }
-
-                if (!values.TryAdd(fields[0], fields[1]))
-                {
-                    throw new FormatException($"The {fieldName} contain duplicate name '{fields[0]}'.");
-                }
-            }
-
-            return values;
-        }
-
         private static string[] ParseList(string? text) =>
             string.IsNullOrWhiteSpace(text)
                 ? []
@@ -279,56 +235,10 @@ public sealed class NewModel(
             return exceptions;
         }
 
-        private static IReadOnlyDictionary<string, DependencyState> ParseDependencyStates(string? text)
-        {
-            var dependencies = new Dictionary<string, DependencyState>(StringComparer.Ordinal);
-            foreach (var line in Lines(text))
-            {
-                var fields = line.Split('|', StringSplitOptions.TrimEntries);
-                if (fields.Length != 6 || string.IsNullOrWhiteSpace(fields[0]))
-                {
-                    throw new FormatException(
-                        "Each dependency evidence line must use name|available-version|available-start|available-end|maintenance-start|maintenance-end.");
-                }
-
-                var availability = ParseCompactInterval(fields[2], fields[3], "dependency availability");
-                var maintenance = ParseCompactInterval(fields[4], fields[5], "dependency maintenance");
-                if (!dependencies.TryAdd(
-                    fields[0],
-                    new DependencyState(
-                        NullIfEmpty(fields[1]),
-                        availability is null ? [] : [availability],
-                        maintenance is null ? [] : [maintenance])))
-                {
-                    throw new FormatException($"Dependency evidence contains duplicate name '{fields[0]}'.");
-                }
-            }
-
-            return dependencies;
-        }
-
-        private static UtcInterval? ParseCompactInterval(string start, string end, string fieldName)
-        {
-            if (string.IsNullOrWhiteSpace(start) && string.IsNullOrWhiteSpace(end))
-            {
-                return null;
-            }
-
-            if (!DateTimeOffset.TryParse(start, out var parsedStart)
-                || !DateTimeOffset.TryParse(end, out var parsedEnd))
-            {
-                throw new FormatException($"The {fieldName} requires valid start and end timestamps with offsets.");
-            }
-
-            return Interval(parsedStart, parsedEnd);
-        }
-
         private static IEnumerable<string> Lines(string? text) =>
             string.IsNullOrWhiteSpace(text)
                 ? []
                 : text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        private static string? NullIfEmpty(string value) =>
-            string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

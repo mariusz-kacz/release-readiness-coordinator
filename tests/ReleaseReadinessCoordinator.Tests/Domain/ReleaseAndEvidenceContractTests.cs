@@ -10,13 +10,11 @@ public sealed class ReleaseAndEvidenceContractTests
     [Fact]
     public void Change_evidence_contains_approval_and_approved_window()
     {
-        var dependencies = new Dictionary<string, string> { ["orders-api"] = "5.x" };
         var submission = new ReleaseSubmission(
             RevisionKey,
             "checkout",
             "2.4.0",
             new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 10)),
-            dependencies,
             RecordedAt);
         var evidenceId = Guid.NewGuid();
         var previousEvidenceId = Guid.NewGuid();
@@ -29,9 +27,6 @@ public sealed class ReleaseAndEvidenceContractTests
             isApproved: true,
             new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11)));
 
-        dependencies["orders-api"] = "mutated";
-
-        Assert.Equal("5.x", submission.DependencyRequirements["orders-api"]);
         Assert.True(evidence.IsApproved);
         Assert.Equal(Utc(2026, 8, 14, 9), evidence.ApprovedWindow?.Start);
         Assert.Equal(Utc(2026, 8, 14, 11), evidence.ApprovedWindow?.End);

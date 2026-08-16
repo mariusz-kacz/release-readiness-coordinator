@@ -50,7 +50,6 @@ public sealed class ReleaseSubmissionApplicationService
                 BranchDisposition.Execute,
                 BranchDisposition.Execute,
                 BranchDisposition.Execute,
-                BranchDisposition.Execute,
                 ExternalWaitKind.Remediation),
             sessionId,
             cancellationToken);

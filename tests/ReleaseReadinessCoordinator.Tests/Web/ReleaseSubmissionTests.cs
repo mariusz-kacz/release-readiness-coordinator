@@ -42,10 +42,7 @@ public sealed class ReleaseSubmissionTests
         Assert.Equal(
             DemoReleaseFixtures.Complete.DeploymentWindowEnd,
             detail.Release.Submission.RequestedDeploymentWindow.End.Value);
-        Assert.Equal(
-            DemoReleaseFixtures.Complete.DependencyRequirements.OrderBy(pair => pair.Key),
-            detail.Release.Submission.DependencyRequirements.OrderBy(pair => pair.Key));
-        Assert.Equal(4, detail.CurrentEvidence.Count);
+        Assert.Equal(3, detail.CurrentEvidence.Count);
         var test = Assert.IsType<TestEvidenceRecord>(detail.CurrentEvidence[EvidenceKind.Test]);
         Assert.Equal(DemoReleaseFixtures.Complete.TestRunVersion, test.TestRunVersion);
         Assert.Equal(DemoReleaseFixtures.Complete.TestCompletedAt, test.CompletedAt?.Value);
@@ -60,12 +57,6 @@ public sealed class ReleaseSubmissionTests
         Assert.Equal(DemoReleaseFixtures.Complete.ChangeApproved, change.IsApproved);
         Assert.Equal(DemoReleaseFixtures.Complete.ChangeWindowStart, change.ApprovedWindow?.Start.Value);
         Assert.Equal(DemoReleaseFixtures.Complete.ChangeWindowEnd, change.ApprovedWindow?.End.Value);
-        var dependency = Assert.IsType<DependencyEvidenceRecord>(
-            detail.CurrentEvidence[EvidenceKind.Dependency]);
-        Assert.Equal(DemoReleaseFixtures.Complete.DependencyObservedAt, dependency.ObservedAt?.Value);
-        Assert.Equal("3.2.0", dependency.Dependencies!["inventory"].AvailableVersion);
-        Assert.Single(dependency.Dependencies["inventory"].AvailabilityIntervals!.Value);
-        Assert.Empty(dependency.Dependencies["inventory"].MaintenanceIntervals!.Value);
         Assert.NotNull(detail.WorkflowCorrelation);
         Assert.Equal(WorkflowRequestKind.Remediation, detail.WorkflowCorrelation.PendingRequestKind);
         Assert.Single(detail.Timeline);

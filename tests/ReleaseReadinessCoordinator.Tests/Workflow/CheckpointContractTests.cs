@@ -174,7 +174,6 @@ public sealed class CheckpointContractTests
         Test: BranchDisposition.Execute,
         Security: BranchDisposition.Execute,
         Change: BranchDisposition.Execute,
-        Dependency: BranchDisposition.Execute,
         WaitKind: ExternalWaitKind.Approval);
 
     private sealed class TemporaryDirectory : IDisposable

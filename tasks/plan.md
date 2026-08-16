@@ -2,7 +2,7 @@
 
 ## Overview
 
-Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed four-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, and a minimal server-rendered UI. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
+Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed three-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, and a minimal server-rendered UI. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
 
 ## Planning Basis
 
@@ -51,7 +51,7 @@ flowchart TD
     DE --> E[SQLite schema and bounded data service]
     FR --> E
     E --> F[Release submission]
-    FR --> G[Test, Security, Change, Dependency slices]
+    FR --> G[Test, Security, Change slices]
     F --> H[Selective round planner]
     G --> H
     H --> I[Complete aggregation and remediation]
@@ -69,13 +69,13 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 ### Phase 1: Fail-Fast Framework Foundation
 
 - [x] Task 1: Bootstrap the .NET 10 solution and command baseline
-- [x] Task 2: Prove the fixed MAF four-branch graph
+- [x] Task 2: Prove the fixed MAF three-branch graph
 - [x] Task 3: Prove typed waits and checkpoint rehydration
 
 ### Checkpoint A: Framework Viability
 
 - [x] Exact MAF 1.17.0 reference restores and compiles
-- [x] A real graph emits exactly four branch results before aggregation
+- [x] A real graph emits exactly three branch results before aggregation
 - [x] A pending typed request survives filesystem-checkpoint rehydration
 - [ ] Human review confirms no version or topology deviation is required
 
@@ -100,7 +100,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] SQLite schema, constraints, and replay-safe writes are verified
 - [x] Immutable/versioned records and append-only history are preserved
 
-### Phase 3: Submission and Four Readiness Slices
+### Phase 3: Submission and Three Readiness Slices
 
 - [x] Task 10: Deliver release submission and demo fixtures
 - [ ] Task 11: Deliver the Test readiness slice
@@ -112,7 +112,6 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [ ] Test and Security boundaries/outcome mappings are verified
 
 - [ ] Task 13: Deliver the Change readiness slice
-- [ ] Task 14: Deliver the Dependency readiness slice
 
 ### Checkpoint C2: Deterministic Readiness
 
@@ -122,29 +121,29 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 4: Selective Workflow and Human Integrity
 
-- [ ] Task 15: Implement selective execution and safe reuse planning
-- [ ] Task 16: Complete aggregation and remediation resumption
-- [ ] Task 17: Build immutable snapshots and handle human decisions
+- [ ] Task 14: Implement selective execution and safe reuse planning
+- [ ] Task 15: Complete aggregation and remediation resumption
+- [ ] Task 16: Build immutable snapshots and handle human decisions
 
 ### Checkpoint D: Core End-to-End Workflow
 
-- [ ] Every round contains four results with explicit Executed/Reused reasons
+- [ ] Every round contains three results with explicit Executed/Reused reasons
 - [ ] Multiple current problems create one wait after complete fan-in
 - [ ] Passing results form one immutable snapshot and deterministic brief
 - [ ] Current decisions terminate; stale decisions selectively reevaluate
 
 ### Phase 5: Recovery and Minimal Razor UI
 
-- [ ] Task 18: Add restart recovery, synchronization, and reconciliation
-- [ ] Task 19: Build release detail and timeline UI
+- [ ] Task 17: Add restart recovery, synchronization, and reconciliation
+- [ ] Task 18: Build release detail and timeline UI
 
 ### Checkpoint E1: Recovery and Read Model
 
 - [ ] Stop/restart/resume works for remediation and approval waits
 - [ ] The detail page explains current state and immutable history
 
-- [ ] Task 20: Build remediation interaction UI
-- [ ] Task 21: Build decision interaction UI
+- [ ] Task 19: Build remediation interaction UI
+- [ ] Task 20: Build decision interaction UI
 
 ### Checkpoint E2: Demonstrable MVP
 
@@ -153,15 +152,15 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 6: Evaluation and Delivery
 
-- [ ] Task 22: Complete real-graph workflow scenario coverage
-- [ ] Task 23: Add minimal browser smoke coverage
+- [ ] Task 21: Complete real-graph workflow scenario coverage
+- [ ] Task 22: Add minimal browser smoke coverage
 
 ### Checkpoint F1: Evaluation
 
 - [ ] Required workflow and browser scenarios pass
 - [ ] Test evidence covers orchestration risks and both user journeys
 
-- [ ] Task 24: Finish documentation, full verification, and spec audit
+- [ ] Task 23: Finish documentation, full verification, and spec audit
 
 ### Checkpoint F2: Complete
 

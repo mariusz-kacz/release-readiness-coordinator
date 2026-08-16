@@ -14,9 +14,8 @@ public static class FreshnessDeadlines
         {
             TestEvidenceRecord test => test.CompletedAt,
             SecurityEvidenceRecord security => security.ScannedAt,
-            DependencyEvidenceRecord dependency => dependency.ObservedAt,
             _ => throw new ArgumentException(
-                "Only Test, Security, and Dependency evidence uses the 24-hour freshness policy.",
+                "Only Test and Security evidence use the 24-hour freshness policy.",
                 nameof(evidence)),
         };
         if (!observedAt.HasValue)

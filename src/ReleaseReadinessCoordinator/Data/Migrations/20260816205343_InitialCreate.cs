@@ -21,7 +21,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                     ReleaseVersion = table.Column<string>(type: "TEXT", maxLength: 100, nullable: false),
                     RequestedWindowStartUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     RequestedWindowEndUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    DependencyRequirementsJson = table.Column<string>(type: "TEXT", nullable: false),
                     SubmittedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                     Phase = table.Column<int>(type: "INTEGER", nullable: false),
                     PhaseChangedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),

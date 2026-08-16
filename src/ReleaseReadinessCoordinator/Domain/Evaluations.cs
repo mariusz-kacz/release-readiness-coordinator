@@ -7,7 +7,6 @@ public enum ReadinessCheck
     Test = 1,
     Security = 2,
     Change = 3,
-    Dependency = 4,
 }
 
 public enum BranchOutcome
@@ -279,7 +278,6 @@ public sealed record BranchResult
         ReadinessCheck.Test => EvidenceKind.Test,
         ReadinessCheck.Security => EvidenceKind.Security,
         ReadinessCheck.Change => EvidenceKind.Change,
-        ReadinessCheck.Dependency => EvidenceKind.Dependency,
         _ => throw new ArgumentOutOfRangeException(nameof(check)),
     };
 }

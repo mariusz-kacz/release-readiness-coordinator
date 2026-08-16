@@ -15,7 +15,6 @@ internal sealed class ReleaseRevisionRow : IOperationRow
     public string ReleaseVersion { get; set; } = null!;
     public DateTimeOffset RequestedWindowStartUtc { get; set; }
     public DateTimeOffset RequestedWindowEndUtc { get; set; }
-    public string DependencyRequirementsJson { get; set; } = null!;
     public DateTimeOffset SubmittedAtUtc { get; set; }
     public ProcessPhase Phase { get; set; }
     public DateTimeOffset PhaseChangedAtUtc { get; set; }

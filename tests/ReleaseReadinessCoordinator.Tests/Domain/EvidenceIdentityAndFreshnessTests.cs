@@ -16,7 +16,6 @@ public sealed class EvidenceIdentityTests
             [ReadinessCheck.Test] = previousTestEvidence.Id,
             [ReadinessCheck.Security] = Guid.NewGuid(),
             [ReadinessCheck.Change] = Guid.NewGuid(),
-            [ReadinessCheck.Dependency] = Guid.NewGuid(),
         };
         var currentEvidence = new Dictionary<ReadinessCheck, Guid>(sourceEvidenceIds);
         var replacement = TestEvidence(Guid.NewGuid(), version: 2, previousTestEvidence.Id);
@@ -73,7 +72,6 @@ public sealed class FreshnessTests
     [Theory]
     [InlineData(ReadinessCheck.Test)]
     [InlineData(ReadinessCheck.Security)]
-    [InlineData(ReadinessCheck.Dependency)]
     public void Freshness_deadline_uses_the_24_hour_maximum(ReadinessCheck check)
     {
         var deadline = FreshnessDeadlines.Calculate(Evidence(check));
@@ -84,7 +82,6 @@ public sealed class FreshnessTests
     [Theory]
     [InlineData(ReadinessCheck.Test)]
     [InlineData(ReadinessCheck.Security)]
-    [InlineData(ReadinessCheck.Dependency)]
     public void Earlier_evidence_bound_wins_over_the_24_hour_maximum(ReadinessCheck check)
     {
         var earlierBound = Utc(2026, 8, 14, 14);
@@ -135,10 +132,6 @@ public sealed class FreshnessTests
             Guid.NewGuid(), Revision(), 1, ObservedAt, null,
             "2.4.0", ObservedAt, [], [],
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
-        ReadinessCheck.Dependency => new DependencyEvidenceRecord(
-            Guid.NewGuid(), Revision(), 1, ObservedAt, null,
-            ObservedAt,
-            new Dictionary<string, DependencyState>()),
         _ => throw new ArgumentOutOfRangeException(nameof(check)),
     };
 

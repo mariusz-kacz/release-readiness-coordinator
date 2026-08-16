@@ -174,7 +174,6 @@ public sealed class DatabaseSchemaTests
                     ReleaseVersion = "1.0.0",
                     RequestedWindowStartUtc = new DateTimeOffset(2026, 8, 17, 8, 0, 0, TimeSpan.Zero),
                     RequestedWindowEndUtc = new DateTimeOffset(2026, 8, 17, 9, 0, 0, TimeSpan.Zero),
-                    DependencyRequirementsJson = "{}",
                     SubmittedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 0, 0, TimeSpan.Zero),
                     Phase = ProcessPhase.WaitingForRemediation,
                     PhaseChangedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 1, 0, TimeSpan.Zero),

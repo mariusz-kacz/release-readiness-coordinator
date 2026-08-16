@@ -31,21 +31,21 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (5 primary files)
 
-## Task 2: Prove the fixed MAF four-branch graph
+## Task 2: Prove the fixed MAF three-branch graph
 
-**Description:** Build the smallest production-shaped static MAF graph with stable executor IDs, typed planner/work/result messages, and one explicit conditional edge per readiness branch. Prove that one planner invocation routes work to four branch executors in one evaluation round and the aggregator runs only after all four results exist.
+**Description:** Build the smallest production-shaped static MAF graph with stable executor IDs, typed planner/work/result messages, and one explicit conditional edge per readiness branch. Prove that one planner invocation routes work to three branch executors in one evaluation round and the aggregator runs only after all three results exist.
 
 **Acceptance criteria:**
 
-- [x] The planner emits exactly one Test, Security, Change, and Dependency `BranchWorkItem` with an Execute/Reuse disposition.
-- [x] Four stable-ID executors each emit exactly one typed `BranchResult`; the aggregator rejects duplicates, omissions, and impossible branch identities as technical failures.
-- [x] A real MAF 1.17.0 test demonstrates complete four-source fan-in and no pre-fan-in external request.
+- [x] The planner emits exactly one Test, Security, and Change `BranchWorkItem` with an Execute/Reuse disposition.
+- [x] Three stable-ID executors each emit exactly one typed `BranchResult`; the aggregator rejects duplicates, omissions, and impossible branch identities as technical failures.
+- [x] A real MAF 1.17.0 test demonstrates complete three-source fan-in and no pre-fan-in external request.
 
 **Verification:**
 
 - [x] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowTopology"`
 - [x] `dotnet build --no-restore`
-- [x] Inspect emitted executor events to confirm all four branch IDs precede aggregation.
+- [x] Inspect emitted executor events to confirm all three branch IDs precede aggregation.
 
 **Dependencies:** Task 1
 
@@ -94,12 +94,12 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Task 4: Model immutable releases and versioned evidence
 
-**Description:** Define the release revision, UTC value objects, immutable submission metadata, lifecycle phases, and four typed immutable/versioned evidence records used by the readiness workflow.
+**Description:** Define the release revision, UTC value objects, immutable submission metadata, lifecycle phases, and three typed immutable/versioned evidence records used by the readiness workflow.
 
 **Acceptance criteria:**
 
-- [x] Release identifiers, revisions, deployment windows, dependency requirements, and timestamps are validated and defensively copied; Approved and Rejected revisions cannot reopen.
-- [x] Test, Security, Change, and Dependency evidence records have stable IDs, positive versions, optional supersession links, and immutable branch-specific facts.
+- [x] Release identifiers, revisions, deployment windows, and timestamps are validated; Approved and Rejected revisions cannot reopen.
+- [x] Test, Security, and Change evidence records have stable IDs, positive versions, optional supersession links, and immutable branch-specific facts.
 - [x] Change evidence contains approval state and approved window, release metadata is immutable within a revision, and all domain timestamps are supplied UTC instants.
 
 **Verification:**
@@ -151,7 +151,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [x] A decision snapshot contains exactly four passing source results, their evidence and evaluator identities, the earliest deadline, and one immutable deterministic brief.
+- [x] A decision snapshot contains exactly three passing source results, their evidence and evaluator identities, the earliest deadline, and one immutable deterministic brief.
 - [x] Human responses must correlate to their active request and snapshot token; validation records accepted or bounded stale-response reasons without mutating prior history.
 - [x] Correlation and timeline records preserve stable identities, positive ordering, UTC timestamps, and distinct business/audit meanings.
 
@@ -173,12 +173,12 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Task 7: Establish evidence-identity and freshness rules
 
-**Description:** Define exact evidence-record identity as the branch change-detection contract and provide deterministic deadline calculation for time-limited Test, Security, and Dependency evidence.
+**Description:** Define exact evidence-record identity as the branch change-detection contract and provide deterministic deadline calculation for time-limited Test and Security evidence.
 
 **Acceptance criteria:**
 
 - [x] A new evidence version has a new reuse identity even when its business facts equal the prior record, and only its matching branch identity changes.
-- [x] Test, Security, and Dependency deadlines use the 24-hour maximum with earlier evidence-specific bounds honored; boundary checks use an injected `TimeProvider`.
+- [x] Test and Security deadlines use the 24-hour maximum with earlier evidence-specific bounds honored; boundary checks use an injected `TimeProvider`.
 - [x] Domain change detection uses evidence IDs, evaluator versions, explicit selection, and `ValidUntil`; it has no fingerprint, input-generation, invalidation-map, or stored-validity-state contract.
 
 **Verification:**
@@ -273,7 +273,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 **Acceptance criteria:**
 
 - [x] The form captures every release submission field and initial evidence category required by `SPEC.md` section 5.
-- [x] Valid submission creates immutable release metadata and up to four initial evidence records, then starts the correlated workflow; omitted evidence remains representable as `MissingEvidence`.
+- [x] Valid submission creates immutable release metadata and up to three initial evidence records, then starts the correlated workflow; omitted evidence remains representable as `MissingEvidence`.
 - [x] Duplicate identifier/revision produces HTTP 409 semantics and a useful page message; terminal revisions are not reopened.
 
 **Verification:**
@@ -381,43 +381,16 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (4 files)
 
-## Task 14: Deliver the Dependency readiness slice
-
-**Description:** Add simulated Dependency evidence retrieval and deterministic compatibility, availability coverage, maintenance overlap, and freshness policy.
-
-**Acceptance criteria:**
-
-- [ ] Missing required/available versions, intervals, or observation facts map to `MissingEvidence`; known retry exhaustion maps to `TransientFailure`.
-- [ ] Incompatible versions, incomplete release-window availability, maintenance overlap, or expired evidence map to `Blocked`; otherwise the result is `Passed`.
-- [ ] Tests cover interval inclusivity, overlap boundaries, version compatibility, observation time, and the 24-hour validity maximum.
-
-**Verification:**
-
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~DependencyReadiness"`
-- [ ] Counting fake verifies exact retry/provider/policy calls.
-- [ ] `dotnet build --no-restore`
-
-**Dependencies:** Tasks 7 and 11
-
-**Files likely touched:**
-
-- `src/ReleaseReadinessCoordinator/Readiness/DependencyEvidenceProvider.cs`
-- `src/ReleaseReadinessCoordinator/Readiness/DependencyPolicy.cs`
-- `src/ReleaseReadinessCoordinator/Workflow/ReadinessExecutors.cs`
-- `tests/ReleaseReadinessCoordinator.Tests/Readiness/DependencyReadinessTests.cs`
-
-**Estimated scope:** Medium (4 files)
-
 ## Checkpoint C2: Deterministic readiness
 
-- [ ] Tasks 10-14 acceptance criteria are met.
+- [ ] Tasks 10-13 acceptance criteria are met.
 - [ ] Data-driven policy and retry tests pass.
 - [ ] All four expected outcomes are representable without hiding technical failures.
 - [ ] The deterministic Change policy matches the approved evidence and window rules.
 
-## Task 15: Implement selective execution and safe reuse planning
+## Task 14: Implement selective execution and safe reuse planning
 
-**Description:** Build the round planner that always emits four work items and chooses Execute/Reuse from prior outcome, current evidence identity, deadline, policy versions, and explicit branch selection. Implement a separate defensive reuse path.
+**Description:** Build the round planner that always emits three work items and chooses Execute/Reuse from prior outcome, current evidence identity, deadline, policy versions, and explicit branch selection. Implement a separate defensive reuse path.
 
 **Acceptance criteria:**
 
@@ -431,7 +404,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Counting fakes prove zero forbidden calls on reuse and expected calls on execution.
 - [ ] Evidence- and time-driven tests replace or expire one branch without executing unrelated branches.
 
-**Dependencies:** Tasks 7 and 11-14
+**Dependencies:** Tasks 7 and 11-13
 
 **Files likely touched:**
 
@@ -442,13 +415,13 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (4 files)
 
-## Task 16: Complete aggregation and remediation resumption
+## Task 15: Complete aggregation and remediation resumption
 
 **Description:** Connect planner and branch slices through the real fixed graph. Persist complete rounds, create one remediation request containing all current problems after fan-in, accept correlated new evidence versions and explicit branch selections, and start the next selective round.
 
 **Acceptance criteria:**
 
-- [ ] Each round persists exactly four results and complete Executed/Reused explanations before routing.
+- [ ] Each round persists exactly three results and complete Executed/Reused explanations before routing.
 - [ ] Any non-pass combination creates exactly one remediation request containing every current problem; no branch waits independently.
 - [ ] A current correlated remediation response creates only new evidence versions, atomically changes their matching current-evidence selections, records explicit branch selections without changing evidence, closes the request once, and resumes selective evaluation; release metadata cannot be edited.
 
@@ -458,7 +431,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Real-graph test blocks multiple branches, remediates them, and proves unaffected branches reuse.
 - [ ] Duplicate or mismatched remediation responses have no duplicate effect.
 
-**Dependencies:** Tasks 9 and 15
+**Dependencies:** Tasks 9 and 14
 
 **Files likely touched:**
 
@@ -470,13 +443,13 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (5 files)
 
-## Task 17: Build immutable snapshots and handle human decisions
+## Task 16: Build immutable snapshots and handle human decisions
 
 **Description:** For an all-pass round, persist one immutable `DecisionSnapshot` and deterministic brief, issue typed approval, revalidate all integrity/freshness inputs, and persist one terminal approval/rejection or a declined stale response that selectively resumes evaluation.
 
 **Acceptance criteria:**
 
-- [ ] Snapshot resolves four source results and their evidence IDs, policy versions, earliest deadline, and immutable deterministic brief.
+- [ ] Snapshot resolves three source results and their evidence IDs, policy versions, earliest deadline, and immutable deterministic brief.
 - [ ] A response must match the active request, latest fully passing snapshot, concurrency token, current evidence IDs, evaluator versions, and deadlines before it can terminate Approved/Rejected; the immutable brief is not regenerated or hashed.
 - [ ] Stale responses persist as declined with bounded reasons, close the old request, resume selective planning, and require a fresh response after reevaluation.
 
@@ -486,7 +459,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Tests cover current approve, current reject, every stale dimension, duplicate responses, and expiry while waiting.
 - [ ] Brief output is byte-stable for identical snapshot inputs.
 
-**Dependencies:** Task 16
+**Dependencies:** Task 15
 
 **Files likely touched:**
 
@@ -499,12 +472,12 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint D: Core end-to-end workflow
 
-- [ ] Tasks 15-17 acceptance criteria are met.
+- [ ] Tasks 14-16 acceptance criteria are met.
 - [ ] The all-pass, remediation/selective-reuse, stale-response, approval, and rejection paths run on the real graph.
 - [ ] Round/business history is complete, idempotent, and explainable.
 - [ ] No branch-local wait, rerun-all shortcut, or automatic approval exists.
 
-## Task 18: Add restart recovery, synchronization, and reconciliation
+## Task 17: Add restart recovery, synchronization, and reconciliation
 
 **Description:** Implement the HTTP-driven workflow host that starts or restores runs under one checkpoint-store critical section. Rebuild the identical graph, select the latest valid checkpoint, verify re-emitted request correlation, reconcile idempotent business writes, and surface technical failures.
 
@@ -520,7 +493,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Integration test creates a wait, disposes the host, creates a new host over the same SQLite/checkpoint directories, responds, and verifies one continuation.
 - [ ] Concurrent response test proves serialization/idempotency.
 
-**Dependencies:** Tasks 3, 9, and 16-17
+**Dependencies:** Tasks 3, 9, and 15-16
 
 **Files likely touched:**
 
@@ -532,13 +505,13 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (5 files)
 
-## Task 19: Build release detail and timeline UI
+## Task 18: Build release detail and timeline UI
 
 **Description:** Render the current process state and immutable history from the release-detail projection, using manual refresh and accessible server-rendered HTML.
 
 **Acceptance criteria:**
 
-- [ ] The page shows phase, four current results, evidence/findings, round history, planning reasons, `ValidUntil`, attempts, deterministic brief, active wait, and chronological timeline.
+- [ ] The page shows phase, three current results, evidence/findings, round history, planning reasons, `ValidUntil`, attempts, deterministic brief, active wait, and chronological timeline.
 - [ ] Every round labels `Executed because ...` or `Reused from round N because ...` and links a reused result to its source.
 - [ ] Technical failure and stale-response reasons are visible without exposing secrets or raw checkpoint contents.
 
@@ -548,7 +521,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Manually inspect empty, evaluating, remediation, approval, terminal, and failed states at narrow and desktop widths.
 - [ ] Keyboard navigation and heading/table semantics are coherent.
 
-**Dependencies:** Tasks 10 and 18
+**Dependencies:** Tasks 10 and 17
 
 **Files likely touched:**
 
@@ -561,11 +534,11 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint E1: Recovery and read model
 
-- [ ] Tasks 18-19 acceptance criteria are met.
+- [ ] Tasks 17-18 acceptance criteria are met.
 - [ ] Remediation and approval waits survive host replacement with no duplicate history.
 - [ ] The detail page explains current state, immutable round history, reuse sources, active waits, and failures.
 
-## Task 20: Build remediation interaction UI
+## Task 19: Build remediation interaction UI
 
 **Description:** Add the typed remediation page and PRG handler for the active correlated request, presenting all problems and accepting new evidence versions plus explicit branch selections for rerun. Immutable release metadata remains visible but cannot be edited.
 
@@ -581,7 +554,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Manual blocker -> remediation -> selective rerun confirms correct Execute/Reused display.
 - [ ] Invalid model state and double-submit behavior are checked.
 
-**Dependencies:** Tasks 16 and 18-19
+**Dependencies:** Tasks 15 and 17-18
 
 **Files likely touched:**
 
@@ -592,7 +565,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (4 files)
 
-## Task 21: Build decision interaction UI
+## Task 20: Build decision interaction UI
 
 **Description:** Add the typed human-decision page and PRG handler, displaying the immutable snapshot/brief and accepting Approve/Reject, actor, comment, request identity, snapshot identity, and concurrency token.
 
@@ -608,7 +581,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Manual current approval, current rejection, and expired-evidence stale-response journeys succeed.
 - [ ] Double-submit produces one terminal decision.
 
-**Dependencies:** Tasks 17-19
+**Dependencies:** Tasks 16-18
 
 **Files likely touched:**
 
@@ -621,19 +594,19 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint E2: Demonstrable MVP
 
-- [ ] Tasks 18-21 acceptance criteria are met.
+- [ ] Tasks 17-20 acceptance criteria are met.
 - [ ] Remediation and approval waits both survive a real host restart.
 - [ ] The four-page Razor UI supports the complete approved journey with manual refresh.
 - [ ] Accessibility, correlation, stale feedback, failure visibility, and duplicate protection are manually reviewed.
 
-## Task 22: Complete real-graph workflow scenario coverage
+## Task 21: Complete real-graph workflow scenario coverage
 
-**Description:** Consolidate the six required orchestration-risk scenarios into a small real-graph suite using deterministic providers, fake time, temporary SQLite, and temporary checkpoint directories. Assert business history and dependency call counts, not DTO trivia.
+**Description:** Consolidate the six required orchestration-risk scenarios into a small real-graph suite using deterministic providers, fake time, temporary SQLite, and temporary checkpoint directories. Assert business history and provider/policy call counts, not DTO trivia.
 
 **Acceptance criteria:**
 
 - [ ] The suite covers all-pass approval, multi-block remediation/selective reuse, missing/transient aggregation, restart/resume-once, approval-time expiry/selective rerun, and current rejection.
-- [ ] Each scenario verifies four-result fan-in, wait timing, phase transitions, timeline explanations, idempotency, and provider/policy call counts.
+- [ ] Each scenario verifies three-result fan-in, wait timing, phase transitions, timeline explanations, idempotency, and provider/policy call counts.
 - [ ] Unexpected exceptions remain technical failures and terminal decisions cannot reopen.
 
 **Verification:**
@@ -642,7 +615,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Run the suite twice against clean temporary stores to expose ordering/static-state leaks.
 - [ ] `dotnet format --verify-no-changes`
 
-**Dependencies:** Tasks 18-21
+**Dependencies:** Tasks 17-20
 
 **Files likely touched:**
 
@@ -653,7 +626,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (4 files)
 
-## Task 23: Add minimal browser smoke coverage
+## Task 22: Add minimal browser smoke coverage
 
 **Description:** Add real-browser smoke tests for only the two required user journeys: submit/pass/human decision and blocker/remediation/selective rerun. Use accessible locators and retain server-side PRG/manual-refresh behavior.
 
@@ -669,7 +642,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] `dotnet test --no-build --filter "FullyQualifiedName~BrowserSmoke"`
 - [ ] Inspect failure screenshots/traces only when a test fails.
 
-**Dependencies:** Tasks 19-22
+**Dependencies:** Tasks 18-21
 
 **Files likely touched:**
 
@@ -682,11 +655,11 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint F1: Evaluation
 
-- [ ] Tasks 22-23 acceptance criteria are met.
+- [ ] Tasks 21-22 acceptance criteria are met.
 - [ ] Required real-graph scenarios and both browser journeys pass.
 - [ ] Test evidence is deterministic.
 
-## Task 24: Finish documentation, full verification, and spec audit
+## Task 23: Finish documentation, full verification, and spec audit
 
 **Description:** Document setup, simulated fixtures, app-data locations, restart demo, test commands, and architecture boundaries. Run the complete quality gate, inspect the diff, and map evidence to all 13 MVP acceptance criteria.
 
@@ -705,7 +678,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Run both manual end-to-end journeys, including stop/restart at remediation and approval waits.
 - [ ] Review the complete diff and report unrun checks, residual risks, and any approved deviation.
 
-**Dependencies:** Tasks 22-23
+**Dependencies:** Tasks 21-22
 
 **Files likely touched:**
 
@@ -718,7 +691,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint F2: Complete
 
-- [ ] Tasks 1-24 and every intermediate checkpoint are complete.
+- [ ] Tasks 1-23 and every intermediate checkpoint are complete.
 - [ ] All task acceptance criteria and the standing Definition of Done are satisfied.
 - [ ] All 13 MVP acceptance criteria have recorded evidence.
 - [ ] The solution remains one bounded deployable application with one focused test project.

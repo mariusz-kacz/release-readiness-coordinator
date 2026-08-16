@@ -9,7 +9,6 @@ public static class ReleaseWorkflowExecutorIds
     public const string Test = "test-readiness";
     public const string Security = "security-readiness";
     public const string Change = "change-readiness";
-    public const string Dependency = "dependency-readiness";
     public const string Aggregator = "readiness-aggregator";
     public const string ApprovalCompletion = "approval-completion";
 
@@ -20,7 +19,6 @@ public static class ReleaseWorkflowExecutorIds
                 [ReadinessBranch.Test] = Test,
                 [ReadinessBranch.Security] = Security,
                 [ReadinessBranch.Change] = Change,
-                [ReadinessBranch.Dependency] = Dependency,
             });
 }
 

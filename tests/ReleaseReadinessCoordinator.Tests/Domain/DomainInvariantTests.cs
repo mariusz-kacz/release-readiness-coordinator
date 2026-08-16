@@ -61,7 +61,7 @@ public sealed class DomainInvariantTests
     }
 
     [Fact]
-    public void Evidence_vocabulary_covers_all_four_readiness_sources()
+    public void Evidence_vocabulary_covers_all_three_readiness_sources()
     {
         EvidenceRecord[] evidence =
         [
@@ -76,17 +76,10 @@ public sealed class DomainInvariantTests
                 Guid.NewGuid(), RevisionKey, 1, SubmittedAt, null,
                 isApproved: true,
                 new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11))),
-            new DependencyEvidenceRecord(
-                Guid.NewGuid(), RevisionKey, 1, SubmittedAt, null,
-                Utc(2026, 8, 14, 7),
-                new Dictionary<string, DependencyState>
-                {
-                    ["orders-api"] = new("5.0.0", [], []),
-                }),
         ];
 
         Assert.Equal(
-            [EvidenceKind.Test, EvidenceKind.Security, EvidenceKind.Change, EvidenceKind.Dependency],
+            [EvidenceKind.Test, EvidenceKind.Security, EvidenceKind.Change],
             evidence.Select(item => item.Kind));
     }
 
@@ -152,7 +145,7 @@ public sealed class DomainInvariantTests
     public void Evaluation_round_requires_exactly_one_result_per_readiness_check()
     {
         var results = CompleteResults();
-        results[3] = Result(ReadinessCheck.Test, EvidenceKind.Test);
+        results[2] = Result(ReadinessCheck.Test, EvidenceKind.Test);
 
         Assert.Throws<InvalidOperationException>(
             () => new EvaluationRound(
@@ -175,7 +168,7 @@ public sealed class DomainInvariantTests
     public void Decision_snapshot_rejects_duplicate_readiness_sources()
     {
         var sources = CompleteResults();
-        sources[3] = sources[0];
+        sources[2] = sources[0];
 
         Assert.Throws<InvalidOperationException>(
             () => new DecisionSnapshot(
@@ -241,7 +234,6 @@ public sealed class DomainInvariantTests
         "checkout",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 10)),
-        new Dictionary<string, string> { ["orders-api"] = "5.x" },
         SubmittedAt);
 
     private static HumanDecisionRequest Request(string concurrencyToken) => new(
@@ -252,7 +244,6 @@ public sealed class DomainInvariantTests
         Result(ReadinessCheck.Test, EvidenceKind.Test),
         Result(ReadinessCheck.Security, EvidenceKind.Security),
         Result(ReadinessCheck.Change, EvidenceKind.Change),
-        Result(ReadinessCheck.Dependency, EvidenceKind.Dependency),
     ];
 
     private static BranchResult Result(

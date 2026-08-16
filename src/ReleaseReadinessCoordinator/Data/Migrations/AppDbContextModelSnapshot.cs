@@ -394,10 +394,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("DependencyRequirementsJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("OperationKey")
                         .IsRequired()
                         .HasMaxLength(300)

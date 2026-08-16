@@ -25,7 +25,7 @@ The system coordinates readiness evidence produced by simulated external systems
 
 The MVP must visibly demonstrate:
 
-- four independent readiness checks executed as one parallel evaluation round;
+- three independent readiness checks executed as one parallel evaluation round;
 - fan-out and complete fan-in aggregation;
 - expected branch-local blockers, missing evidence, and transient failures;
 - durable waits for external remediation and human approval;
@@ -61,14 +61,14 @@ The MVP does not require production-grade identity or authorization. Actor names
 ## 4. Primary end-to-end journey
 
 1. A release coordinator submits one release candidate.
-2. Test, Security, Change, and Dependency checks run as one evaluation round.
+2. Test, Security, and Change checks run as one evaluation round.
 3. Each branch promptly returns one structured result.
-4. The workflow forms a complete four-branch result view.
+4. The workflow forms a complete three-branch result view.
 5. When any branch blocks, lacks evidence, or exhausts a known transient retry, the workflow creates one remediation request after fan-in and pauses.
 6. The coordinator supplies new versions of affected branch evidence.
 7. A new evaluation round executes only branches that are unsuccessful, use an evidence record that is no longer current, have a changed evaluator version, are expired, or are explicitly selected.
 8. Successful branch results whose evidence identity, evaluator version, and deadline still match are reused without recomputation.
-9. When all four branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, then pauses for a human decision.
+9. When all three branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, then pauses for a human decision.
 10. Before accepting approval or rejection, the workflow revalidates the snapshot and all evidence freshness conditions.
 11. A current approval or rejection is persisted as a terminal decision.
 12. A stale response is rejected and selective evaluation resumes; the planner executes only branches whose reuse conditions no longer hold.
@@ -84,10 +84,9 @@ A release submission contains:
 - service name;
 - release version;
 - requested deployment window;
-- dependency requirements;
-- initial Test, Security, Change, and Dependency evidence or references to local simulated evidence.
+- initial Test, Security, and Change evidence or references to local simulated evidence.
 
-Service name, release version, requested deployment window, and dependency requirements are immutable after submission. Remediation cannot edit them. A different value requires a separate release revision and does not supersede, cancel, migrate, or automatically terminate an earlier workflow in this constrained MVP.
+Service name, release version, and requested deployment window are immutable after submission. Remediation cannot edit them. A different value requires a separate release revision and does not supersede, cancel, migrate, or automatically terminate an earlier workflow in this constrained MVP.
 
 Duplicate identifier/revision submissions return a conflict. Approved and rejected revisions are terminal and cannot be reopened. Active-revision supersession, withdrawal, and cancellation are out of scope.
 
@@ -119,11 +118,11 @@ A historical `BranchResult` is immutable and is never mutated into an invalidate
 
 ### 6.3 Aggregation
 
-Every evaluation round must produce one result for each of Test, Security, Change, and Dependency.
+Every evaluation round must produce one result for each of Test, Security, and Change.
 
-The aggregator receives all four results before routing:
+The aggregator receives all three results before routing:
 
-- all four `Passed` → build decision snapshot and request human approval;
+- all three `Passed` → build decision snapshot and request human approval;
 - any non-pass result → create one remediation request containing every current problem and wait for remediation.
 
 ## 7. Minimal deterministic readiness policies
@@ -132,7 +131,7 @@ All authoritative readiness decisions are deterministic C# decisions.
 
 Fixed MVP policy constants:
 
-- Test, Security, and Dependency evidence is current for 24 hours unless an earlier evidence-specific bound applies;
+- Test and Security evidence is current for 24 hours unless an earlier evidence-specific bound applies;
 - a passing Change result is current until the end of its approved window;
 - Test pass rate must be at least 95 percent;
 - evidence release versions must match the submitted release version exactly;
@@ -143,7 +142,6 @@ Fixed MVP policy constants:
 | Test | Test run version, completion time, pass rate, and critical-suite failures. Pass when version matches, pass rate is at least 95%, no critical suite failed, and evidence is current. | Missing record or required field → `MissingEvidence`; deterministic policy miss → `Blocked`; exhausted known source failure → `TransientFailure`; otherwise `Passed`. |
 | Security | Scan version/time, unresolved critical findings, high findings, and approved exceptions with scope and expiry. Pass when version matches, no critical finding remains, every high finding has a matching exception valid through the release window, and evidence is current. | Missing scan or required exception facts → `MissingEvidence`; uncovered finding or invalid exception → `Blocked`; exhausted known source failure → `TransientFailure`; otherwise `Passed`. |
 | Change | Change approval and approved window in one versioned Change evidence record. Pass when the change is approved and the requested deployment is wholly inside the approved window. | Missing approval or approved window → `MissingEvidence`; unapproved or out-of-window evidence → `Blocked`; exhausted known source failure → `TransientFailure`; otherwise `Passed`. |
-| Dependency | Required/available versions, availability intervals, maintenance intervals, and observation time. Pass when versions are compatible, availability covers the release window, no maintenance interval conflicts, and evidence is current. | Missing required facts → `MissingEvidence`; incompatibility, unavailability, or conflict → `Blocked`; exhausted known source failure → `TransientFailure`; otherwise `Passed`. |
 
 Do not implement a configurable policy language, generic rules engine, or user-configurable governance platform.
 
@@ -187,10 +185,10 @@ Approval or window corrections create a new immutable Change evidence version. T
 
 ## 10. Human decision integrity
 
-When all four branches pass, persist an immutable `DecisionSnapshot` containing:
+When all three branches pass, persist an immutable `DecisionSnapshot` containing:
 
 - the passing evaluation round;
-- resolved source result IDs and evidence IDs for all four checks;
+- resolved source result IDs and evidence IDs for all three checks;
 - policy versions;
 - the earliest validity bound;
 - the deterministic decision brief as immutable snapshot content.
@@ -246,14 +244,12 @@ Use one static graph with stable executor IDs:
 ```mermaid
 flowchart TD
     S[Submit release] --> P[Round planner]
-    P -->|four Execute/Reuse work items| T[Test]
+    P -->|three Execute/Reuse work items| T[Test]
     P --> SE[Security]
     P --> C[Change]
-    P --> D[Dependency]
-    T --> A[Fixed four-source fan-in]
+    T --> A[Fixed three-source fan-in]
     SE --> A
     C --> A
-    D --> A
     A -->|any non-pass| R[Remediation external request]
     R -->|response| P
     A -->|all pass| B[Build decision snapshot and brief]
@@ -264,7 +260,7 @@ flowchart TD
     F -->|reject| NO([Rejected])
 ```
 
-The planner emits exactly four `BranchWorkItem`s each round, one per readiness check, with disposition `Execute` or `Reuse`. Every branch emits exactly one `BranchResult`, allowing a deterministic fixed four-source fan-in while still ensuring reused checks perform no real work.
+The planner emits exactly three `BranchWorkItem`s each round, one per readiness check, with disposition `Execute` or `Reuse`. Every branch emits exactly one `BranchResult`, allowing a deterministic fixed three-source fan-in while still ensuring reused checks perform no real work.
 
 Represent remediation and approval with typed MAF external calls/`RequestPort`s. External requests occur only after fan-in. Pending requests must survive checkpoint restoration and resume through their correlated response.
 
@@ -321,8 +317,8 @@ Use EF Core directly through a bounded application data service. Do not add gene
 
 Use Razor Pages and manual refresh. The MVP UI contains only:
 
-- **Submit release:** immutable release metadata, deployment window, dependency requirements, and compact simulated evidence inputs or demo fixtures;
-- **Release/workflow detail:** process phase, four current results, evidence and findings, evaluation-round history, `Executed`/`Reused` reasons and source links, deterministic brief, active wait, and chronological timeline;
+- **Submit release:** immutable release metadata, deployment window, and compact simulated evidence inputs or demo fixtures;
+- **Release/workflow detail:** process phase, three current results, evidence and findings, evaluation-round history, `Executed`/`Reused` reasons and source links, deterministic brief, active wait, and chronological timeline;
 - **Remediation interaction:** active problems, new evidence versions, explicit branch selections for rerun, and request correlation token; release metadata is display-only;
 - **Decision interaction:** immutable snapshot/brief, Approve/Reject controls, actor, comment, request/snapshot identity, and stale-response feedback.
 
@@ -440,7 +436,7 @@ The implementation plan may choose exact solution, project, namespace, and folde
 The MVP is complete when all of the following are demonstrably true:
 
 1. A release can be submitted through the web UI.
-2. MAF visibly fans out to Test, Security, Change, and Dependency and aggregates one result from each.
+2. MAF visibly fans out to Test, Security, and Change and aggregates one result from each.
 3. All four expected branch outcomes are represented without converting technical defects into domain results.
 4. Multiple branch problems create one post-fan-in remediation request.
 5. Evidence-only remediation starts a new round that executes only branches whose reuse conditions no longer hold and reuses the others without provider or policy calls.

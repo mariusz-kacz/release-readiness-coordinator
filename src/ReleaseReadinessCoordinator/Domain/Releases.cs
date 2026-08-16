@@ -66,21 +66,15 @@ public sealed record ReleaseSubmission
         string serviceName,
         string releaseVersion,
         UtcInterval requestedDeploymentWindow,
-        IReadOnlyDictionary<string, string> dependencyRequirements,
         UtcInstant submittedAt)
     {
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(requestedDeploymentWindow);
-        ArgumentNullException.ThrowIfNull(dependencyRequirements);
 
         Key = key;
         ServiceName = DomainGuard.Required(serviceName, nameof(serviceName));
         ReleaseVersion = DomainGuard.Required(releaseVersion, nameof(releaseVersion));
         RequestedDeploymentWindow = requestedDeploymentWindow;
-        DependencyRequirements = dependencyRequirements.ToImmutableDictionary(
-            pair => DomainGuard.Required(pair.Key, nameof(dependencyRequirements)),
-            pair => DomainGuard.Required(pair.Value, nameof(dependencyRequirements)),
-            StringComparer.Ordinal);
         SubmittedAt = submittedAt;
     }
 
@@ -91,8 +85,6 @@ public sealed record ReleaseSubmission
     public string ReleaseVersion { get; }
 
     public UtcInterval RequestedDeploymentWindow { get; }
-
-    public ImmutableDictionary<string, string> DependencyRequirements { get; }
 
     public UtcInstant SubmittedAt { get; }
 }

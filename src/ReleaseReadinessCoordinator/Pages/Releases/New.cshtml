@@ -51,12 +51,6 @@
                 <label asp-for="Input.DeploymentWindowEnd" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
                 <input asp-for="Input.DeploymentWindowEnd" class="form-control" aria-required="true" />
             </div>
-            <div class="col-12">
-                <label asp-for="Input.DependencyRequirements" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
-                <textarea asp-for="Input.DependencyRequirements" class="form-control" rows="2" aria-required="true"></textarea>
-                <div class="form-text">One required dependency per line: <code>name=version requirement</code>.</div>
-                <span asp-validation-for="Input.DependencyRequirements" class="text-danger"></span>
-            </div>
         </div>
     </fieldset>
 
@@ -99,18 +93,6 @@
             <div class="col-md-4 form-check ms-2 mt-5"><input asp-for="Input.ChangeApproved" class="form-check-input" /><label asp-for="Input.ChangeApproved" class="form-check-label"></label></div>
             <div class="col-md-4"><label asp-for="Input.ChangeWindowStart" class="form-label"></label><input asp-for="Input.ChangeWindowStart" class="form-control" /></div>
             <div class="col-md-4"><label asp-for="Input.ChangeWindowEnd" class="form-label"></label><input asp-for="Input.ChangeWindowEnd" class="form-control" /></div>
-        </div>
-    </fieldset>
-
-    <fieldset class="mb-4 border rounded p-3">
-        <legend class="float-none w-auto px-2 fs-5">Dependency evidence</legend>
-        <div class="form-check mb-3">
-            <input asp-for="Input.IncludeDependencyEvidence" class="form-check-input" />
-            <label asp-for="Input.IncludeDependencyEvidence" class="form-check-label">Supply initial Dependency evidence</label>
-        </div>
-        <div class="row g-3">
-            <div class="col-md-6"><label asp-for="Input.DependencyObservedAt" class="form-label"></label><input asp-for="Input.DependencyObservedAt" class="form-control" /></div>
-            <div class="col-12"><label asp-for="Input.DependencyStates" class="form-label"></label><textarea asp-for="Input.DependencyStates" class="form-control" rows="3"></textarea><div class="form-text">One per line: <code>name|available-version|available-start|available-end|maintenance-start|maintenance-end</code>. Leave both interval values blank to omit that interval.</div></div>
         </div>
     </fieldset>
 

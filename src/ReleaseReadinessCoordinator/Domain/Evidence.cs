@@ -7,7 +7,6 @@ public enum EvidenceKind
     Test = 1,
     Security = 2,
     Change = 3,
-    Dependency = 4,
 }
 
 public abstract record EvidenceRecord
@@ -156,53 +155,4 @@ public sealed record ChangeEvidenceRecord : EvidenceRecord
     public bool? IsApproved { get; }
 
     public UtcInterval? ApprovedWindow { get; }
-}
-
-public sealed record DependencyState
-{
-    public DependencyState(
-        string? availableVersion,
-        IEnumerable<UtcInterval>? availabilityIntervals,
-        IEnumerable<UtcInterval>? maintenanceIntervals)
-    {
-        AvailableVersion = availableVersion?.Trim();
-        AvailabilityIntervals = availabilityIntervals is null
-            ? null
-            : DomainGuard.Copy(availabilityIntervals, nameof(availabilityIntervals));
-        MaintenanceIntervals = maintenanceIntervals is null
-            ? null
-            : DomainGuard.Copy(maintenanceIntervals, nameof(maintenanceIntervals));
-    }
-
-    public string? AvailableVersion { get; }
-
-    public ImmutableArray<UtcInterval>? AvailabilityIntervals { get; }
-
-    public ImmutableArray<UtcInterval>? MaintenanceIntervals { get; }
-}
-
-public sealed record DependencyEvidenceRecord : EvidenceRecord
-{
-    public DependencyEvidenceRecord(
-        Guid id,
-        ReleaseRevisionKey releaseRevision,
-        int version,
-        UtcInstant recordedAt,
-        Guid? supersedesEvidenceId,
-        UtcInstant? observedAt,
-        IReadOnlyDictionary<string, DependencyState>? dependencies)
-        : base(id, releaseRevision, version, recordedAt, supersedesEvidenceId)
-    {
-        ObservedAt = observedAt;
-        Dependencies = dependencies?.ToImmutableDictionary(
-            pair => DomainGuard.Required(pair.Key, nameof(dependencies)),
-            pair => pair.Value,
-            StringComparer.Ordinal);
-    }
-
-    public override EvidenceKind Kind => EvidenceKind.Dependency;
-
-    public UtcInstant? ObservedAt { get; }
-
-    public ImmutableDictionary<string, DependencyState>? Dependencies { get; }
 }

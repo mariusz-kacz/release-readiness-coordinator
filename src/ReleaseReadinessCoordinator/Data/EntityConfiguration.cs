@@ -31,7 +31,6 @@ internal static class EntityConfiguration
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.ServiceName).HasMaxLength(200);
         builder.Property(row => row.ReleaseVersion).HasMaxLength(100);
-        builder.Property(row => row.DependencyRequirementsJson);
         builder.Property(row => row.Phase).HasConversion<int>();
         ConfigureConcurrencyToken(builder.Property(row => row.ConcurrencyToken));
         ConfigureOperationKey(builder, "UX_ReleaseRevisions_OperationKey");
@@ -40,7 +39,6 @@ internal static class EntityConfiguration
         MakeImmutable(builder.Property(row => row.ReleaseVersion));
         MakeImmutable(builder.Property(row => row.RequestedWindowStartUtc));
         MakeImmutable(builder.Property(row => row.RequestedWindowEndUtc));
-        MakeImmutable(builder.Property(row => row.DependencyRequirementsJson));
         MakeImmutable(builder.Property(row => row.SubmittedAtUtc));
         MakeImmutable(builder.Property(row => row.OperationKey));
     }

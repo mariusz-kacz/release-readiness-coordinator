@@ -8,7 +8,7 @@ public sealed class DecisionContractTests
     private static readonly UtcInstant ValidUntil = Utc(2026, 8, 15, 8);
 
     [Fact]
-    public void Decision_snapshot_captures_four_passing_sources_and_the_earliest_deadline()
+    public void Decision_snapshot_captures_three_passing_sources_and_the_earliest_deadline()
     {
         var sources = CompleteResults();
         sources[1] = Result(
@@ -26,7 +26,7 @@ public sealed class DecisionContractTests
             "All deterministic checks passed.",
             Utc(2026, 8, 14, 9));
 
-        Assert.Equal(4, snapshot.Sources.Length);
+        Assert.Equal(3, snapshot.Sources.Length);
         Assert.All(snapshot.Sources, source =>
         {
             Assert.NotNull(source.EvidenceId);
@@ -58,7 +58,6 @@ public sealed class DecisionContractTests
         Result(ReadinessCheck.Test, Guid.NewGuid(), ValidUntil),
         Result(ReadinessCheck.Security, Guid.NewGuid(), ValidUntil),
         Result(ReadinessCheck.Change, Guid.NewGuid(), ValidUntil),
-        Result(ReadinessCheck.Dependency, Guid.NewGuid(), ValidUntil),
     ];
 
     private static BranchResult Result(
@@ -87,7 +86,6 @@ public sealed class DecisionContractTests
         ReadinessCheck.Test => EvidenceKind.Test,
         ReadinessCheck.Security => EvidenceKind.Security,
         ReadinessCheck.Change => EvidenceKind.Change,
-        ReadinessCheck.Dependency => EvidenceKind.Dependency,
         _ => throw new ArgumentOutOfRangeException(nameof(check)),
     };
 

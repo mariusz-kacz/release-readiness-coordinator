@@ -18,7 +18,6 @@ public sealed class ExternalRequestContractTests
             Test: BranchDisposition.Execute,
             Security: BranchDisposition.Execute,
             Change: BranchDisposition.Execute,
-            Dependency: BranchDisposition.Execute,
             WaitKind: waitKind);
 
         await using var run = await InProcessExecution.RunAsync(workflow, input);

@@ -16,9 +16,6 @@ public static class ReleaseWorkflowFactory
         var change = new ReadinessBranchExecutor(
             ReadinessBranch.Change,
             ReleaseWorkflowExecutorIds.Change);
-        var dependency = new ReadinessBranchExecutor(
-            ReadinessBranch.Dependency,
-            ReleaseWorkflowExecutorIds.Dependency);
         var aggregator = new ReadinessAggregator();
         var remediation = RequestPort.Create<RemediationRequest, RemediationResponse>(
             ReleaseWorkflowPortIds.Remediation);
@@ -26,7 +23,7 @@ public static class ReleaseWorkflowFactory
             ReleaseWorkflowPortIds.Approval);
         var approvalCompletion = new ApprovalCompletionExecutor();
 
-        ExecutorBinding[] branchBindings = [test, security, change, dependency];
+        ExecutorBinding[] branchBindings = [test, security, change];
 
         var builder = new WorkflowBuilder(planner);
         builder.AddEdge<BranchWorkItem>(
@@ -41,10 +38,6 @@ public static class ReleaseWorkflowFactory
             planner,
             change,
             workItem => workItem is { Branch: ReadinessBranch.Change });
-        builder.AddEdge<BranchWorkItem>(
-            planner,
-            dependency,
-            workItem => workItem is { Branch: ReadinessBranch.Dependency });
         builder.AddFanInBarrierEdge(branchBindings, aggregator);
         builder.AddEdge(aggregator, remediation);
         builder.AddEdge(aggregator, approval);

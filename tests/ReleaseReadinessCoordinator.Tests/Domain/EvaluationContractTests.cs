@@ -147,7 +147,6 @@ public sealed class EvaluationContractTests
         ReadinessCheck.Test => EvidenceKind.Test,
         ReadinessCheck.Security => EvidenceKind.Security,
         ReadinessCheck.Change => EvidenceKind.Change,
-        ReadinessCheck.Dependency => EvidenceKind.Dependency,
         _ => throw new ArgumentOutOfRangeException(nameof(check)),
     };
 
