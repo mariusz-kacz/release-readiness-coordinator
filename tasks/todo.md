@@ -210,15 +210,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] The schema represents all stores named in `SPEC.md` section 12.3, enforces immutable release metadata and at most one current evidence record per branch, and preserves versioned evidence plus append-only history.
-- [ ] Unique indexes enforce duplicate submission conflicts, stable operation keys, and one branch result per check/round.
-- [ ] A migration creates a fresh database and EF optimistic concurrency protects active request/snapshot mutation points.
+- [x] The schema represents all stores named in `SPEC.md` section 12.3, enforces immutable release metadata and at most one current evidence record per branch, and preserves versioned evidence plus append-only history.
+- [x] Unique indexes enforce duplicate submission conflicts, stable operation keys, and one branch result per check/round.
+- [x] A migration creates a fresh database and EF optimistic concurrency protects active request/snapshot mutation points.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~DatabaseSchema"`
-- [ ] Apply the migration to a temporary SQLite file and inspect expected tables/indexes.
-- [ ] `dotnet build --no-restore`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~DatabaseSchema"`
+- [x] Apply the migration to a temporary SQLite file and inspect expected tables/indexes.
+- [x] `dotnet build --no-restore`
 
 **Dependencies:** Tasks 4-7
 

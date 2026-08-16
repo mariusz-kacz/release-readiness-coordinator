@@ -93,7 +93,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] Phase, outcome, disposition, and planning reason remain separate bounded concepts
 - [x] Evidence-identity and freshness-deadline rules are covered by deterministic tests
 
-- [ ] Task 8: Create the SQLite schema and migrations
+- [x] Task 8: Create the SQLite schema and migrations
 - [ ] Task 9: Implement the bounded idempotent application data service
 
 ### Checkpoint B2: Durable Foundation
