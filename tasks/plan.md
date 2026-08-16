@@ -94,12 +94,12 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] Evidence-identity and freshness-deadline rules are covered by deterministic tests
 
 - [x] Task 8: Create the SQLite schema and migrations
-- [ ] Task 9: Implement the bounded idempotent application data service
+- [x] Task 9: Implement the bounded idempotent application data service
 
 ### Checkpoint B2: Durable Foundation
 
-- [ ] SQLite schema, constraints, and replay-safe writes are verified
-- [ ] Immutable/versioned records and append-only history are preserved
+- [x] SQLite schema, constraints, and replay-safe writes are verified
+- [x] Immutable/versioned records and append-only history are preserved
 
 ### Phase 3: Submission and Four Readiness Slices
 

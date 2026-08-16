@@ -238,15 +238,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] Replaying the same operation key returns the existing business record without duplicate rows or timeline entries.
-- [ ] Duplicate release identifier/revision returns conflict, and Approved/Rejected revisions cannot reopen.
-- [ ] Reads reconstruct a coherent release-detail projection, while an evidence replacement atomically persists the new version, links the superseded record, and changes the matching branch's current-evidence selection; no operation edits release metadata.
+- [x] Replaying the same operation key returns the existing business record without duplicate rows or timeline entries.
+- [x] Duplicate release identifier/revision returns conflict, and Approved/Rejected revisions cannot reopen.
+- [x] Reads reconstruct a coherent release-detail projection, while an evidence replacement atomically persists the new version, links the superseded record, and changes the matching branch's current-evidence selection; no operation edits release metadata.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~ApplicationDataService"`
-- [ ] Concurrency tests submit the same operation twice and verify one durable effect.
-- [ ] `dotnet format --verify-no-changes`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~ApplicationDataService"`
+- [x] Concurrency tests submit the same operation twice and verify one durable effect.
+- [x] `dotnet format --verify-no-changes`
 
 **Dependencies:** Task 8
 
@@ -261,10 +261,10 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint B2: Durable foundation
 
-- [ ] Tasks 4-9 acceptance criteria are met.
-- [ ] Domain and data tests pass against temporary SQLite databases.
-- [ ] State dimensions, evidence-identity rules, deadlines, immutability, constraints, and replay safety match the specification.
-- [ ] No generic repository, CQRS, event-sourcing, or speculative layer exists.
+- [x] Tasks 4-9 acceptance criteria are met.
+- [x] Domain and data tests pass against temporary SQLite databases.
+- [x] State dimensions, evidence-identity rules, deadlines, immutability, constraints, and replay safety match the specification.
+- [x] No generic repository, CQRS, event-sourcing, or speculative layer exists.
 
 ## Task 10: Deliver release submission and demo fixtures
 
