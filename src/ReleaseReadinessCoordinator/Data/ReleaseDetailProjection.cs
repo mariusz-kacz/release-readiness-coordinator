@@ -8,7 +8,6 @@ public sealed record ReleaseDetailProjection(
     ImmutableArray<EvidenceRecord> EvidenceHistory,
     ImmutableDictionary<EvidenceKind, EvidenceRecord> CurrentEvidence,
     ImmutableArray<EvaluationRound> EvaluationRounds,
-    ImmutableArray<RollbackAnalysisRecord> RollbackAnalyses,
     ImmutableArray<RemediationRequest> RemediationRequests,
     ImmutableArray<RemediationSubmission> RemediationSubmissions,
     ImmutableArray<DecisionSnapshot> DecisionSnapshots,
@@ -16,13 +15,6 @@ public sealed record ReleaseDetailProjection(
     ImmutableArray<PersistedHumanResponse> HumanResponses,
     WorkflowCorrelationRecord? WorkflowCorrelation,
     ImmutableArray<TimelineEntry> Timeline);
-
-public sealed record RollbackAnalysisRecord(
-    Guid Id,
-    Guid ChangeEvidenceId,
-    string AnalyzerVersion,
-    ImmutableDictionary<string, string> Findings,
-    UtcInstant AnalyzedAt);
 
 public sealed record PersistedHumanResponse(
     ReleaseRevisionKey ReleaseRevision,

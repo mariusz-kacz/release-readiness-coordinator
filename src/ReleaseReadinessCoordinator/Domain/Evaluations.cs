@@ -121,7 +121,6 @@ public sealed record BranchResult
         Guid? evidenceId,
         EvidenceKind evidenceKind,
         string policyVersion,
-        string? analyzerVersion,
         UtcInstant? validUntil,
         IEnumerable<string> attempts,
         IReadOnlyDictionary<string, string> findings,
@@ -150,15 +149,6 @@ public sealed record BranchResult
         if (EvidenceKindFor(check) != evidenceKind)
         {
             throw new ArgumentException($"The {check} result cannot use {evidenceKind} evidence.", nameof(evidenceKind));
-        }
-
-        if (check is ReadinessCheck.Change)
-        {
-            analyzerVersion = DomainGuard.Required(analyzerVersion, nameof(analyzerVersion));
-        }
-        else if (analyzerVersion is not null)
-        {
-            throw new ArgumentException("Only Change results carry an analyzer version.", nameof(analyzerVersion));
         }
 
         if (outcome is not BranchOutcome.MissingEvidence && !evidenceId.HasValue)
@@ -190,7 +180,6 @@ public sealed record BranchResult
         EvidenceId = evidenceId;
         EvidenceKind = evidenceKind;
         PolicyVersion = DomainGuard.Required(policyVersion, nameof(policyVersion));
-        AnalyzerVersion = analyzerVersion;
         ValidUntil = validUntil;
         Attempts = DomainGuard.Copy(
             attempts.Select(value => DomainGuard.Required(value, nameof(attempts))),
@@ -224,8 +213,6 @@ public sealed record BranchResult
     public EvidenceKind EvidenceKind { get; }
 
     public string PolicyVersion { get; }
-
-    public string? AnalyzerVersion { get; }
 
     public UtcInstant? ValidUntil { get; }
 

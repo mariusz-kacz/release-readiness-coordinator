@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Microsoft.EntityFrameworkCore;
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
@@ -204,15 +203,6 @@ public sealed class ApplicationDataServiceTests
             CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
             "history:round:1");
 
-        var analysis = new RollbackAnalysisRecord(
-            Guid.NewGuid(),
-            changeEvidence.Id,
-            "rollback-analyzer/1",
-            new Dictionary<string, string> { ["step-1"] = "Drain traffic" }.ToImmutableDictionary(),
-            Utc(2026, 8, 16, 9));
-        await service.SaveRollbackAnalysisAsync(analysis, "history:analysis");
-        await service.SaveRollbackAnalysisAsync(analysis, "history:analysis");
-
         var request = new RemediationRequest(
             Guid.NewGuid(), submission.Key, round.RoundNumber, Utc(2026, 8, 16, 10), round.Results);
         await service.OpenRemediationRequestAsync(
@@ -257,7 +247,6 @@ public sealed class ApplicationDataServiceTests
         Assert.NotNull(detail);
         Assert.Equal(ProcessPhase.Failed, detail.Release.Phase);
         Assert.Single(detail.EvaluationRounds);
-        Assert.Single(detail.RollbackAnalyses);
         Assert.Single(detail.RemediationRequests);
         Assert.Single(detail.RemediationSubmissions);
         Assert.Equal(replacement.Id, detail.CurrentEvidence[EvidenceKind.Test].Id);
@@ -266,7 +255,6 @@ public sealed class ApplicationDataServiceTests
 
         Assert.Equal(1, await context.EvaluationRounds.CountAsync());
         Assert.Equal(4, await context.BranchResults.CountAsync());
-        Assert.Equal(1, await context.RollbackAnalyses.CountAsync());
         Assert.Equal(1, await context.RemediationSubmissions.CountAsync());
         Assert.Equal(1, await context.WorkflowCorrelations.CountAsync());
     }
@@ -382,8 +370,7 @@ public sealed class ApplicationDataServiceTests
         Utc(2026, 8, 16, 8),
         null,
         false,
-        null,
-        "Drain traffic, deploy the previous version, and verify health.");
+        null);
 
     private static EvidenceRecord[] CreateEveryEvidence(ReleaseRevisionKey key) =>
     [
@@ -394,8 +381,7 @@ public sealed class ApplicationDataServiceTests
         new ChangeEvidenceRecord(
             Guid.NewGuid(), key, 1, Utc(2026, 8, 16, 8), null,
             true,
-            new UtcInterval(Utc(2026, 8, 17, 8), Utc(2026, 8, 17, 9)),
-            "Drain traffic, deploy the previous version, and verify health."),
+            new UtcInterval(Utc(2026, 8, 17, 8), Utc(2026, 8, 17, 9))),
         new DependencyEvidenceRecord(
             Guid.NewGuid(), key, 1, Utc(2026, 8, 16, 8), null,
             Utc(2026, 8, 16, 8),
@@ -445,7 +431,6 @@ public sealed class ApplicationDataServiceTests
                 source?.Id,
                 kind,
                 $"{check.ToString().ToLowerInvariant()}-policy/1",
-                check == ReadinessCheck.Change ? "rollback-analyzer/1" : null,
                 passed ? Utc(2026, 8, 17, 12 + (int)check) : null,
                 ["attempt-1"],
                 new Dictionary<string, string> { ["summary"] = outcome.ToString() },

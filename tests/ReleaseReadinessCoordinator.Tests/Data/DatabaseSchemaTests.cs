@@ -26,7 +26,6 @@ public sealed class DatabaseSchemaTests
                 "CurrentEvidence",
                 "EvaluationRounds",
                 "BranchResults",
-                "RollbackAnalyses",
                 "WorkflowRequests",
                 "RemediationSubmissions",
                 "DecisionSnapshots",

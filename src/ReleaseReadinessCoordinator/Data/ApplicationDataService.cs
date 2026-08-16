@@ -201,7 +201,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             [.. evidenceRows.Select(row => evidenceById[row.Id])],
             currentEvidence,
             await ReadEvaluationRounds(releaseRevision, cancellationToken),
-            await ReadRollbackAnalyses(evidenceRows, cancellationToken),
             await ReadRemediationRequests(releaseRevision, cancellationToken),
             await ReadRemediationSubmissions(releaseRevision, cancellationToken),
             await ReadDecisionSnapshots(releaseRevision, cancellationToken),
@@ -504,8 +503,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             new UtcInstant(row.RecordedAtUtc),
             row.SupersedesEvidenceId,
             payload.IsApproved,
-            ToInterval(payload.ApprovedWindow),
-            payload.RollbackPlan);
+            ToInterval(payload.ApprovedWindow));
 
     private static DependencyEvidenceRecord ToDependencyEvidence(
         EvidenceRecordRow row,
@@ -560,8 +558,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
                 item.IsApproved,
                 item.ApprovedWindow is null
                     ? null
-                    : new IntervalPayload(item.ApprovedWindow.Start.Value, item.ApprovedWindow.End.Value),
-                item.RollbackPlan),
+                    : new IntervalPayload(item.ApprovedWindow.Start.Value, item.ApprovedWindow.End.Value)),
             JsonOptions),
         DependencyEvidenceRecord item => JsonSerializer.Serialize(
             new DependencyEvidencePayload(
@@ -693,8 +690,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
 
     private sealed record ChangeEvidencePayload(
         bool? IsApproved,
-        IntervalPayload? ApprovedWindow,
-        string? RollbackPlan);
+        IntervalPayload? ApprovedWindow);
 
     private sealed record DependencyEvidencePayload(
         DateTimeOffset? ObservedAtUtc,

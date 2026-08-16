@@ -144,13 +144,11 @@ public sealed record ChangeEvidenceRecord : EvidenceRecord
         UtcInstant recordedAt,
         Guid? supersedesEvidenceId,
         bool? isApproved,
-        UtcInterval? approvedWindow,
-        string? rollbackPlan)
+        UtcInterval? approvedWindow)
         : base(id, releaseRevision, version, recordedAt, supersedesEvidenceId)
     {
         IsApproved = isApproved;
         ApprovedWindow = approvedWindow;
-        RollbackPlan = rollbackPlan?.Trim();
     }
 
     public override EvidenceKind Kind => EvidenceKind.Change;
@@ -158,8 +156,6 @@ public sealed record ChangeEvidenceRecord : EvidenceRecord
     public bool? IsApproved { get; }
 
     public UtcInterval? ApprovedWindow { get; }
-
-    public string? RollbackPlan { get; }
 }
 
 public sealed record DependencyState

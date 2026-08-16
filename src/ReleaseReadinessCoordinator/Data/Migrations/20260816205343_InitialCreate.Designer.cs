@@ -11,7 +11,7 @@ using ReleaseReadinessCoordinator.Data;
 namespace ReleaseReadinessCoordinator.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260816073351_InitialCreate")]
+    [Migration("20260816205343_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -24,9 +24,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AnalyzerVersion")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("AttemptsJson")
@@ -196,9 +193,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
 
                     b.Property<int>("Check")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("AnalyzerVersion")
-                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("BranchResultId")
                         .HasColumnType("TEXT");
@@ -486,43 +480,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                     b.ToTable("RemediationSubmissions", (string)null);
                 });
 
-            modelBuilder.Entity("ReleaseReadinessCoordinator.Data.RollbackAnalysisRow", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("AnalyzedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AnalyzerVersion")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("ChangeEvidenceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FindingsJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("OperationKey")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OperationKey")
-                        .IsUnique()
-                        .HasDatabaseName("UX_RollbackAnalyses_OperationKey");
-
-                    b.HasIndex("ChangeEvidenceId", "AnalyzerVersion")
-                        .IsUnique();
-
-                    b.ToTable("RollbackAnalyses", (string)null);
-                });
-
             modelBuilder.Entity("ReleaseReadinessCoordinator.Data.TimelineEntryRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -804,15 +761,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                     b.HasOne("ReleaseReadinessCoordinator.Data.WorkflowRequestRow", null)
                         .WithMany()
                         .HasForeignKey("RequestId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ReleaseReadinessCoordinator.Data.RollbackAnalysisRow", b =>
-                {
-                    b.HasOne("ReleaseReadinessCoordinator.Data.EvidenceRecordRow", null)
-                        .WithMany()
-                        .HasForeignKey("ChangeEvidenceId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

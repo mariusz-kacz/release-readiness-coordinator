@@ -13,7 +13,6 @@ internal static class EntityConfiguration
         ConfigureCurrentEvidence(modelBuilder.Entity<CurrentEvidenceRow>());
         ConfigureEvaluationRound(modelBuilder.Entity<EvaluationRoundRow>());
         ConfigureBranchResult(modelBuilder.Entity<BranchResultRow>());
-        ConfigureRollbackAnalysis(modelBuilder.Entity<RollbackAnalysisRow>());
         ConfigureWorkflowRequest(modelBuilder.Entity<WorkflowRequestRow>());
         ConfigureRemediationSubmission(modelBuilder.Entity<RemediationSubmissionRow>());
         ConfigureDecisionSnapshot(modelBuilder.Entity<DecisionSnapshotRow>());
@@ -140,19 +139,6 @@ internal static class EntityConfiguration
             .HasForeignKey(row => row.ReuseSourceResultId)
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureOperationKey(builder, "UX_BranchResults_OperationKey");
-        MakeAllPropertiesImmutable(builder);
-    }
-
-    private static void ConfigureRollbackAnalysis(EntityTypeBuilder<RollbackAnalysisRow> builder)
-    {
-        builder.ToTable("RollbackAnalyses");
-        builder.HasKey(row => row.Id);
-        builder.HasIndex(row => new { row.ChangeEvidenceId, row.AnalyzerVersion }).IsUnique();
-        builder.HasOne<EvidenceRecordRow>()
-            .WithMany()
-            .HasForeignKey(row => row.ChangeEvidenceId)
-            .OnDelete(DeleteBehavior.Restrict);
-        ConfigureOperationKey(builder, "UX_RollbackAnalyses_OperationKey");
         MakeAllPropertiesImmutable(builder);
     }
 

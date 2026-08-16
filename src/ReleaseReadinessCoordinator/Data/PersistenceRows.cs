@@ -69,22 +69,11 @@ internal sealed class BranchResultRow : IOperationRow
     public Guid? EvidenceId { get; set; }
     public EvidenceKind EvidenceKind { get; set; }
     public string PolicyVersion { get; set; } = null!;
-    public string? AnalyzerVersion { get; set; }
     public DateTimeOffset? ValidUntilUtc { get; set; }
     public string AttemptsJson { get; set; } = null!;
     public string FindingsJson { get; set; } = null!;
     public Guid? ReuseSourceResultId { get; set; }
     public int? ReuseSourceRound { get; set; }
-    public string OperationKey { get; set; } = null!;
-}
-
-internal sealed class RollbackAnalysisRow : IOperationRow
-{
-    public Guid Id { get; set; }
-    public Guid ChangeEvidenceId { get; set; }
-    public string AnalyzerVersion { get; set; } = null!;
-    public string FindingsJson { get; set; } = null!;
-    public DateTimeOffset AnalyzedAtUtc { get; set; }
     public string OperationKey { get; set; } = null!;
 }
 
@@ -134,7 +123,6 @@ internal sealed class DecisionSnapshotSourceRow
     public Guid BranchResultId { get; set; }
     public Guid EvidenceId { get; set; }
     public string PolicyVersion { get; set; } = null!;
-    public string? AnalyzerVersion { get; set; }
 }
 
 internal sealed class HumanResponseRow : IOperationRow

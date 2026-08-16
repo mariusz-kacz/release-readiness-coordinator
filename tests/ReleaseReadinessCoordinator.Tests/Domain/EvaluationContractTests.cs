@@ -136,7 +136,6 @@ public sealed class EvaluationContractTests
             evidenceId,
             EvidenceKindFor(check),
             policyVersion: $"{check.ToString().ToLowerInvariant()}-policy/1",
-            analyzerVersion: check is ReadinessCheck.Change ? "rollback-analyzer/1" : null,
             validUntil,
             attempts: ["Evidence evaluated."],
             findings: new Dictionary<string, string> { ["ready"] = "The deterministic policy passed." },

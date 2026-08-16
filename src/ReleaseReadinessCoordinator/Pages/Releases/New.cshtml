@@ -1,0 +1,122 @@
+@page
+@model ReleaseReadinessCoordinator.Pages.Releases.NewModel
+@{
+    ViewData["Title"] = "Submit release";
+}
+
+<h1>Submit release</h1>
+
+<p>Load a local fixture, review the values, then submit it as a new immutable release revision.</p>
+<div class="mb-4 d-flex flex-wrap gap-2">
+    @foreach (var fixture in Model.Fixtures)
+    {
+        <a class="btn btn-outline-secondary" asp-page="/Releases/New" asp-route-fixture="@fixture.Key">
+            Load @fixture.Name
+        </a>
+    }
+</div>
+
+<form method="post">
+    <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+    <p><span class="text-danger" aria-hidden="true">*</span> Required release metadata fields must be completed.</p>
+
+    <fieldset class="mb-4">
+        <legend>Immutable release metadata</legend>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label asp-for="Input.ReleaseId" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
+                <input asp-for="Input.ReleaseId" class="form-control" aria-required="true" />
+                <span asp-validation-for="Input.ReleaseId" class="text-danger"></span>
+            </div>
+            <div class="col-md-2">
+                <label asp-for="Input.Revision" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
+                <input asp-for="Input.Revision" class="form-control" aria-required="true" />
+                <span asp-validation-for="Input.Revision" class="text-danger"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Input.ServiceName" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
+                <input asp-for="Input.ServiceName" class="form-control" aria-required="true" />
+                <span asp-validation-for="Input.ServiceName" class="text-danger"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Input.ReleaseVersion" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
+                <input asp-for="Input.ReleaseVersion" class="form-control" aria-required="true" />
+                <span asp-validation-for="Input.ReleaseVersion" class="text-danger"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Input.DeploymentWindowStart" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
+                <input asp-for="Input.DeploymentWindowStart" class="form-control" aria-required="true" />
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Input.DeploymentWindowEnd" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
+                <input asp-for="Input.DeploymentWindowEnd" class="form-control" aria-required="true" />
+            </div>
+            <div class="col-12">
+                <label asp-for="Input.DependencyRequirements" class="form-label"></label> <span class="text-danger" aria-hidden="true">*</span>
+                <textarea asp-for="Input.DependencyRequirements" class="form-control" rows="2" aria-required="true"></textarea>
+                <div class="form-text">One required dependency per line: <code>name=version requirement</code>.</div>
+                <span asp-validation-for="Input.DependencyRequirements" class="text-danger"></span>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset class="mb-4 border rounded p-3">
+        <legend class="float-none w-auto px-2 fs-5">Test evidence</legend>
+        <div class="form-check mb-3">
+            <input asp-for="Input.IncludeTestEvidence" class="form-check-input" />
+            <label asp-for="Input.IncludeTestEvidence" class="form-check-label">Supply initial Test evidence</label>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-4"><label asp-for="Input.TestRunVersion" class="form-label"></label><input asp-for="Input.TestRunVersion" class="form-control" /></div>
+            <div class="col-md-4"><label asp-for="Input.TestCompletedAt" class="form-label"></label><input asp-for="Input.TestCompletedAt" class="form-control" /></div>
+            <div class="col-md-4"><label asp-for="Input.TestPassRatePercent" class="form-label"></label><input asp-for="Input.TestPassRatePercent" class="form-control" /></div>
+            <div class="col-12"><label asp-for="Input.CriticalSuiteFailures" class="form-label"></label><textarea asp-for="Input.CriticalSuiteFailures" class="form-control" rows="2"></textarea><div class="form-text">Comma-separated suite names; leave blank for none.</div></div>
+        </div>
+    </fieldset>
+
+    <fieldset class="mb-4 border rounded p-3">
+        <legend class="float-none w-auto px-2 fs-5">Security evidence</legend>
+        <div class="form-check mb-3">
+            <input asp-for="Input.IncludeSecurityEvidence" class="form-check-input" />
+            <label asp-for="Input.IncludeSecurityEvidence" class="form-check-label">Supply initial Security evidence</label>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-6"><label asp-for="Input.SecurityScanVersion" class="form-label"></label><input asp-for="Input.SecurityScanVersion" class="form-control" /></div>
+            <div class="col-md-6"><label asp-for="Input.SecurityScannedAt" class="form-label"></label><input asp-for="Input.SecurityScannedAt" class="form-control" /></div>
+            <div class="col-md-6"><label asp-for="Input.CriticalFindingIds" class="form-label"></label><textarea asp-for="Input.CriticalFindingIds" class="form-control" rows="2"></textarea><div class="form-text">Comma-separated IDs.</div></div>
+            <div class="col-md-6"><label asp-for="Input.HighFindingIds" class="form-label"></label><textarea asp-for="Input.HighFindingIds" class="form-control" rows="2"></textarea><div class="form-text">Comma-separated IDs.</div></div>
+            <div class="col-12"><label asp-for="Input.SecurityExceptions" class="form-label"></label><textarea asp-for="Input.SecurityExceptions" class="form-control" rows="2"></textarea><div class="form-text">One per line: <code>finding-id|scope|expiry-with-offset</code>.</div></div>
+        </div>
+    </fieldset>
+
+    <fieldset class="mb-4 border rounded p-3">
+        <legend class="float-none w-auto px-2 fs-5">Change evidence</legend>
+        <div class="form-check mb-3">
+            <input asp-for="Input.IncludeChangeEvidence" class="form-check-input" />
+            <label asp-for="Input.IncludeChangeEvidence" class="form-check-label">Supply initial Change evidence</label>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-4 form-check ms-2 mt-5"><input asp-for="Input.ChangeApproved" class="form-check-input" /><label asp-for="Input.ChangeApproved" class="form-check-label"></label></div>
+            <div class="col-md-4"><label asp-for="Input.ChangeWindowStart" class="form-label"></label><input asp-for="Input.ChangeWindowStart" class="form-control" /></div>
+            <div class="col-md-4"><label asp-for="Input.ChangeWindowEnd" class="form-label"></label><input asp-for="Input.ChangeWindowEnd" class="form-control" /></div>
+        </div>
+    </fieldset>
+
+    <fieldset class="mb-4 border rounded p-3">
+        <legend class="float-none w-auto px-2 fs-5">Dependency evidence</legend>
+        <div class="form-check mb-3">
+            <input asp-for="Input.IncludeDependencyEvidence" class="form-check-input" />
+            <label asp-for="Input.IncludeDependencyEvidence" class="form-check-label">Supply initial Dependency evidence</label>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-6"><label asp-for="Input.DependencyObservedAt" class="form-label"></label><input asp-for="Input.DependencyObservedAt" class="form-control" /></div>
+            <div class="col-12"><label asp-for="Input.DependencyStates" class="form-label"></label><textarea asp-for="Input.DependencyStates" class="form-control" rows="3"></textarea><div class="form-text">One per line: <code>name|available-version|available-start|available-end|maintenance-start|maintenance-end</code>. Leave both interval values blank to omit that interval.</div></div>
+        </div>
+    </fieldset>
+
+    <button type="submit" class="btn btn-primary">Submit and start workflow</button>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -23,11 +23,6 @@ public interface IApplicationDataService
         string operationKey,
         CancellationToken cancellationToken = default);
 
-    Task<RollbackAnalysisRecord> SaveRollbackAnalysisAsync(
-        RollbackAnalysisRecord analysis,
-        string operationKey,
-        CancellationToken cancellationToken = default);
-
     Task<RemediationRequest> OpenRemediationRequestAsync(
         RemediationRequest request,
         TimelineEntry timelineEntry,

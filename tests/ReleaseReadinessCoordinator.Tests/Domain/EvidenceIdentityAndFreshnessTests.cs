@@ -121,8 +121,7 @@ public sealed class FreshnessTests
         var evidence = new ChangeEvidenceRecord(
             Guid.NewGuid(), Revision(), 1, ObservedAt, null,
             isApproved: true,
-            new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11)),
-            "Restore the previous application package.");
+            new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11)));
 
         Assert.Throws<ArgumentException>(() => FreshnessDeadlines.Calculate(evidence));
     }

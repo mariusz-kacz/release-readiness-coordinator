@@ -2,7 +2,7 @@
 
 ## Overview
 
-Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed four-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, one tightly bounded `IChatClient` rollback analyser, and a minimal server-rendered UI. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
+Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed four-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, and a minimal server-rendered UI. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
 
 ## Planning Basis
 
@@ -32,10 +32,9 @@ Official references:
   - `/Releases/{releaseId}/{revision}/Decision`
 - One bounded application data service uses EF Core directly. There are no generic repositories, CQRS layers, event sourcing, workers, queues, or additional deployables.
 - Built-in `TimeProvider` is injected for all time-sensitive logic.
-- Release metadata is immutable within a revision. Remediation replaces only immutable/versioned branch evidence, rollback text belongs to Change evidence, and planner reuse compares current evidence IDs, evaluator versions, and `ValidUntil` deadlines.
-- Policy versions and `AnalyzerVersion` are code-owned constants. Initial identifiers use explicit semantic strings such as `test-policy/1` and `rollback-analyzer/1`.
+- Release metadata is immutable within a revision. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs, policy versions, and `ValidUntil` deadlines.
+- Policy versions are code-owned constants. Initial identifiers use explicit semantic strings such as `test-policy/1`.
 - Local simulated providers implement typed evidence-source contracts. Only known typed transient failures receive one initial attempt plus two immediate retries.
-- The LLM integration consumes an injected `IChatClient`; deterministic fakes/recorded responses are used in normal tests. Provider-specific registration remains a documented composition choice after the owner identifies the available provider/deployment.
 - SQLite stores immutable/versioned business records and an append-only timeline. MAF checkpoints live under a configurable private application-data directory that is excluded from source control.
 - Stable operation keys make replayed SQLite writes idempotent. A single application-lifetime checkpoint store is protected by an async critical section.
 
@@ -59,7 +58,7 @@ flowchart TD
     I --> J[Decision snapshot and response integrity]
     J --> K[Restart recovery and reconciliation]
     K --> L[Razor Pages interactions]
-    L --> M[Workflow, LLM, and browser evaluation]
+    L --> M[Workflow and browser evaluation]
     M --> N[Documentation and final acceptance]
 ```
 
@@ -103,30 +102,29 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 3: Submission and Four Readiness Slices
 
-- [ ] Task 10: Deliver release submission and demo fixtures
+- [x] Task 10: Deliver release submission and demo fixtures
 - [ ] Task 11: Deliver the Test readiness slice
 - [ ] Task 12: Deliver the Security readiness slice
 
 ### Checkpoint C1: Submission and First Policies
 
-- [ ] A release can be submitted once and starts a correlated workflow
+- [x] A release can be submitted once and starts a correlated workflow
 - [ ] Test and Security boundaries/outcome mappings are verified
 
-- [ ] Task 13: Deliver validated and cached rollback analysis
-- [ ] Task 14: Deliver the Change readiness slice
-- [ ] Task 15: Deliver the Dependency readiness slice
+- [ ] Task 13: Deliver the Change readiness slice
+- [ ] Task 14: Deliver the Dependency readiness slice
 
 ### Checkpoint C2: Deterministic Readiness
 
 - [ ] Every branch maps missing, blocked, transient, and passing outcomes correctly
 - [ ] Retry count and classification are proven
-- [ ] The LLM can only produce validated rollback findings; C# owns readiness
+- [ ] Change readiness uses approval, window, and rollback-text presence only
 
 ### Phase 4: Selective Workflow and Human Integrity
 
-- [ ] Task 16: Implement selective execution and safe reuse planning
-- [ ] Task 17: Complete aggregation and remediation resumption
-- [ ] Task 18: Build immutable snapshots and handle human decisions
+- [ ] Task 15: Implement selective execution and safe reuse planning
+- [ ] Task 16: Complete aggregation and remediation resumption
+- [ ] Task 17: Build immutable snapshots and handle human decisions
 
 ### Checkpoint D: Core End-to-End Workflow
 
@@ -137,16 +135,16 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 5: Recovery and Minimal Razor UI
 
-- [ ] Task 19: Add restart recovery, synchronization, and reconciliation
-- [ ] Task 20: Build release detail and timeline UI
+- [ ] Task 18: Add restart recovery, synchronization, and reconciliation
+- [ ] Task 19: Build release detail and timeline UI
 
 ### Checkpoint E1: Recovery and Read Model
 
 - [ ] Stop/restart/resume works for remediation and approval waits
 - [ ] The detail page explains current state and immutable history
 
-- [ ] Task 21: Build remediation interaction UI
-- [ ] Task 22: Build decision interaction UI
+- [ ] Task 20: Build remediation interaction UI
+- [ ] Task 21: Build decision interaction UI
 
 ### Checkpoint E2: Demonstrable MVP
 
@@ -155,22 +153,21 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 6: Evaluation and Delivery
 
-- [ ] Task 23: Complete real-graph workflow scenario coverage
-- [ ] Task 24: Add the curated rollback-analysis evaluation corpus
-- [ ] Task 25: Add minimal browser smoke coverage
+- [ ] Task 22: Complete real-graph workflow scenario coverage
+- [ ] Task 23: Add minimal browser smoke coverage
 
 ### Checkpoint F1: Evaluation
 
-- [ ] Required workflow, LLM, and browser scenarios pass
+- [ ] Required workflow and browser scenarios pass
 - [ ] Test evidence covers orchestration risks and both user journeys
 
-- [ ] Task 26: Finish documentation, full verification, and spec audit
+- [ ] Task 24: Finish documentation, full verification, and spec audit
 
 ### Checkpoint F2: Complete
 
 - [ ] All 13 MVP acceptance criteria in `SPEC.md` are demonstrated
 - [ ] Restore, build, tests, formatting, runtime checks, and browser checks pass
-- [ ] No prohibited architecture or LLM authority has been introduced
+- [ ] No prohibited architecture has been introduced
 - [ ] Complete diff is reviewed and residual risks/unrun checks are reported
 - [ ] Human review approves implementation readiness
 
@@ -180,18 +177,15 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 |---|---|---|
 | MAF 1.17.0 APIs differ from current documentation examples | High | Tasks 2-3 compile and execute version-pinned topology, request, checkpoint, and stable-ID probes before domain implementation. Any conflict is reported; the version is never changed silently. |
 | SQLite writes and filesystem checkpoints cannot be atomic | High | Use stable operation keys, unique constraints, replay-safe upserts, correlation verification, and explicit reconciliation tests. |
-| Reuse accidentally calls providers, policies, or the analyser | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
+| Reuse accidentally calls providers or policies | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
 | Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate revision without adding supersession/cancellation behavior to the MVP. |
 | A stale human response is accepted | High | Bind responses to request ID, snapshot ID, concurrency token, current evidence IDs, evaluator versions, and deadlines; persist declined responses with bounded reason codes. |
-| LLM output invents or misquotes rollback evidence | High | Strict schema/item allowlist, exact substring/offset checks, abstention rules, recorded adversarial corpus, and deterministic Change policy. |
 | Mutable release/evidence data erases audit history | Medium | Append immutable/versioned records and expose current projections without updating historical facts. |
 | Checkpoint store is accessed concurrently or from multiple instances | Medium | Register one application-lifetime store, guard all start/resume access, document the single-process constraint, and test concurrent response handling. |
-| Provider choice delays LLM integration | Medium | Build against `IChatClient`, use deterministic test doubles for normal development, and isolate provider-specific composition to one registration point. |
 | UI scope expands beyond the portfolio MVP | Medium | Implement only four Razor routes, PRG interactions, manual refresh, and the exact fields/views in `SPEC.md`. |
 
 ## Open Questions
 
-- Which concrete `IChatClient` provider, model/deployment, endpoint configuration, and credential mechanism is available to the owner? This must be decided before wiring the optional credentialed smoke path; it does not block deterministic implementation or tests.
 - Does the owner prefer any visual styling beyond accessible semantic HTML and a small local stylesheet? The default plan is deliberately minimal.
 
 No other architectural decisions are reopened by this plan. A discovered conflict with MAF 1.17.0, a new package outside the specification, or a change to public/persisted contracts must be brought to the owner before implementation proceeds.

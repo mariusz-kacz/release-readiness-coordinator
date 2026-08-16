@@ -55,49 +55,6 @@ public sealed partial class ApplicationDataService
             cancellationToken);
     }
 
-    public Task<RollbackAnalysisRecord> SaveRollbackAnalysisAsync(
-        RollbackAnalysisRecord analysis,
-        string operationKey,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(analysis);
-        ArgumentNullException.ThrowIfNull(analysis.Findings);
-        if (analysis.Id == Guid.Empty
-            || analysis.ChangeEvidenceId == Guid.Empty
-            || string.IsNullOrWhiteSpace(analysis.AnalyzerVersion))
-        {
-            throw new ArgumentException(
-                "A rollback analysis requires IDs and a non-empty analyzer version.",
-                nameof(analysis));
-        }
-
-        operationKey = RequireOperationKey(operationKey);
-        return ExecuteIdempotentAsync(
-            async token =>
-            {
-                var row = await FindOperationAsync(
-                    _dbContext.RollbackAnalyses, operationKey, analysis.Id, value => value.Id, token);
-                return row is null ? null : ToDomain(row);
-            },
-            async token =>
-            {
-                var isChangeEvidence = await _dbContext.EvidenceRecords.AsNoTracking().AnyAsync(
-                    value => value.Id == analysis.ChangeEvidenceId && value.Kind == EvidenceKind.Change,
-                    token);
-                if (!isChangeEvidence)
-                {
-                    throw Conflict(
-                        ApplicationDataConflictKind.InvalidState,
-                        "A rollback analysis must reference persisted Change evidence.");
-                }
-
-                _dbContext.RollbackAnalyses.Add(ToRow(analysis, operationKey));
-                return analysis;
-            },
-            _ => InvalidConflict("The rollback analysis conflicted with durable state."),
-            cancellationToken);
-    }
-
     public Task<RemediationRequest> OpenRemediationRequestAsync(
         RemediationRequest request,
         TimelineEntry timelineEntry,
@@ -526,7 +483,6 @@ public sealed partial class ApplicationDataService
         EvidenceId = result.EvidenceId,
         EvidenceKind = result.EvidenceKind,
         PolicyVersion = result.PolicyVersion,
-        AnalyzerVersion = result.AnalyzerVersion,
         ValidUntilUtc = result.ValidUntil?.Value,
         AttemptsJson = JsonSerializer.Serialize(result.Attempts, JsonOptions),
         FindingsJson = SerializeDictionary(result.Findings),
@@ -547,7 +503,6 @@ public sealed partial class ApplicationDataService
         row.EvidenceId,
         row.EvidenceKind,
         row.PolicyVersion,
-        row.AnalyzerVersion,
         ToInstant(row.ValidUntilUtc),
         Deserialize<string[]>(row.AttemptsJson),
         DeserializeDictionary(row.FindingsJson),
@@ -584,35 +539,6 @@ public sealed partial class ApplicationDataService
         }
 
         return [.. rounds];
-    }
-
-    private static RollbackAnalysisRow ToRow(RollbackAnalysisRecord analysis, string operationKey) => new()
-    {
-        Id = analysis.Id,
-        ChangeEvidenceId = analysis.ChangeEvidenceId,
-        AnalyzerVersion = analysis.AnalyzerVersion,
-        FindingsJson = SerializeDictionary(analysis.Findings),
-        AnalyzedAtUtc = analysis.AnalyzedAt.Value,
-        OperationKey = operationKey,
-    };
-
-    private static RollbackAnalysisRecord ToDomain(RollbackAnalysisRow row) => new(
-        row.Id,
-        row.ChangeEvidenceId,
-        row.AnalyzerVersion,
-        DeserializeDictionary(row.FindingsJson).ToImmutableDictionary(StringComparer.Ordinal),
-        new UtcInstant(row.AnalyzedAtUtc));
-
-    private async Task<ImmutableArray<RollbackAnalysisRecord>> ReadRollbackAnalyses(
-        IReadOnlyCollection<EvidenceRecordRow> evidenceRows,
-        CancellationToken token)
-    {
-        var ids = evidenceRows.Where(value => value.Kind == EvidenceKind.Change).Select(value => value.Id).ToArray();
-        return [.. (await _dbContext.RollbackAnalyses.AsNoTracking()
-            .Where(value => ids.Contains(value.ChangeEvidenceId))
-            .ToListAsync(token))
-            .OrderBy(value => value.AnalyzedAtUtc)
-            .Select(ToDomain)];
     }
 
     private static WorkflowRequestRow ToRow(RemediationRequest request, Guid roundId, string operationKey) => new()
@@ -682,7 +608,6 @@ public sealed partial class ApplicationDataService
         BranchResultId = source.Id,
         EvidenceId = source.EvidenceId!.Value,
         PolicyVersion = source.PolicyVersion,
-        AnalyzerVersion = source.AnalyzerVersion,
     };
 
     private static WorkflowRequestRow ToRow(HumanDecisionRequest request, string operationKey) => new()

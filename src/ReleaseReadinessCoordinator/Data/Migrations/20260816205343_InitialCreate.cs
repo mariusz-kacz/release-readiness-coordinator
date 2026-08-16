@@ -188,7 +188,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                     EvidenceId = table.Column<Guid>(type: "TEXT", nullable: true),
                     EvidenceKind = table.Column<int>(type: "INTEGER", nullable: false),
                     PolicyVersion = table.Column<string>(type: "TEXT", nullable: false),
-                    AnalyzerVersion = table.Column<string>(type: "TEXT", nullable: true),
                     ValidUntilUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
                     AttemptsJson = table.Column<string>(type: "TEXT", nullable: false),
                     FindingsJson = table.Column<string>(type: "TEXT", nullable: false),
@@ -248,28 +247,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "RollbackAnalyses",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    ChangeEvidenceId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    AnalyzerVersion = table.Column<string>(type: "TEXT", nullable: false),
-                    FindingsJson = table.Column<string>(type: "TEXT", nullable: false),
-                    AnalyzedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    OperationKey = table.Column<string>(type: "TEXT", maxLength: 300, nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_RollbackAnalyses", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_RollbackAnalyses_EvidenceRecords_ChangeEvidenceId",
-                        column: x => x.ChangeEvidenceId,
-                        principalTable: "EvidenceRecords",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "WorkflowRequests",
                 columns: table => new
                 {
@@ -317,8 +294,7 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                     Check = table.Column<int>(type: "INTEGER", nullable: false),
                     BranchResultId = table.Column<Guid>(type: "TEXT", nullable: false),
                     EvidenceId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    PolicyVersion = table.Column<string>(type: "TEXT", nullable: false),
-                    AnalyzerVersion = table.Column<string>(type: "TEXT", nullable: true)
+                    PolicyVersion = table.Column<string>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -544,18 +520,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_RollbackAnalyses_ChangeEvidenceId_AnalyzerVersion",
-                table: "RollbackAnalyses",
-                columns: new[] { "ChangeEvidenceId", "AnalyzerVersion" },
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "UX_RollbackAnalyses_OperationKey",
-                table: "RollbackAnalyses",
-                column: "OperationKey",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
                 name: "IX_TimelineEntries_ReleaseId_Revision_Sequence",
                 table: "TimelineEntries",
                 columns: new[] { "ReleaseId", "Revision", "Sequence" },
@@ -623,9 +587,6 @@ namespace ReleaseReadinessCoordinator.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "RemediationSubmissions");
-
-            migrationBuilder.DropTable(
-                name: "RollbackAnalyses");
 
             migrationBuilder.DropTable(
                 name: "TimelineEntries");

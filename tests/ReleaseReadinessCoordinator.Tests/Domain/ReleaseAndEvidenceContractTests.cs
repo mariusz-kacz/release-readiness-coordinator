@@ -8,7 +8,7 @@ public sealed class ReleaseAndEvidenceContractTests
     private static readonly UtcInstant RecordedAt = Utc(2026, 8, 14, 8);
 
     [Fact]
-    public void Release_metadata_excludes_rollback_text_and_change_evidence_owns_it()
+    public void Change_evidence_contains_approval_and_approved_window()
     {
         var dependencies = new Dictionary<string, string> { ["orders-api"] = "5.x" };
         var submission = new ReleaseSubmission(
@@ -27,14 +27,14 @@ public sealed class ReleaseAndEvidenceContractTests
             RecordedAt,
             previousEvidenceId,
             isApproved: true,
-            new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11)),
-            "  Restore the previous application package.  ");
+            new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11)));
 
         dependencies["orders-api"] = "mutated";
 
-        Assert.Null(typeof(ReleaseSubmission).GetProperty("RollbackPlan"));
         Assert.Equal("5.x", submission.DependencyRequirements["orders-api"]);
-        Assert.Equal("Restore the previous application package.", evidence.RollbackPlan);
+        Assert.True(evidence.IsApproved);
+        Assert.Equal(Utc(2026, 8, 14, 9), evidence.ApprovedWindow?.Start);
+        Assert.Equal(Utc(2026, 8, 14, 11), evidence.ApprovedWindow?.End);
         Assert.Equal(evidenceId, evidence.Id);
         Assert.Equal(2, evidence.Version);
         Assert.Equal(previousEvidenceId, evidence.SupersedesEvidenceId);

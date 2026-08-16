@@ -1,0 +1,22 @@
+@page "/Releases/{releaseId}/{revision:int}"
+@model ReleaseReadinessCoordinator.Pages.Releases.DetailModel
+@{
+    ViewData["Title"] = "Release detail";
+}
+
+<h1>@Model.Detail.Release.Submission.Key.ReleaseId revision @Model.Detail.Release.Submission.Key.Revision</h1>
+
+<dl class="row">
+    <dt class="col-sm-3">Service</dt>
+    <dd class="col-sm-9">@Model.Detail.Release.Submission.ServiceName</dd>
+    <dt class="col-sm-3">Release version</dt>
+    <dd class="col-sm-9">@Model.Detail.Release.Submission.ReleaseVersion</dd>
+    <dt class="col-sm-3">Process phase</dt>
+    <dd class="col-sm-9">@Model.Detail.Release.Phase</dd>
+    <dt class="col-sm-3">Current evidence</dt>
+    <dd class="col-sm-9">@Model.Detail.CurrentEvidence.Count of 4 categories supplied</dd>
+    <dt class="col-sm-3">Workflow wait</dt>
+    <dd class="col-sm-9">@(Model.Detail.WorkflowCorrelation?.PendingRequestKind.ToString() ?? "Not correlated")</dd>
+</dl>
+
+<a asp-page="/Releases/New">Submit another release revision</a>

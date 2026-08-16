@@ -75,8 +75,7 @@ public sealed class DomainInvariantTests
             new ChangeEvidenceRecord(
                 Guid.NewGuid(), RevisionKey, 1, SubmittedAt, null,
                 isApproved: true,
-                new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11)),
-                "Restore the previous application package."),
+                new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11))),
             new DependencyEvidenceRecord(
                 Guid.NewGuid(), RevisionKey, 1, SubmittedAt, null,
                 Utc(2026, 8, 14, 7),
@@ -277,7 +276,6 @@ public sealed class DomainInvariantTests
             evidenceId: Guid.NewGuid(),
             evidenceKind,
             policyVersion: $"{check.ToString().ToLowerInvariant()}-policy/1",
-            analyzerVersion: check is ReadinessCheck.Change ? "rollback-analyzer/1" : null,
             validUntil: outcome is BranchOutcome.Passed ? Utc(2026, 8, 15, 8) : null,
             attempts: ["Evidence evaluated."],
             findings: new Dictionary<string, string> { ["ready"] = "The deterministic policy passed." },

@@ -15,8 +15,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     internal DbSet<BranchResultRow> BranchResults => Set<BranchResultRow>();
 
-    internal DbSet<RollbackAnalysisRow> RollbackAnalyses => Set<RollbackAnalysisRow>();
-
     internal DbSet<WorkflowRequestRow> WorkflowRequests => Set<WorkflowRequestRow>();
 
     internal DbSet<RemediationSubmissionRow> RemediationSubmissions => Set<RemediationSubmissionRow>();
