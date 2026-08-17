@@ -79,7 +79,6 @@ public enum ApplicationDataConflictKind
     DuplicateReleaseRevision = 1,
     OperationKeyReused = 2,
     TerminalRelease = 3,
-    ConcurrentModification = 4,
     InvalidState = 5,
 }
 
@@ -87,15 +86,6 @@ public sealed class ApplicationDataConflictException : InvalidOperationException
 {
     public ApplicationDataConflictException(ApplicationDataConflictKind kind, string message)
         : base(message)
-    {
-        Kind = kind;
-    }
-
-    public ApplicationDataConflictException(
-        ApplicationDataConflictKind kind,
-        string message,
-        Exception innerException)
-        : base(message, innerException)
     {
         Kind = kind;
     }

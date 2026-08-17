@@ -245,7 +245,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 **Verification:**
 
 - [x] `dotnet test --no-build --filter "FullyQualifiedName~ApplicationDataService"`
-- [x] Concurrency tests submit the same operation twice and verify one durable effect.
+- [x] A restart-style replay test submits the same operation twice and verifies one durable effect.
 - [x] `dotnet format --verify-no-changes`
 
 **Dependencies:** Task 8

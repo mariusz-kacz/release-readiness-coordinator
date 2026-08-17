@@ -18,7 +18,7 @@ public sealed partial class ApplicationDataService
         operationKey = RequireOperationKey(operationKey);
         ValidateTimeline(timelineEntry, round.ReleaseRevision, TimelineEntryKind.EvaluationCompleted);
 
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await FindOperationAsync(
@@ -51,7 +51,6 @@ public sealed partial class ApplicationDataService
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, TimelineOperationKey(operationKey)));
                 return round;
             },
-            _ => InvalidConflict("The evaluation round conflicted with durable state."),
             cancellationToken);
     }
 
@@ -66,7 +65,7 @@ public sealed partial class ApplicationDataService
         operationKey = RequireOperationKey(operationKey);
         ValidateTimeline(timelineEntry, request.ReleaseRevision, TimelineEntryKind.RemediationRequested);
 
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await FindOperationAsync(
@@ -97,7 +96,6 @@ public sealed partial class ApplicationDataService
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, TimelineOperationKey(operationKey)));
                 return request;
             },
-            _ => InvalidConflict("The remediation request conflicted with durable state."),
             cancellationToken);
     }
 
@@ -121,7 +119,7 @@ public sealed partial class ApplicationDataService
             throw new ArgumentException("Remediation evidence replacements must match the submission update map.", nameof(evidenceReplacements));
         }
 
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await FindOperationAsync(
@@ -166,7 +164,6 @@ public sealed partial class ApplicationDataService
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, TimelineOperationKey(operationKey)));
                 return submission;
             },
-            _ => InvalidConflict("The remediation submission conflicted with durable state."),
             cancellationToken);
     }
 
@@ -187,7 +184,7 @@ public sealed partial class ApplicationDataService
             throw new ArgumentException("The approval request must reference the supplied snapshot.", nameof(request));
         }
 
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await FindOperationAsync(
@@ -232,7 +229,6 @@ public sealed partial class ApplicationDataService
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, TimelineOperationKey(operationKey)));
                 return request;
             },
-            _ => InvalidConflict("The human decision request conflicted with durable state."),
             cancellationToken);
     }
 
@@ -259,7 +255,7 @@ public sealed partial class ApplicationDataService
             : TimelineEntryKind.HumanResponseDeclined;
         ValidateTimeline(timelineEntry, releaseRevision, requiredKind);
 
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await FindOperationAsync(
@@ -300,7 +296,6 @@ public sealed partial class ApplicationDataService
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, TimelineOperationKey(operationKey)));
                 return new PersistedHumanResponse(releaseRevision, response, validation);
             },
-            _ => InvalidConflict("The human response conflicted with durable state."),
             cancellationToken);
     }
 
@@ -311,7 +306,7 @@ public sealed partial class ApplicationDataService
     {
         ArgumentNullException.ThrowIfNull(correlation);
         operationKey = RequireOperationKey(operationKey);
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await _dbContext.WorkflowCorrelations.AsNoTracking()
@@ -346,7 +341,6 @@ public sealed partial class ApplicationDataService
 
                 return correlation;
             },
-            _ => InvalidConflict("The workflow correlation conflicted with durable state."),
             cancellationToken);
     }
 
@@ -361,7 +355,7 @@ public sealed partial class ApplicationDataService
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
         ValidateTimeline(timelineEntry, releaseRevision, TimelineEntryKind.WorkflowFailed);
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await _dbContext.TimelineEntries.AsNoTracking()
@@ -383,7 +377,6 @@ public sealed partial class ApplicationDataService
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, operationKey));
                 return ToDomain(release);
             },
-            _ => InvalidConflict("The workflow failure conflicted with durable state."),
             cancellationToken);
     }
 
@@ -394,7 +387,7 @@ public sealed partial class ApplicationDataService
     {
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await _dbContext.TimelineEntries.AsNoTracking()
@@ -412,12 +405,8 @@ public sealed partial class ApplicationDataService
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, operationKey));
                 return timelineEntry;
             },
-            _ => InvalidConflict("The timeline append conflicted with durable state."),
             cancellationToken);
     }
-
-    private static Task<ApplicationDataConflictException> InvalidConflict(string message) =>
-        Task.FromResult(Conflict(ApplicationDataConflictKind.InvalidState, message));
 
     private static void EnsureSameRecord(Guid persistedId, Guid expectedId, string operationKey)
     {

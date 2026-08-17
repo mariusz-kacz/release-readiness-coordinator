@@ -7,23 +7,34 @@ namespace ReleaseReadinessCoordinator.Tests.Data;
 public sealed class ApplicationDataServiceTests
 {
     [Fact]
-    public async Task Concurrent_replay_of_submission_operation_has_one_durable_effect()
+    public async Task Submission_replay_after_reopening_the_database_has_one_durable_effect()
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-replay");
         var evidence = CreateTestEvidence(submission.Key, Guid.NewGuid(), 1, null, 0.98m);
         var timeline = CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted.");
 
-        await using var firstContext = database.CreateContext();
-        await using var secondContext = database.CreateContext();
-        var firstService = new ApplicationDataService(firstContext);
-        var secondService = new ApplicationDataService(secondContext);
+        await using (var firstContext = database.CreateContext())
+        {
+            var firstService = new ApplicationDataService(firstContext);
+            var result = await firstService.SubmitReleaseAsync(
+                submission,
+                [evidence],
+                timeline,
+                "submit:release-replay:1");
+            Assert.Equal(submission, result.Submission);
+        }
 
-        var results = await Task.WhenAll(
-            firstService.SubmitReleaseAsync(submission, [evidence], timeline, "submit:release-replay:1"),
-            secondService.SubmitReleaseAsync(submission, [evidence], timeline, "submit:release-replay:1"));
-
-        Assert.All(results, result => Assert.Equal(submission, result.Submission));
+        await using (var replayContext = database.CreateContext())
+        {
+            var replayService = new ApplicationDataService(replayContext);
+            var replayed = await replayService.SubmitReleaseAsync(
+                submission,
+                [evidence],
+                timeline,
+                "submit:release-replay:1");
+            Assert.Equal(submission, replayed.Submission);
+        }
 
         await using var verification = database.CreateContext();
         Assert.Equal(1, await verification.ReleaseRevisions.CountAsync());

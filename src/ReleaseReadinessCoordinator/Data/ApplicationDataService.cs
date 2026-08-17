@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using ReleaseReadinessCoordinator.Domain;
 
@@ -25,7 +24,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         ValidateInitialEvidence(submission.Key, initialEvidence);
         ValidateTimeline(timelineEntry, submission.Key, TimelineEntryKind.ReleaseSubmitted);
 
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var existing = await _dbContext.ReleaseRevisions
@@ -69,22 +68,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
                     TimelineOperationKey(operationKey)));
                 return ReleaseRevision.Create(submission);
             },
-            async token =>
-            {
-                var duplicate = await _dbContext.ReleaseRevisions
-                    .AsNoTracking()
-                    .AnyAsync(
-                        row => row.ReleaseId == submission.Key.ReleaseId
-                            && row.Revision == submission.Key.Revision,
-                        token);
-                return duplicate
-                    ? Conflict(
-                        ApplicationDataConflictKind.DuplicateReleaseRevision,
-                        $"Release revision '{submission.Key.ReleaseId}/{submission.Key.Revision}' already exists.")
-                    : Conflict(
-                        ApplicationDataConflictKind.InvalidState,
-                        "The release submission conflicted with durable state.");
-            },
             cancellationToken);
     }
 
@@ -99,7 +82,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         operationKey = RequireOperationKey(operationKey);
         ValidateTimeline(timelineEntry, evidence.ReleaseRevision);
 
-        return ExecuteIdempotentAsync(
+        return ExecuteReplaySafeAsync(
             async token =>
             {
                 var existing = await _dbContext.EvidenceRecords
@@ -148,9 +131,6 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
                     TimelineOperationKey(operationKey)));
                 return evidence;
             },
-            _ => Task.FromResult(Conflict(
-                ApplicationDataConflictKind.InvalidState,
-                "The evidence replacement conflicted with durable state.")),
             cancellationToken);
     }
 
@@ -212,57 +192,21 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         return projection;
     }
 
-    private async Task<T> ExecuteIdempotentAsync<T>(
-        Func<CancellationToken, Task<T?>> findExisting,
-        Func<CancellationToken, Task<T>> write,
-        Func<CancellationToken, Task<ApplicationDataConflictException>> classifyConflict,
+    private async Task<T> ExecuteReplaySafeAsync<T>(
+        Func<CancellationToken, Task<T?>> tryReplay,
+        Func<CancellationToken, Task<T>> execute,
         CancellationToken cancellationToken)
         where T : class
     {
-        var existing = await findExisting(cancellationToken);
+        var existing = await tryReplay(cancellationToken);
         if (existing is not null)
         {
             return existing;
         }
 
-        try
-        {
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-            var result = await write(cancellationToken);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return result;
-        }
-        catch (DbUpdateConcurrencyException exception)
-        {
-            _dbContext.ChangeTracker.Clear();
-            var replayed = await findExisting(cancellationToken);
-            if (replayed is not null)
-            {
-                return replayed;
-            }
-
-            throw Conflict(
-                ApplicationDataConflictKind.ConcurrentModification,
-                "Durable state changed concurrently.",
-                exception);
-        }
-        catch (DbUpdateException exception) when (IsConstraintViolation(exception))
-        {
-            _dbContext.ChangeTracker.Clear();
-            var replayed = await findExisting(cancellationToken);
-            if (replayed is not null)
-            {
-                return replayed;
-            }
-
-            throw await classifyConflict(cancellationToken);
-        }
-        catch
-        {
-            _dbContext.ChangeTracker.Clear();
-            throw;
-        }
+        var result = await execute(cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return result;
     }
 
     private async Task<ReleaseRevisionRow> RequireMutableRelease(
@@ -605,16 +549,10 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         return operationKey;
     }
 
-    private static bool IsConstraintViolation(DbUpdateException exception) =>
-        exception.InnerException is SqliteException { SqliteErrorCode: 19 };
-
     private static ApplicationDataConflictException Conflict(
         ApplicationDataConflictKind kind,
-        string message,
-        Exception? innerException = null) =>
-        innerException is null
-            ? new ApplicationDataConflictException(kind, message)
-            : new ApplicationDataConflictException(kind, message, innerException);
+        string message) =>
+        new(kind, message);
 
     private static string NewConcurrencyToken() => Guid.NewGuid().ToString("N");
 
