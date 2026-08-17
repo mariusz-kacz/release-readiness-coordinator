@@ -1,4 +1,5 @@
 using Microsoft.Agents.AI.Workflows;
+using ReleaseReadinessCoordinator.Tests.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
 using BranchOutcome = ReleaseReadinessCoordinator.Domain.BranchOutcome;
 
@@ -15,12 +16,12 @@ public sealed class ExternalRequestContractTests
         BranchOutcome testOutcome,
         string expectedPortId)
     {
-        var workflow = ReleaseWorkflowFactory.Create();
         var input = new EvaluationRoundPlan(
             RoundNumber: 11,
             Test: new BranchPlan(BranchDisposition.Execute, testOutcome),
             Security: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
             Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed));
+        var workflow = ReadinessWorkflowTestFactory.CreateForPlan(input);
 
         await using var run = await InProcessExecution.RunAsync(workflow, input);
         var events = run.NewEvents.ToArray();

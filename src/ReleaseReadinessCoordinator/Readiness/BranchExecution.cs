@@ -94,6 +94,34 @@ internal sealed class SecurityReadinessBranchExecutor
             cancellationToken);
 }
 
+internal sealed class ChangeReadinessBranchExecutor
+{
+    private readonly IChangeEvidenceProvider _provider;
+    private readonly IChangeReadinessPolicy _policy;
+
+    public ChangeReadinessBranchExecutor(
+        IChangeEvidenceProvider provider,
+        IChangeReadinessPolicy policy)
+    {
+        _provider = provider ?? throw new ArgumentNullException(nameof(provider));
+        _policy = policy ?? throw new ArgumentNullException(nameof(policy));
+    }
+
+    public Task<BranchResult> ExecuteAsync(
+        ReleaseSubmission submission,
+        BranchWorkItem workItem,
+        CancellationToken cancellationToken = default) =>
+        BranchExecution.ExecuteAsync(
+            submission,
+            workItem,
+            ReadinessCheck.Change,
+            EvidenceKind.Change,
+            _provider,
+            _policy.Version,
+            _policy.Evaluate,
+            cancellationToken);
+}
+
 internal static class BranchExecution
 {
     public static async Task<BranchResult> ExecuteAsync<TEvidence, TEvaluation>(

@@ -1,4 +1,5 @@
 using Microsoft.Agents.AI.Workflows;
+using ReleaseReadinessCoordinator.Tests.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
 using BranchOutcome = ReleaseReadinessCoordinator.Domain.BranchOutcome;
 
@@ -66,12 +67,12 @@ public sealed class WorkflowTopologyTests
     [Fact]
     public async Task Real_graph_routes_once_per_branch_before_aggregation()
     {
-        var workflow = ReleaseWorkflowFactory.Create();
         var input = new EvaluationRoundPlan(
             RoundNumber: 7,
             Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-            Security: new BranchPlan(BranchDisposition.Reuse, BranchOutcome.Passed),
+            Security: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
             Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed));
+        var workflow = ReadinessWorkflowTestFactory.CreateForPlan(input);
 
         await using var run = await InProcessExecution.RunAsync(workflow, input);
         var events = run.NewEvents.ToArray();
@@ -106,7 +107,7 @@ public sealed class WorkflowTopologyTests
             new[]
             {
                 (ReadinessBranch.Test, BranchDisposition.Execute),
-                (ReadinessBranch.Security, BranchDisposition.Reuse),
+                (ReadinessBranch.Security, BranchDisposition.Execute),
                 (ReadinessBranch.Change, BranchDisposition.Execute),
             },
             round.Results.Select(result => (result.Branch, result.Disposition)));

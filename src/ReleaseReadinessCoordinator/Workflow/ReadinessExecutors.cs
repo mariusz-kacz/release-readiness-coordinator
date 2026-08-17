@@ -81,15 +81,13 @@ public sealed partial class ReadinessPlanner : Executor
 public sealed partial class ReadinessBranchExecutor : Executor
 {
     private readonly ReadinessBranch _branch;
-    private readonly ReleaseSubmission? _submission;
-    private readonly TestReadinessBranchExecutor? _testExecutor;
-    private readonly SecurityReadinessBranchExecutor? _securityExecutor;
-
-    public ReadinessBranchExecutor(ReadinessBranch branch, string id)
-        : base(id)
-    {
-        _branch = branch;
-    }
+    private readonly ReadinessCheck _check;
+    private readonly ReleaseSubmission _submission;
+    private readonly Func<
+        ReleaseSubmission,
+        DomainBranchWorkItem,
+        CancellationToken,
+        Task<DomainBranchResult>> _execute;
 
     internal ReadinessBranchExecutor(
         ReleaseSubmission submission,
@@ -98,8 +96,11 @@ public sealed partial class ReadinessBranchExecutor : Executor
         : base(ReleaseWorkflowExecutorIds.Test)
     {
         _branch = ReadinessBranch.Test;
+        _check = ReadinessCheck.Test;
         _submission = submission ?? throw new ArgumentNullException(nameof(submission));
-        _testExecutor = new TestReadinessBranchExecutor(testEvidenceProvider, testPolicy);
+        _execute = new TestReadinessBranchExecutor(
+            testEvidenceProvider,
+            testPolicy).ExecuteAsync;
     }
 
     internal ReadinessBranchExecutor(
@@ -109,10 +110,25 @@ public sealed partial class ReadinessBranchExecutor : Executor
         : base(ReleaseWorkflowExecutorIds.Security)
     {
         _branch = ReadinessBranch.Security;
+        _check = ReadinessCheck.Security;
         _submission = submission ?? throw new ArgumentNullException(nameof(submission));
-        _securityExecutor = new SecurityReadinessBranchExecutor(
+        _execute = new SecurityReadinessBranchExecutor(
             securityEvidenceProvider,
-            securityPolicy);
+            securityPolicy).ExecuteAsync;
+    }
+
+    internal ReadinessBranchExecutor(
+        ReleaseSubmission submission,
+        IChangeEvidenceProvider changeEvidenceProvider,
+        IChangeReadinessPolicy changePolicy)
+        : base(ReleaseWorkflowExecutorIds.Change)
+    {
+        _branch = ReadinessBranch.Change;
+        _check = ReadinessCheck.Change;
+        _submission = submission ?? throw new ArgumentNullException(nameof(submission));
+        _execute = new ChangeReadinessBranchExecutor(
+            changeEvidenceProvider,
+            changePolicy).ExecuteAsync;
     }
 
     [MessageHandler]
@@ -139,57 +155,32 @@ public sealed partial class ReadinessBranchExecutor : Executor
                 $"Branch '{workItem.Branch}' has impossible simulated outcome '{workItem.SimulatedOutcome}'.");
         }
 
-        if (_testExecutor is not null)
-        {
-            return await ExecuteRealAsync(
-                workItem,
-                ReadinessCheck.Test,
-                _testExecutor.ExecuteAsync,
-                cancellationToken);
-        }
-
-        if (_securityExecutor is not null)
-        {
-            return await ExecuteRealAsync(
-                workItem,
-                ReadinessCheck.Security,
-                _securityExecutor.ExecuteAsync,
-                cancellationToken);
-        }
-
-        return new BranchResult(
-            workItem.RoundNumber,
-            _branch,
-            workItem.Disposition,
-            Id,
-            workItem.SimulatedOutcome);
+        return await ExecuteRealAsync(workItem, cancellationToken);
     }
 
     private async ValueTask<BranchResult> ExecuteRealAsync(
         BranchWorkItem workItem,
-        ReadinessCheck check,
-        Func<ReleaseSubmission, DomainBranchWorkItem, CancellationToken, Task<DomainBranchResult>> execute,
         CancellationToken cancellationToken)
     {
         if (workItem.Disposition is not BranchDisposition.Execute)
         {
             throw new InvalidOperationException(
-                $"Real {check} readiness execution cannot process reuse work before the separate reuse path is implemented.");
+                $"Real {_check} readiness execution cannot process reuse work before the separate reuse path is implemented.");
         }
 
-        var evaluation = await execute(
-            _submission!,
+        var evaluation = await _execute(
+            _submission,
             new DomainBranchWorkItem(
-                _submission!.Key,
+                _submission.Key,
                 workItem.RoundNumber,
-                check,
+                _check,
                 WorkDisposition.Execute,
                 workItem.RoundNumber == 1
                     ? PlanningReason.InitialEvaluation
                     : PlanningReason.PreviousResultNotPassed,
                 workItem.RoundNumber == 1
                     ? "Executed because this is the initial evaluation."
-                    : $"Executed because the previous {check} result did not pass."),
+                    : $"Executed because the previous {_check} result did not pass."),
             cancellationToken);
         return new BranchResult(
             workItem.RoundNumber,

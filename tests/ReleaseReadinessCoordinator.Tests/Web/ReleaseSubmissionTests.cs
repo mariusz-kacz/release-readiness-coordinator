@@ -58,7 +58,7 @@ public sealed class ReleaseSubmissionTests
         Assert.Equal(DemoReleaseFixtures.Complete.ChangeWindowStart, change.ApprovedWindow?.Start.Value);
         Assert.Equal(DemoReleaseFixtures.Complete.ChangeWindowEnd, change.ApprovedWindow?.End.Value);
         Assert.NotNull(detail.WorkflowCorrelation);
-        Assert.Equal(WorkflowRequestKind.Remediation, detail.WorkflowCorrelation.PendingRequestKind);
+        Assert.Equal(WorkflowRequestKind.Approval, detail.WorkflowCorrelation.PendingRequestKind);
         Assert.Single(detail.Timeline);
         Assert.Equal(TimelineEntryKind.ReleaseSubmitted, detail.Timeline[0].Kind);
     }

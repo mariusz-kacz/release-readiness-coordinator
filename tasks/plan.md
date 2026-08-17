@@ -111,13 +111,13 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] A release can be submitted once and starts a correlated workflow
 - [x] Test and Security boundaries/outcome mappings are verified
 
-- [ ] Task 13: Deliver the Change readiness slice
+- [x] Task 13: Deliver the Change readiness slice
 
 ### Checkpoint C2: Deterministic Readiness
 
-- [ ] Every branch maps missing, blocked, transient, and passing outcomes correctly
-- [ ] Retry count and classification are proven
-- [ ] Change readiness uses approval, window, and rollback-text presence only
+- [x] Every branch maps missing, blocked, transient, and passing outcomes correctly
+- [x] Retry count and classification are proven
+- [x] Change readiness uses approval and approved-window containment only
 
 ### Phase 4: Selective Workflow and Human Integrity
 

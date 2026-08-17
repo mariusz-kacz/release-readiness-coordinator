@@ -360,15 +360,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] Missing approval or approved window maps to `MissingEvidence`; unapproved or out-of-window evidence maps to `Blocked`.
-- [ ] `Passed` requires change approval and full containment in the approved window, and uses the approved-window end as `ValidUntil`; non-passing results have no reuse deadline.
-- [ ] Known source retry exhaustion maps to `TransientFailure`; invariant and programming failures remain technical failures.
+- [x] Missing approval or approved window maps to `MissingEvidence`; unapproved or out-of-window evidence maps to `Blocked`.
+- [x] `Passed` requires change approval and full containment in the approved window, and uses the approved-window end as `ValidUntil`; non-passing results have no reuse deadline.
+- [x] Known source retry exhaustion maps to `TransientFailure`; invariant and programming failures remain technical failures.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~ChangeReadiness"`
-- [ ] Data-driven tests cover window boundaries, missing approval, and missing approved window.
-- [ ] `dotnet build --no-restore`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~ChangeReadiness"`
+- [x] Data-driven tests cover window boundaries, missing approval, and missing approved window.
+- [x] `dotnet build --no-restore`
 
 **Dependencies:** Tasks 7 and 11
 
@@ -383,10 +383,10 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint C2: Deterministic readiness
 
-- [ ] Tasks 10-13 acceptance criteria are met.
-- [ ] Data-driven policy and retry tests pass.
-- [ ] All four expected outcomes are representable without hiding technical failures.
-- [ ] The deterministic Change policy matches the approved evidence and window rules.
+- [x] Tasks 10-13 acceptance criteria are met.
+- [x] Data-driven policy and retry tests pass.
+- [x] All four expected outcomes are representable without hiding technical failures.
+- [x] The deterministic Change policy matches the approved evidence and window rules.
 
 ## Task 14: Implement selective execution and safe reuse planning
 

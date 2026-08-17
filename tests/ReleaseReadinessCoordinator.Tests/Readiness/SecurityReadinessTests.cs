@@ -378,10 +378,8 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
         var securityEvidence = SecurityEvidence(submission.Key);
         var securityProvider = new CountingProvider(securityEvidence);
         var securityPolicy = new CountingPolicy();
-        var workflow = ReleaseWorkflowFactory.Create(
+        var workflow = ReadinessWorkflowTestFactory.CreateWithSecurity(
             submission,
-            new SimulatedTestEvidenceProvider(TestEvidence(submission.Key)),
-            new TestReadinessPolicy(new FixedTimeProvider(Utc(2026, 8, 17, 9).Value)),
             securityProvider,
             securityPolicy);
         var input = new EvaluationRoundPlan(
@@ -412,17 +410,6 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
         Utc(2026, 8, 17, 7));
-
-    private static TestEvidenceRecord TestEvidence(ReleaseRevisionKey releaseRevision) => new(
-        Guid.NewGuid(),
-        releaseRevision,
-        1,
-        Utc(2026, 8, 17, 9),
-        null,
-        "2.4.0",
-        Utc(2026, 8, 17, 8),
-        0.98m,
-        []);
 
     private static SecurityEvidenceRecord SecurityEvidence(ReleaseRevisionKey releaseRevision) => new(
         Guid.NewGuid(),
@@ -473,8 +460,4 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
         }
     }
 
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
 }

@@ -50,12 +50,16 @@ public sealed class ReleaseSubmissionApplicationService
         var started = await _checkpointCoordinator.StartAsync(
             ReleaseWorkflowFactory.Create(
                 submission,
-                new SimulatedTestEvidenceProvider(
-                    initialEvidence.OfType<TestEvidenceRecord>().SingleOrDefault()),
-                new TestReadinessPolicy(_timeProvider),
-                new SimulatedSecurityEvidenceProvider(
-                    initialEvidence.OfType<SecurityEvidenceRecord>().SingleOrDefault()),
-                new SecurityReadinessPolicy(_timeProvider)),
+                new ReadinessWorkflowDependencies(
+                    new SimulatedTestEvidenceProvider(
+                        initialEvidence.OfType<TestEvidenceRecord>().SingleOrDefault()),
+                    new TestReadinessPolicy(_timeProvider),
+                    new SimulatedSecurityEvidenceProvider(
+                        initialEvidence.OfType<SecurityEvidenceRecord>().SingleOrDefault()),
+                    new SecurityReadinessPolicy(_timeProvider),
+                    new SimulatedChangeEvidenceProvider(
+                        initialEvidence.OfType<ChangeEvidenceRecord>().SingleOrDefault()),
+                    new ChangeReadinessPolicy())),
             new EvaluationRoundPlan(
                 1,
                 initialBranchPlan,

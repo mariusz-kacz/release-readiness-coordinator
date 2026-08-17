@@ -298,7 +298,7 @@ public sealed class TestReadinessWorkflowIntegrationTests
         var evidence = Evidence(submission.Key);
         var provider = new CountingProvider(evidence);
         var policy = new CountingPolicy();
-        var workflow = ReleaseWorkflowFactory.Create(submission, provider, policy);
+        var workflow = ReadinessWorkflowTestFactory.CreateWithTest(submission, provider, policy);
         var input = new EvaluationRoundPlan(
             RoundNumber: 1,
             Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Blocked),

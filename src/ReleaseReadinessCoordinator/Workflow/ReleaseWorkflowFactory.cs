@@ -4,54 +4,68 @@ using ReleaseReadinessCoordinator.Readiness;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
-public static class ReleaseWorkflowFactory
+internal sealed class ReadinessWorkflowDependencies
 {
-    public static Microsoft.Agents.AI.Workflows.Workflow Create() =>
-        Create(
-            new ReadinessBranchExecutor(
-                ReadinessBranch.Test,
-                ReleaseWorkflowExecutorIds.Test),
-            new ReadinessBranchExecutor(
-                ReadinessBranch.Security,
-                ReleaseWorkflowExecutorIds.Security));
-
-    internal static Microsoft.Agents.AI.Workflows.Workflow Create(
-        ReleaseSubmission submission,
-        ITestEvidenceProvider testEvidenceProvider,
-        ITestReadinessPolicy testPolicy) =>
-        Create(
-            new ReadinessBranchExecutor(
-                submission,
-                testEvidenceProvider,
-                testPolicy),
-            new ReadinessBranchExecutor(
-                ReadinessBranch.Security,
-                ReleaseWorkflowExecutorIds.Security));
-
-    internal static Microsoft.Agents.AI.Workflows.Workflow Create(
-        ReleaseSubmission submission,
+    public ReadinessWorkflowDependencies(
         ITestEvidenceProvider testEvidenceProvider,
         ITestReadinessPolicy testPolicy,
         ISecurityEvidenceProvider securityEvidenceProvider,
-        ISecurityReadinessPolicy securityPolicy) =>
-        Create(
-            new ReadinessBranchExecutor(
-                submission,
-                testEvidenceProvider,
-                testPolicy),
-            new ReadinessBranchExecutor(
-                submission,
-                securityEvidenceProvider,
-                securityPolicy));
+        ISecurityReadinessPolicy securityPolicy,
+        IChangeEvidenceProvider changeEvidenceProvider,
+        IChangeReadinessPolicy changePolicy)
+    {
+        TestEvidenceProvider = testEvidenceProvider ??
+            throw new ArgumentNullException(nameof(testEvidenceProvider));
+        TestPolicy = testPolicy ?? throw new ArgumentNullException(nameof(testPolicy));
+        SecurityEvidenceProvider = securityEvidenceProvider ??
+            throw new ArgumentNullException(nameof(securityEvidenceProvider));
+        SecurityPolicy = securityPolicy ?? throw new ArgumentNullException(nameof(securityPolicy));
+        ChangeEvidenceProvider = changeEvidenceProvider ??
+            throw new ArgumentNullException(nameof(changeEvidenceProvider));
+        ChangePolicy = changePolicy ?? throw new ArgumentNullException(nameof(changePolicy));
+    }
 
-    private static Microsoft.Agents.AI.Workflows.Workflow Create(
+    public ITestEvidenceProvider TestEvidenceProvider { get; }
+
+    public ITestReadinessPolicy TestPolicy { get; }
+
+    public ISecurityEvidenceProvider SecurityEvidenceProvider { get; }
+
+    public ISecurityReadinessPolicy SecurityPolicy { get; }
+
+    public IChangeEvidenceProvider ChangeEvidenceProvider { get; }
+
+    public IChangeReadinessPolicy ChangePolicy { get; }
+}
+
+public static class ReleaseWorkflowFactory
+{
+    internal static Microsoft.Agents.AI.Workflows.Workflow Create(
+        ReleaseSubmission submission,
+        ReadinessWorkflowDependencies dependencies)
+    {
+        ArgumentNullException.ThrowIfNull(dependencies);
+        return Build(
+            new ReadinessBranchExecutor(
+                submission,
+                dependencies.TestEvidenceProvider,
+                dependencies.TestPolicy),
+            new ReadinessBranchExecutor(
+                submission,
+                dependencies.SecurityEvidenceProvider,
+                dependencies.SecurityPolicy),
+            new ReadinessBranchExecutor(
+                submission,
+                dependencies.ChangeEvidenceProvider,
+                dependencies.ChangePolicy));
+    }
+
+    private static Microsoft.Agents.AI.Workflows.Workflow Build(
         ReadinessBranchExecutor test,
-        ReadinessBranchExecutor security)
+        ReadinessBranchExecutor security,
+        ReadinessBranchExecutor change)
     {
         var planner = new ReadinessPlanner();
-        var change = new ReadinessBranchExecutor(
-            ReadinessBranch.Change,
-            ReleaseWorkflowExecutorIds.Change);
         var aggregator = new ReadinessAggregator();
         var remediation = RequestPort.Create<RemediationRequest, RemediationResponse>(
             ReleaseWorkflowPortIds.Remediation);
