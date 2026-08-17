@@ -103,13 +103,13 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 ### Phase 3: Submission and Three Readiness Slices
 
 - [x] Task 10: Deliver release submission and demo fixtures
-- [ ] Task 11: Deliver the Test readiness slice
-- [ ] Task 12: Deliver the Security readiness slice
+- [x] Task 11: Deliver the Test readiness slice
+- [x] Task 12: Deliver the Security readiness slice
 
 ### Checkpoint C1: Submission and First Policies
 
 - [x] A release can be submitted once and starts a correlated workflow
-- [ ] Test and Security boundaries/outcome mappings are verified
+- [x] Test and Security boundaries/outcome mappings are verified
 
 - [ ] Task 13: Deliver the Change readiness slice
 

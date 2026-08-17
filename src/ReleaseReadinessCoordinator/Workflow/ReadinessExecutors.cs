@@ -1,6 +1,9 @@
 using System.Collections.ObjectModel;
 using Microsoft.Agents.AI.Workflows;
 using ReleaseReadinessCoordinator.Domain;
+using ReleaseReadinessCoordinator.Readiness;
+using DomainBranchResult = ReleaseReadinessCoordinator.Domain.BranchResult;
+using DomainBranchWorkItem = ReleaseReadinessCoordinator.Domain.BranchWorkItem;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
@@ -78,6 +81,9 @@ public sealed partial class ReadinessPlanner : Executor
 public sealed partial class ReadinessBranchExecutor : Executor
 {
     private readonly ReadinessBranch _branch;
+    private readonly ReleaseSubmission? _submission;
+    private readonly TestReadinessBranchExecutor? _testExecutor;
+    private readonly SecurityReadinessBranchExecutor? _securityExecutor;
 
     public ReadinessBranchExecutor(ReadinessBranch branch, string id)
         : base(id)
@@ -85,8 +91,35 @@ public sealed partial class ReadinessBranchExecutor : Executor
         _branch = branch;
     }
 
+    internal ReadinessBranchExecutor(
+        ReleaseSubmission submission,
+        ITestEvidenceProvider testEvidenceProvider,
+        ITestReadinessPolicy testPolicy)
+        : base(ReleaseWorkflowExecutorIds.Test)
+    {
+        _branch = ReadinessBranch.Test;
+        _submission = submission ?? throw new ArgumentNullException(nameof(submission));
+        _testExecutor = new TestReadinessBranchExecutor(testEvidenceProvider, testPolicy);
+    }
+
+    internal ReadinessBranchExecutor(
+        ReleaseSubmission submission,
+        ISecurityEvidenceProvider securityEvidenceProvider,
+        ISecurityReadinessPolicy securityPolicy)
+        : base(ReleaseWorkflowExecutorIds.Security)
+    {
+        _branch = ReadinessBranch.Security;
+        _submission = submission ?? throw new ArgumentNullException(nameof(submission));
+        _securityExecutor = new SecurityReadinessBranchExecutor(
+            securityEvidenceProvider,
+            securityPolicy);
+    }
+
     [MessageHandler]
-    private BranchResult Evaluate(BranchWorkItem workItem, IWorkflowContext context)
+    private async ValueTask<BranchResult> EvaluateAsync(
+        BranchWorkItem workItem,
+        IWorkflowContext context,
+        CancellationToken cancellationToken)
     {
         if (workItem.Branch != _branch)
         {
@@ -106,12 +139,65 @@ public sealed partial class ReadinessBranchExecutor : Executor
                 $"Branch '{workItem.Branch}' has impossible simulated outcome '{workItem.SimulatedOutcome}'.");
         }
 
+        if (_testExecutor is not null)
+        {
+            return await ExecuteRealAsync(
+                workItem,
+                ReadinessCheck.Test,
+                _testExecutor.ExecuteAsync,
+                cancellationToken);
+        }
+
+        if (_securityExecutor is not null)
+        {
+            return await ExecuteRealAsync(
+                workItem,
+                ReadinessCheck.Security,
+                _securityExecutor.ExecuteAsync,
+                cancellationToken);
+        }
+
         return new BranchResult(
             workItem.RoundNumber,
             _branch,
             workItem.Disposition,
             Id,
             workItem.SimulatedOutcome);
+    }
+
+    private async ValueTask<BranchResult> ExecuteRealAsync(
+        BranchWorkItem workItem,
+        ReadinessCheck check,
+        Func<ReleaseSubmission, DomainBranchWorkItem, CancellationToken, Task<DomainBranchResult>> execute,
+        CancellationToken cancellationToken)
+    {
+        if (workItem.Disposition is not BranchDisposition.Execute)
+        {
+            throw new InvalidOperationException(
+                $"Real {check} readiness execution cannot process reuse work before the separate reuse path is implemented.");
+        }
+
+        var evaluation = await execute(
+            _submission!,
+            new DomainBranchWorkItem(
+                _submission!.Key,
+                workItem.RoundNumber,
+                check,
+                WorkDisposition.Execute,
+                workItem.RoundNumber == 1
+                    ? PlanningReason.InitialEvaluation
+                    : PlanningReason.PreviousResultNotPassed,
+                workItem.RoundNumber == 1
+                    ? "Executed because this is the initial evaluation."
+                    : $"Executed because the previous {check} result did not pass."),
+            cancellationToken);
+        return new BranchResult(
+            workItem.RoundNumber,
+            _branch,
+            workItem.Disposition,
+            Id,
+            evaluation.Outcome,
+            evaluation);
     }
 }
 

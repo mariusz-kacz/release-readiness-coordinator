@@ -300,15 +300,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] Missing required facts map to `MissingEvidence`; version, pass-rate, critical-suite, or freshness misses map to `Blocked`; otherwise the result is `Passed`.
-- [ ] Only typed known provider failures retry, with exactly three total immediate attempts; exhaustion returns `TransientFailure` with attempt details.
-- [ ] Boundary tests cover 95%, exact version match, critical failures, and the validity deadline.
+- [x] Missing required facts map to `MissingEvidence`; version, pass-rate, critical-suite, or freshness misses map to `Blocked`; otherwise the result is `Passed`.
+- [x] Only typed known provider failures retry, with exactly three total immediate attempts; exhaustion returns `TransientFailure` with attempt details.
+- [x] Boundary tests cover 95%, exact version match, critical failures, and the validity deadline.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~TestReadiness"`
-- [ ] Counting fakes verify provider and policy call counts.
-- [ ] `dotnet build --no-restore`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~TestReadiness"`
+- [x] Counting fakes verify provider and policy call counts.
+- [x] `dotnet build --no-restore`
 
 **Dependencies:** Tasks 5 and 7
 
@@ -327,15 +327,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] Missing scan/required exception facts, deterministic blockers, exhausted known transient failures, and passing evidence map to the exact four outcomes.
-- [ ] Every high finding requires a matching in-scope exception valid through the entire requested release window; unresolved critical findings always block.
-- [ ] Boundary tests cover exception scope/expiry, release-window changes, exact version match, and freshness.
+- [x] Missing scan/required exception facts, deterministic blockers, exhausted known transient failures, and passing evidence map to the exact four outcomes.
+- [x] Every high finding requires a matching in-scope exception valid through the entire requested release window; unresolved critical findings always block.
+- [x] Boundary tests cover exception scope/expiry, release-window changes, exact version match, and freshness.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~SecurityReadiness"`
-- [ ] Counting fakes prove no retry for missing evidence or deterministic blockers.
-- [ ] `dotnet format --verify-no-changes`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~SecurityReadiness"`
+- [x] Counting fakes prove no retry for missing evidence or deterministic blockers.
+- [x] `dotnet format --verify-no-changes`
 
 **Dependencies:** Tasks 7 and 11
 
@@ -350,9 +350,9 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Checkpoint C1: Submission and first policies
 
-- [ ] Tasks 10-12 acceptance criteria are met.
+- [x] Tasks 10-12 acceptance criteria are met.
 - [x] A release can be submitted once and starts a correlated workflow.
-- [ ] Test and Security boundary, retry, and outcome-mapping tests pass.
+- [x] Test and Security boundary, retry, and outcome-mapping tests pass.
 
 ## Task 13: Deliver the Change readiness slice
 

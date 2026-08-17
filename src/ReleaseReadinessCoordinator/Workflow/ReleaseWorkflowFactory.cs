@@ -1,18 +1,54 @@
 using Microsoft.Agents.AI.Workflows;
+using ReleaseReadinessCoordinator.Domain;
+using ReleaseReadinessCoordinator.Readiness;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
 public static class ReleaseWorkflowFactory
 {
-    public static Microsoft.Agents.AI.Workflows.Workflow Create()
+    public static Microsoft.Agents.AI.Workflows.Workflow Create() =>
+        Create(
+            new ReadinessBranchExecutor(
+                ReadinessBranch.Test,
+                ReleaseWorkflowExecutorIds.Test),
+            new ReadinessBranchExecutor(
+                ReadinessBranch.Security,
+                ReleaseWorkflowExecutorIds.Security));
+
+    internal static Microsoft.Agents.AI.Workflows.Workflow Create(
+        ReleaseSubmission submission,
+        ITestEvidenceProvider testEvidenceProvider,
+        ITestReadinessPolicy testPolicy) =>
+        Create(
+            new ReadinessBranchExecutor(
+                submission,
+                testEvidenceProvider,
+                testPolicy),
+            new ReadinessBranchExecutor(
+                ReadinessBranch.Security,
+                ReleaseWorkflowExecutorIds.Security));
+
+    internal static Microsoft.Agents.AI.Workflows.Workflow Create(
+        ReleaseSubmission submission,
+        ITestEvidenceProvider testEvidenceProvider,
+        ITestReadinessPolicy testPolicy,
+        ISecurityEvidenceProvider securityEvidenceProvider,
+        ISecurityReadinessPolicy securityPolicy) =>
+        Create(
+            new ReadinessBranchExecutor(
+                submission,
+                testEvidenceProvider,
+                testPolicy),
+            new ReadinessBranchExecutor(
+                submission,
+                securityEvidenceProvider,
+                securityPolicy));
+
+    private static Microsoft.Agents.AI.Workflows.Workflow Create(
+        ReadinessBranchExecutor test,
+        ReadinessBranchExecutor security)
     {
         var planner = new ReadinessPlanner();
-        var test = new ReadinessBranchExecutor(
-            ReadinessBranch.Test,
-            ReleaseWorkflowExecutorIds.Test);
-        var security = new ReadinessBranchExecutor(
-            ReadinessBranch.Security,
-            ReleaseWorkflowExecutorIds.Security);
         var change = new ReadinessBranchExecutor(
             ReadinessBranch.Change,
             ReleaseWorkflowExecutorIds.Change);

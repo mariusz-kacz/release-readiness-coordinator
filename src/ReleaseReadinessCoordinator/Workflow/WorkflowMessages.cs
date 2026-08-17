@@ -1,4 +1,5 @@
 using ReleaseReadinessCoordinator.Domain;
+using DomainBranchResult = ReleaseReadinessCoordinator.Domain.BranchResult;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
@@ -51,7 +52,8 @@ public sealed record BranchResult(
     ReadinessBranch Branch,
     BranchDisposition Disposition,
     string ExecutorId,
-    BranchOutcome Outcome);
+    BranchOutcome Outcome,
+    DomainBranchResult? Evaluation = null);
 
 public sealed record EvaluationRoundResult(
     int RoundNumber,

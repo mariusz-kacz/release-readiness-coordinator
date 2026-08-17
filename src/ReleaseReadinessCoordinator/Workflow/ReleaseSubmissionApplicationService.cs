@@ -1,5 +1,6 @@
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
+using ReleaseReadinessCoordinator.Readiness;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
@@ -47,7 +48,14 @@ public sealed class ReleaseSubmissionApplicationService
             BranchDisposition.Execute,
             BranchOutcome.Blocked);
         var started = await _checkpointCoordinator.StartAsync(
-            ReleaseWorkflowFactory.Create(),
+            ReleaseWorkflowFactory.Create(
+                submission,
+                new SimulatedTestEvidenceProvider(
+                    initialEvidence.OfType<TestEvidenceRecord>().SingleOrDefault()),
+                new TestReadinessPolicy(_timeProvider),
+                new SimulatedSecurityEvidenceProvider(
+                    initialEvidence.OfType<SecurityEvidenceRecord>().SingleOrDefault()),
+                new SecurityReadinessPolicy(_timeProvider)),
             new EvaluationRoundPlan(
                 1,
                 initialBranchPlan,
