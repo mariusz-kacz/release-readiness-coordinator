@@ -1,5 +1,6 @@
 using Microsoft.Agents.AI.Workflows;
 using ReleaseReadinessCoordinator.Workflow;
+using BranchOutcome = ReleaseReadinessCoordinator.Domain.BranchOutcome;
 
 namespace ReleaseReadinessCoordinator.Tests.Workflow;
 
@@ -171,10 +172,9 @@ public sealed class CheckpointContractTests
 
     private static EvaluationRoundPlan PassingPlan() => new(
         RoundNumber: 3,
-        Test: BranchDisposition.Execute,
-        Security: BranchDisposition.Execute,
-        Change: BranchDisposition.Execute,
-        WaitKind: ExternalWaitKind.Approval);
+        Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
+        Security: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
+        Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed));
 
     private sealed class TemporaryDirectory : IDisposable
     {

@@ -1,3 +1,5 @@
+using ReleaseReadinessCoordinator.Domain;
+
 namespace ReleaseReadinessCoordinator.Workflow;
 
 public enum ReadinessBranch
@@ -19,14 +21,17 @@ public enum ExternalWaitKind
     Approval = 2,
 }
 
+public sealed record BranchPlan(
+    BranchDisposition Disposition,
+    BranchOutcome SimulatedOutcome);
+
 public sealed record EvaluationRoundPlan(
     int RoundNumber,
-    BranchDisposition Test,
-    BranchDisposition Security,
-    BranchDisposition Change,
-    ExternalWaitKind WaitKind)
+    BranchPlan Test,
+    BranchPlan Security,
+    BranchPlan Change)
 {
-    public BranchDisposition DispositionFor(ReadinessBranch branch) => branch switch
+    public BranchPlan For(ReadinessBranch branch) => branch switch
     {
         ReadinessBranch.Test => Test,
         ReadinessBranch.Security => Security,
@@ -39,19 +44,18 @@ public sealed record BranchWorkItem(
     int RoundNumber,
     ReadinessBranch Branch,
     BranchDisposition Disposition,
-    ExternalWaitKind WaitKind);
+    BranchOutcome SimulatedOutcome);
 
 public sealed record BranchResult(
     int RoundNumber,
     ReadinessBranch Branch,
     BranchDisposition Disposition,
     string ExecutorId,
-    ExternalWaitKind WaitKind);
+    BranchOutcome Outcome);
 
 public sealed record EvaluationRoundResult(
     int RoundNumber,
-    IReadOnlyList<BranchResult> Results,
-    ExternalWaitKind WaitKind);
+    IReadOnlyList<BranchResult> Results);
 
 public sealed record RemediationRequest(int RoundNumber);
 

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Microsoft.Agents.AI.Workflows;
+using ReleaseReadinessCoordinator.Domain;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
@@ -41,22 +42,27 @@ public sealed partial class ReadinessPlanner : Executor
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
-        if (!Enum.IsDefined(plan.WaitKind))
-        {
-            throw new InvalidOperationException($"Impossible external wait kind '{plan.WaitKind}'.");
-        }
-
         foreach (var branch in ReleaseWorkflowExecutorIds.Branches.Keys)
         {
-            var disposition = plan.DispositionFor(branch);
-            if (!Enum.IsDefined(disposition))
+            var branchPlan = plan.For(branch);
+            if (!Enum.IsDefined(branchPlan.Disposition))
             {
                 throw new InvalidOperationException(
-                    $"Branch '{branch}' has impossible disposition '{disposition}'.");
+                    $"Branch '{branch}' has impossible disposition '{branchPlan.Disposition}'.");
+            }
+
+            if (!Enum.IsDefined(branchPlan.SimulatedOutcome))
+            {
+                throw new InvalidOperationException(
+                    $"Branch '{branch}' has impossible simulated outcome '{branchPlan.SimulatedOutcome}'.");
             }
 
             await context.SendMessageAsync(
-                new BranchWorkItem(plan.RoundNumber, branch, disposition, plan.WaitKind),
+                new BranchWorkItem(
+                    plan.RoundNumber,
+                    branch,
+                    branchPlan.Disposition,
+                    branchPlan.SimulatedOutcome),
                 cancellationToken);
         }
     }
@@ -94,13 +100,18 @@ public sealed partial class ReadinessBranchExecutor : Executor
                 $"Branch '{workItem.Branch}' has impossible disposition '{workItem.Disposition}'.");
         }
 
-        if (!Enum.IsDefined(workItem.WaitKind))
+        if (!Enum.IsDefined(workItem.SimulatedOutcome))
         {
             throw new InvalidOperationException(
-                $"Branch '{workItem.Branch}' has impossible external wait kind '{workItem.WaitKind}'.");
+                $"Branch '{workItem.Branch}' has impossible simulated outcome '{workItem.SimulatedOutcome}'.");
         }
 
-        return new BranchResult(workItem.RoundNumber, _branch, workItem.Disposition, Id, workItem.WaitKind);
+        return new BranchResult(
+            workItem.RoundNumber,
+            _branch,
+            workItem.Disposition,
+            Id,
+            workItem.SimulatedOutcome);
     }
 }
 
@@ -134,15 +145,19 @@ public sealed partial class ReadinessAggregator : Executor, IResettableExecutor
         {
             var round = Aggregate(_results);
             await context.YieldOutputAsync(round, cancellationToken);
-            await context.SendMessageAsync(
-                round.WaitKind switch
-                {
-                    ExternalWaitKind.Remediation => new RemediationRequest(round.RoundNumber),
-                    ExternalWaitKind.Approval => new ApprovalRequest(round.RoundNumber),
-                    _ => throw new InvalidOperationException(
-                        $"Impossible external wait kind '{round.WaitKind}'."),
-                },
-                cancellationToken);
+            if (round.Results.All(result => result.Outcome is BranchOutcome.Passed))
+            {
+                await context.SendMessageAsync(
+                    new ApprovalRequest(round.RoundNumber),
+                    cancellationToken);
+            }
+            else
+            {
+                await context.SendMessageAsync(
+                    new RemediationRequest(round.RoundNumber),
+                    cancellationToken);
+            }
+
             _results.Clear();
         }
     }
@@ -185,16 +200,9 @@ public sealed partial class ReadinessAggregator : Executor, IResettableExecutor
             throw new InvalidOperationException("Branch results belong to different evaluation rounds.");
         }
 
-        var waitKind = results.First().WaitKind;
-        if (!Enum.IsDefined(waitKind) || results.Any(result => result.WaitKind != waitKind))
-        {
-            throw new InvalidOperationException("Branch results contain inconsistent external wait kinds.");
-        }
-
         return new EvaluationRoundResult(
             roundNumber,
-            results.OrderBy(result => result.Branch).ToArray(),
-            waitKind);
+            results.OrderBy(result => result.Branch).ToArray());
     }
 
     private static void ValidateIdentity(BranchResult result)
@@ -215,6 +223,12 @@ public sealed partial class ReadinessAggregator : Executor, IResettableExecutor
         {
             throw new InvalidOperationException(
                 $"Branch '{result.Branch}' has impossible disposition '{result.Disposition}'.");
+        }
+
+        if (!Enum.IsDefined(result.Outcome))
+        {
+            throw new InvalidOperationException(
+                $"Branch '{result.Branch}' has impossible outcome '{result.Outcome}'.");
         }
     }
 }

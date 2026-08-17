@@ -1,10 +1,29 @@
 using Microsoft.Agents.AI.Workflows;
 using ReleaseReadinessCoordinator.Workflow;
+using BranchOutcome = ReleaseReadinessCoordinator.Domain.BranchOutcome;
 
 namespace ReleaseReadinessCoordinator.Tests.Workflow;
 
 public sealed class WorkflowTopologyTests
 {
+    [Fact]
+    public void Round_messages_do_not_preselect_the_external_wait()
+    {
+        Type[] roundMessageTypes =
+        [
+            typeof(EvaluationRoundPlan),
+            typeof(BranchWorkItem),
+            typeof(BranchResult),
+            typeof(EvaluationRoundResult),
+        ];
+
+        Assert.All(
+            roundMessageTypes,
+            messageType => Assert.DoesNotContain(
+                messageType.GetProperties(),
+                property => property.PropertyType == typeof(ExternalWaitKind)));
+    }
+
     [Fact]
     public void Workflow_exposes_exactly_three_readiness_branches()
     {
@@ -50,10 +69,9 @@ public sealed class WorkflowTopologyTests
         var workflow = ReleaseWorkflowFactory.Create();
         var input = new EvaluationRoundPlan(
             RoundNumber: 7,
-            Test: BranchDisposition.Execute,
-            Security: BranchDisposition.Reuse,
-            Change: BranchDisposition.Execute,
-            WaitKind: ExternalWaitKind.Approval);
+            Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
+            Security: new BranchPlan(BranchDisposition.Reuse, BranchOutcome.Passed),
+            Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed));
 
         await using var run = await InProcessExecution.RunAsync(workflow, input);
         var events = run.NewEvents.ToArray();
@@ -96,8 +114,8 @@ public sealed class WorkflowTopologyTests
 
     private static BranchResult[] CompleteResults() =>
     [
-        new(3, ReadinessBranch.Test, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Test, ExternalWaitKind.Approval),
-        new(3, ReadinessBranch.Security, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Security, ExternalWaitKind.Approval),
-        new(3, ReadinessBranch.Change, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Change, ExternalWaitKind.Approval),
+        new(3, ReadinessBranch.Test, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Test, BranchOutcome.Passed),
+        new(3, ReadinessBranch.Security, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Security, BranchOutcome.Passed),
+        new(3, ReadinessBranch.Change, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Change, BranchOutcome.Passed),
     ];
 }

@@ -43,14 +43,16 @@ public sealed class ReleaseSubmissionApplicationService
             cancellationToken);
 
         var sessionId = $"release-{Uri.EscapeDataString(submission.Key.ReleaseId)}-revision-{submission.Key.Revision}";
+        var initialBranchPlan = new BranchPlan(
+            BranchDisposition.Execute,
+            BranchOutcome.Blocked);
         var started = await _checkpointCoordinator.StartAsync(
             ReleaseWorkflowFactory.Create(),
             new EvaluationRoundPlan(
                 1,
-                BranchDisposition.Execute,
-                BranchDisposition.Execute,
-                BranchDisposition.Execute,
-                ExternalWaitKind.Remediation),
+                initialBranchPlan,
+                initialBranchPlan,
+                initialBranchPlan),
             sessionId,
             cancellationToken);
         var correlatedAt = new UtcInstant(_timeProvider.GetUtcNow());
