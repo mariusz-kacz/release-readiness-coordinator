@@ -126,107 +126,16 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var checkpoint = await GetLatestCheckpointAsync(sessionId, cancellationToken);
-            StreamingRun run;
-            try
-            {
-                run = await InProcessExecution.ResumeStreamingAsync(
-                    workflow,
-                    checkpoint,
-                    _manager,
-                    cancellationToken);
-            }
-            catch (Exception exception) when (IsCorrupt(exception))
-            {
-                throw ContinuationFailure(
-                    ContinuationFailureKind.Corrupt,
-                    sessionId,
-                    "could not be deserialized",
-                    exception);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                throw ContinuationFailure(
-                    ContinuationFailureKind.Incompatible,
-                    sessionId,
-                    "is incompatible with the rebuilt workflow",
-                    exception);
-            }
-
-            await using (run)
-            {
-                try
-                {
-                    PendingWorkflowRequest? restoredRequest = null;
-                    PendingWorkflowRequest? nextRequest = null;
-                    await foreach (var workflowEvent in run.WatchStreamAsync(cancellationToken))
-                    {
-                        if (workflowEvent is ExecutorFailedEvent failed)
-                        {
-                            throw ContinuationFailure(
-                                ContinuationFailureKind.Incompatible,
-                                sessionId,
-                                $"failed in executor '{failed.ExecutorId}': {failed.Data?.Message}",
-                                failed.Data);
-                        }
-
-                        if (workflowEvent is not RequestInfoEvent requestEvent)
-                        {
-                            continue;
-                        }
-
-                        if (restoredRequest is null)
-                        {
-                            restoredRequest = ToRestoredPendingWorkflowRequest(requestEvent.Request);
-                            EnsureExpected(expectedRequest, restoredRequest, sessionId);
-                            EnsureRemediationCorrelated(expectedRequest, response, sessionId);
-                            await run.SendResponseAsync(
-                                requestEvent.Request.CreateResponse(response));
-                            continue;
-                        }
-
-                        nextRequest = ToPendingWorkflowRequest(requestEvent.Request);
-                        break;
-                    }
-
-                    _ = restoredRequest
-                        ?? throw ContinuationFailure(
-                            ContinuationFailureKind.Incompatible,
-                            sessionId,
-                            "did not restore the expected remediation request");
-                    _ = run.LastCheckpoint
-                        ?? throw ContinuationFailure(
-                            ContinuationFailureKind.Incompatible,
-                            sessionId,
-                            "did not create a checkpoint after remediation");
-                    return new WorkflowRemediationResumeResult(
-                        nextRequest
-                            ?? throw ContinuationFailure(
-                                ContinuationFailureKind.Incompatible,
-                                sessionId,
-                                "did not reach the next external request"));
-                }
-                catch (WorkflowContinuationException)
-                {
-                    throw;
-                }
-                catch (Exception exception) when (IsCorrupt(exception))
-                {
-                    throw ContinuationFailure(
-                        ContinuationFailureKind.Corrupt,
-                        sessionId,
-                        "could not be deserialized",
-                        exception);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    throw ContinuationFailure(
-                        ContinuationFailureKind.Incompatible,
-                        sessionId,
-                        "could not resume remediation",
-                        exception);
-                }
-            }
+            await using var run = await RestoreStreamingRunAsync(
+                workflow,
+                sessionId,
+                cancellationToken);
+            return await ContinueAfterRemediationAsync(
+                run,
+                expectedRequest,
+                response,
+                sessionId,
+                cancellationToken);
         }
         finally
         {
@@ -250,91 +159,16 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var checkpoint = await GetLatestCheckpointAsync(sessionId, cancellationToken);
-            StreamingRun run;
-            try
-            {
-                run = await InProcessExecution.ResumeStreamingAsync(
-                    workflow,
-                    checkpoint,
-                    _manager,
-                    cancellationToken);
-            }
-            catch (Exception exception) when (IsCorrupt(exception))
-            {
-                throw ContinuationFailure(
-                    ContinuationFailureKind.Corrupt,
-                    sessionId,
-                    "could not be deserialized",
-                    exception);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                throw ContinuationFailure(
-                    ContinuationFailureKind.Incompatible,
-                    sessionId,
-                    "is incompatible with the rebuilt workflow",
-                    exception);
-            }
-
-            await using (run)
-            {
-                try
-                {
-                    PendingWorkflowRequest? restoredRequest = null;
-                    ApprovalResponse? output = null;
-                    await foreach (var workflowEvent in run.WatchStreamAsync(cancellationToken))
-                    {
-                        switch (workflowEvent)
-                        {
-                            case RequestInfoEvent requestEvent when restoredRequest is null:
-                                restoredRequest = ToRestoredPendingWorkflowRequest(requestEvent.Request);
-                                EnsureExpected(expectedRequest, restoredRequest, sessionId);
-                                await run.SendResponseAsync(
-                                    requestEvent.Request.CreateResponse(response));
-                                break;
-                            case RequestInfoEvent:
-                                throw ContinuationFailure(
-                                    ContinuationFailureKind.Incompatible,
-                                    sessionId,
-                                    "produced another external request while completing approval");
-                            case WorkflowOutputEvent { Data: ApprovalResponse approval }:
-                                output = approval;
-                                break;
-                        }
-                    }
-
-                    if (restoredRequest is null || output is null)
-                    {
-                        throw ContinuationFailure(
-                            ContinuationFailureKind.Incompatible,
-                            sessionId,
-                            "did not restore the expected request and terminal response");
-                    }
-
-                    return new WorkflowResumeResult<ApprovalResponse>(restoredRequest, output);
-                }
-                catch (WorkflowContinuationException)
-                {
-                    throw;
-                }
-                catch (Exception exception) when (IsCorrupt(exception))
-                {
-                    throw ContinuationFailure(
-                        ContinuationFailureKind.Corrupt,
-                        sessionId,
-                        "could not be deserialized",
-                        exception);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    throw ContinuationFailure(
-                        ContinuationFailureKind.Incompatible,
-                        sessionId,
-                        "could not be resumed by the rebuilt workflow",
-                        exception);
-                }
-            }
+            await using var run = await RestoreStreamingRunAsync(
+                workflow,
+                sessionId,
+                cancellationToken);
+            return await ContinueAfterApprovalAsync(
+                run,
+                expectedRequest,
+                response,
+                sessionId,
+                cancellationToken);
         }
         finally
         {
@@ -352,6 +186,206 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         _disposed = true;
         _store.Dispose();
         _gate.Dispose();
+    }
+
+    private async Task<StreamingRun> RestoreStreamingRunAsync(
+        Microsoft.Agents.AI.Workflows.Workflow workflow,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        var checkpoint = await GetLatestCheckpointAsync(sessionId, cancellationToken);
+        try
+        {
+            return await InProcessExecution.ResumeStreamingAsync(
+                workflow,
+                checkpoint,
+                _manager,
+                cancellationToken);
+        }
+        catch (Exception exception) when (IsCorrupt(exception))
+        {
+            throw ContinuationFailure(
+                ContinuationFailureKind.Corrupt,
+                sessionId,
+                "could not be deserialized",
+                exception);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw ContinuationFailure(
+                ContinuationFailureKind.Incompatible,
+                sessionId,
+                "is incompatible with the rebuilt workflow",
+                exception);
+        }
+    }
+
+    private static async Task<WorkflowResumeResult<ApprovalResponse>> ContinueAfterApprovalAsync(
+        StreamingRun run,
+        PendingWorkflowRequest expectedRequest,
+        ApprovalResponse response,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            PendingWorkflowRequest? restoredRequest = null;
+            ApprovalResponse? output = null;
+            await foreach (var workflowEvent in run.WatchStreamAsync(cancellationToken))
+            {
+                switch (workflowEvent)
+                {
+                    case RequestInfoEvent requestEvent when restoredRequest is null:
+                        restoredRequest = ToRestoredPendingWorkflowRequest(requestEvent.Request);
+                        EnsureExpected(expectedRequest, restoredRequest, sessionId);
+                        await run.SendResponseAsync(
+                            requestEvent.Request.CreateResponse(response));
+                        break;
+                    case RequestInfoEvent:
+                        throw ContinuationFailure(
+                            ContinuationFailureKind.Incompatible,
+                            sessionId,
+                            "produced another external request while completing approval");
+                    case WorkflowOutputEvent { Data: ApprovalResponse approval }:
+                        output = approval;
+                        break;
+                }
+            }
+
+            if (restoredRequest is null || output is null)
+            {
+                throw ContinuationFailure(
+                    ContinuationFailureKind.Incompatible,
+                    sessionId,
+                    "did not restore the expected request and terminal response");
+            }
+
+            return new WorkflowResumeResult<ApprovalResponse>(restoredRequest, output);
+        }
+        catch (WorkflowContinuationException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsCorrupt(exception))
+        {
+            throw ContinuationFailure(
+                ContinuationFailureKind.Corrupt,
+                sessionId,
+                "could not be deserialized",
+                exception);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw ContinuationFailure(
+                ContinuationFailureKind.Incompatible,
+                sessionId,
+                "could not be resumed by the rebuilt workflow",
+                exception);
+        }
+    }
+
+    private static async Task<WorkflowRemediationResumeResult> ContinueAfterRemediationAsync(
+        StreamingRun run,
+        PendingWorkflowRequest expectedRequest,
+        RemediationWorkflowResponse response,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            PendingWorkflowRequest? restoredRequest = null;
+            PendingWorkflowRequest? nextRequest = null;
+            await foreach (var workflowEvent in run.WatchStreamAsync(cancellationToken))
+            {
+                if (workflowEvent is ExecutorFailedEvent failed)
+                {
+                    throw ContinuationFailure(
+                        ContinuationFailureKind.Incompatible,
+                        sessionId,
+                        $"failed in executor '{failed.ExecutorId}': {failed.Data?.Message}",
+                        failed.Data);
+                }
+
+                if (workflowEvent is not RequestInfoEvent requestEvent)
+                {
+                    continue;
+                }
+
+                if (restoredRequest is null)
+                {
+                    restoredRequest = await RespondToRestoredRemediationAsync(
+                        run,
+                        requestEvent.Request,
+                        expectedRequest,
+                        response,
+                        sessionId);
+                    continue;
+                }
+
+                nextRequest = ToPendingWorkflowRequest(requestEvent.Request);
+                break;
+            }
+
+            if (restoredRequest is null)
+            {
+                throw ContinuationFailure(
+                    ContinuationFailureKind.Incompatible,
+                    sessionId,
+                    "did not restore the expected remediation request");
+            }
+
+            if (run.LastCheckpoint is null)
+            {
+                throw ContinuationFailure(
+                    ContinuationFailureKind.Incompatible,
+                    sessionId,
+                    "did not create a checkpoint after remediation");
+            }
+
+            if (nextRequest is null)
+            {
+                throw ContinuationFailure(
+                    ContinuationFailureKind.Incompatible,
+                    sessionId,
+                    "did not reach the next external request");
+            }
+
+            return new WorkflowRemediationResumeResult(nextRequest);
+        }
+        catch (WorkflowContinuationException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsCorrupt(exception))
+        {
+            throw ContinuationFailure(
+                ContinuationFailureKind.Corrupt,
+                sessionId,
+                "could not be deserialized",
+                exception);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw ContinuationFailure(
+                ContinuationFailureKind.Incompatible,
+                sessionId,
+                "could not resume remediation",
+                exception);
+        }
+    }
+
+    private static async Task<PendingWorkflowRequest> RespondToRestoredRemediationAsync(
+        StreamingRun run,
+        ExternalRequest request,
+        PendingWorkflowRequest expectedRequest,
+        RemediationWorkflowResponse response,
+        string sessionId)
+    {
+        var restoredRequest = ToRestoredPendingWorkflowRequest(request);
+        EnsureExpected(expectedRequest, restoredRequest, sessionId);
+        EnsureRemediationCorrelated(expectedRequest, response, sessionId);
+        await run.SendResponseAsync(request.CreateResponse(response));
+        return restoredRequest;
     }
 
     private async Task<CheckpointInfo> GetLatestCheckpointAsync(
