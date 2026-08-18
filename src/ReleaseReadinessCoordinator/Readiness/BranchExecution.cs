@@ -52,10 +52,12 @@ internal sealed class TestReadinessBranchExecutor
     }
 
     public Task<BranchResult> ExecuteAsync(
+        Guid resultId,
         ReleaseSubmission submission,
         BranchWorkItem workItem,
         CancellationToken cancellationToken = default) =>
         BranchExecution.ExecuteAsync(
+            resultId,
             submission,
             workItem,
             ReadinessCheck.Test,
@@ -79,10 +81,12 @@ internal sealed class SecurityReadinessBranchExecutor
     }
 
     public Task<BranchResult> ExecuteAsync(
+        Guid resultId,
         ReleaseSubmission submission,
         BranchWorkItem workItem,
         CancellationToken cancellationToken = default) =>
         BranchExecution.ExecuteAsync(
+            resultId,
             submission,
             workItem,
             ReadinessCheck.Security,
@@ -106,10 +110,12 @@ internal sealed class ChangeReadinessBranchExecutor
     }
 
     public Task<BranchResult> ExecuteAsync(
+        Guid resultId,
         ReleaseSubmission submission,
         BranchWorkItem workItem,
         CancellationToken cancellationToken = default) =>
         BranchExecution.ExecuteAsync(
+            resultId,
             submission,
             workItem,
             ReadinessCheck.Change,
@@ -122,6 +128,7 @@ internal sealed class ChangeReadinessBranchExecutor
 internal static class BranchExecution
 {
     public static async Task<BranchResult> ExecuteAsync<TEvidence, TEvaluation>(
+        Guid resultId,
         ReleaseSubmission submission,
         BranchWorkItem workItem,
         ReadinessCheck check,
@@ -136,6 +143,11 @@ internal static class BranchExecution
         ArgumentNullException.ThrowIfNull(workItem);
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(evaluate);
+        if (resultId == Guid.Empty)
+        {
+            throw new ArgumentException("A result ID cannot be empty.", nameof(resultId));
+        }
+
         ValidateWork(submission, workItem, check);
 
         var retrieval = await EvidenceProviderRetry.GetCurrentAsync(
@@ -145,6 +157,7 @@ internal static class BranchExecution
         if (retrieval.ExhaustedEvidenceId.HasValue)
         {
             return Result(
+                resultId,
                 workItem,
                 check,
                 evidenceKind,
@@ -161,6 +174,7 @@ internal static class BranchExecution
         if (retrieval.Evidence is null)
         {
             return Result(
+                resultId,
                 workItem,
                 check,
                 evidenceKind,
@@ -182,6 +196,7 @@ internal static class BranchExecution
 
         var evaluation = evaluate(submission, retrieval.Evidence);
         return Result(
+            resultId,
             workItem,
             check,
             evidenceKind,
@@ -193,6 +208,7 @@ internal static class BranchExecution
     }
 
     private static BranchResult Result(
+        Guid resultId,
         BranchWorkItem workItem,
         ReadinessCheck check,
         EvidenceKind evidenceKind,
@@ -201,7 +217,7 @@ internal static class BranchExecution
         UtcInstant? validUntil,
         IEnumerable<string> attempts,
         IReadOnlyDictionary<string, string> findings) => new(
-            Guid.NewGuid(),
+            resultId,
             workItem.ReleaseRevision,
             workItem.RoundNumber,
             check,

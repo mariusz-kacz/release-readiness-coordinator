@@ -213,7 +213,7 @@ public sealed class RemediationWorkflowResponseTests
     {
         var start = new EvaluationRoundStart(Guid.NewGuid(), 1, Utc(2026, 8, 17, 9, 30), []);
         return new EvaluationRound(
-            start.Id,
+            start.RoundId,
             submission.Key,
             1,
             start.StartedAt,
@@ -315,7 +315,7 @@ public sealed class RemediationWorkflowRealGraphTests
             ReleaseWorkflowFactory.Create(submission, dataService, timeProvider, dependencies);
 
         using var coordinator = new CheckpointStoreCoordinator(checkpoints.Info);
-        var started = Assert.IsType<PendingRemediationRequest>(
+        var started = Assert.IsType<PendingRemediationWait>(
             await coordinator.StartAsync(
                 Workflow(),
                 new EvaluationRoundStart(Guid.NewGuid(), 1, now, []),
@@ -360,7 +360,7 @@ public sealed class RemediationWorkflowRealGraphTests
             started,
             response);
 
-        Assert.IsType<PendingApprovalRequest>(resumed);
+        Assert.IsType<PendingApprovalWait>(resumed);
         var detail = await dataService.GetReleaseDetailAsync(submission.Key);
         Assert.NotNull(detail);
         Assert.Equal(2, detail.EvaluationRounds.Length);

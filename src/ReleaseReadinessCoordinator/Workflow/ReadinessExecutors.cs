@@ -112,6 +112,7 @@ internal sealed partial class ReadinessBranchExecutor : Executor
     private readonly ReadinessCheck _check;
     private readonly ReleaseSubmission _submission;
     private readonly Func<
+        Guid,
         ReleaseSubmission,
         Domain.BranchWorkItem,
         CancellationToken,
@@ -175,6 +176,7 @@ internal sealed partial class ReadinessBranchExecutor : Executor
         var result = work.WorkItem.Disposition switch
         {
             WorkDisposition.Execute => await _execute(
+                work.ResultId,
                 _submission,
                 work.WorkItem,
                 cancellationToken),
@@ -212,7 +214,7 @@ internal sealed partial class ReadinessAggregator : Executor, IResettableExecuto
         CancellationToken cancellationToken)
     {
         Validate(completed);
-        if (_results.Count > 0 && _results[0].Round.Id != completed.Round.Id)
+        if (_results.Count > 0 && _results[0].Round.RoundId != completed.Round.RoundId)
         {
             throw new InvalidOperationException("Branch results belong to different evaluation rounds.");
         }

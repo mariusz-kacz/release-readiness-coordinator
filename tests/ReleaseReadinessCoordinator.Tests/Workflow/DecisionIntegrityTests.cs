@@ -241,7 +241,7 @@ public sealed class DecisionIntegrityRealGraphTests
         await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(BranchOutcome.Passed);
         using var checkpoints = new DecisionCheckpointDirectory();
         using var coordinator = new CheckpointStoreCoordinator(checkpoints.Info);
-        var pending = Assert.IsType<PendingApprovalRequest>(
+        var pending = Assert.IsType<PendingApprovalWait>(
             await coordinator.StartAsync(host.CreateWorkflow(), host.Input, $"current-{decision}"));
 
         var continued = await coordinator.ResumeApprovalAsync(
@@ -263,9 +263,9 @@ public sealed class DecisionIntegrityRealGraphTests
         using var checkpoints = new DecisionCheckpointDirectory();
         using var coordinator = new CheckpointStoreCoordinator(checkpoints.Info);
         const string SessionId = "invalid-decision-continuation";
-        var pending = Assert.IsType<PendingApprovalRequest>(
+        var pending = Assert.IsType<PendingApprovalWait>(
             await coordinator.StartAsync(host.CreateWorkflow(), host.Input, SessionId));
-        var mismatch = pending with { RequestId = Guid.NewGuid().ToString("N") };
+        var mismatch = pending with { WorkflowRequestId = Guid.NewGuid().ToString("N") };
 
         var conflict = await Assert.ThrowsAsync<WorkflowContinuationException>(() =>
             coordinator.ResumeApprovalAsync(
@@ -291,7 +291,7 @@ public sealed class DecisionIntegrityRealGraphTests
                 && edge.Connection.SinkIds.Contains(ReleaseWorkflowExecutorIds.Planner));
     }
 
-    private static ApprovalResponse Response(PendingApprovalRequest pending, HumanDecision decision)
+    private static ApprovalResponse Response(PendingApprovalWait pending, HumanDecision decision)
     {
         var approval = Assert.IsType<ApprovalRequest>(pending.Approval);
         return new ApprovalResponse(new HumanResponse(

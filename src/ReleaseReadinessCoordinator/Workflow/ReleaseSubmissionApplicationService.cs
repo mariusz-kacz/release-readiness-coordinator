@@ -67,11 +67,11 @@ public sealed class ReleaseSubmissionApplicationService
         var correlation = new WorkflowCorrelationRecord(
             submission.Key,
             sessionId,
-            started.RequestId,
+            started.WorkflowRequestId,
             started switch
             {
-                PendingRemediationRequest => WorkflowRequestKind.Remediation,
-                PendingApprovalRequest => WorkflowRequestKind.Approval,
+                PendingRemediationWait => WorkflowRequestKind.Remediation,
+                PendingApprovalWait => WorkflowRequestKind.Approval,
                 _ => throw new InvalidOperationException(
                     $"Unknown pending workflow request '{started.GetType().Name}'."),
             },

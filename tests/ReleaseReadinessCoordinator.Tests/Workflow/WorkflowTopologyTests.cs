@@ -46,7 +46,7 @@ public sealed class WorkflowTopologyTests
             roundMessageTypes,
             messageType => Assert.DoesNotContain(
                 messageType.GetProperties(),
-                property => typeof(PendingWorkflowRequest).IsAssignableFrom(property.PropertyType)));
+                property => typeof(PendingWorkflowWait).IsAssignableFrom(property.PropertyType)));
     }
 
     [Fact]
@@ -130,6 +130,7 @@ public sealed class WorkflowTopologyTests
             output => output.Data is EvaluationRound);
         var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
         var round = Assert.Single(detail!.EvaluationRounds);
+        Assert.Equal(host.Input.RoundId, round.Id);
         Assert.Equal(1, round.RoundNumber);
         Assert.Equal(
             new[]

@@ -194,6 +194,35 @@ public sealed class SelectiveRerunReuseTests
     private static readonly UtcInstant ValidUntil = Utc(2026, 8, 17, 11);
 
     [Fact]
+    public async Task Planned_result_identities_survive_execution_and_reuse_unchanged()
+    {
+        var evidence = Evidence();
+        var executedResultId = Guid.NewGuid();
+        var executed = await new TestReadinessBranchExecutor(
+            new CountingProvider(evidence),
+            new CountingPolicy()).ExecuteAsync(
+                executedResultId,
+                Submission(),
+                new BranchWorkItem(
+                    Revision,
+                    roundNumber: 2,
+                    ReadinessCheck.Test,
+                    WorkDisposition.Execute,
+                    PlanningReason.ExplicitlySelected,
+                    "Executed because Test was explicitly selected for rerun."));
+        var source = SourceResult(evidence.Id);
+        var reusedResultId = Guid.NewGuid();
+        var reused = Reuse().Create(
+            reusedResultId,
+            ReuseWorkItem(source),
+            source,
+            evidence.Id);
+
+        Assert.Equal(executedResultId, executed.Id);
+        Assert.Equal(reusedResultId, reused.Id);
+    }
+
+    [Fact]
     public void Reuse_emits_a_new_result_linked_to_the_verified_source_without_execution_attempts()
     {
         var source = SourceResult();
@@ -257,6 +286,7 @@ public sealed class SelectiveRerunReuseTests
             PlanningReason.ExplicitlySelected,
             "Executed because Test was explicitly selected for rerun.");
         _ = await new TestReadinessBranchExecutor(provider, policy).ExecuteAsync(
+            Guid.NewGuid(),
             Submission(),
             executeWork);
 

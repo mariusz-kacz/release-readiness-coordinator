@@ -479,15 +479,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] `EvaluationRoundStart.RoundId` is the identity persisted as `EvaluationRound.Id`; no second round identity is created during aggregation.
-- [ ] Each `PlannedBranchWorkItem.ResultId` becomes the emitted `BranchResult.Id` for both Execute and Reuse paths.
-- [ ] Existing round ordering, branch outcomes, reuse linkage, provider calls, and persistence behavior remain unchanged.
+- [x] `EvaluationRoundStart.RoundId` is the identity persisted as `EvaluationRound.Id`; no second round identity is created during aggregation.
+- [x] Each `PlannedBranchWorkItem.ResultId` becomes the emitted `BranchResult.Id` for both Execute and Reuse paths.
+- [x] Existing round ordering, branch outcomes, reuse linkage, provider calls, and persistence behavior remain unchanged.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowTopology|FullyQualifiedName~SelectiveRerun|FullyQualifiedName~DecisionIntegrity"`
-- [ ] A focused test asserts planned round/result identities survive execution and reuse unchanged.
-- [ ] `dotnet build --no-restore`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowTopology|FullyQualifiedName~SelectiveRerun|FullyQualifiedName~DecisionIntegrity"`
+- [x] A focused test asserts planned round/result identities survive execution and reuse unchanged.
+- [x] `dotnet build --no-restore`
 
 **Dependencies:** Task 16
 
@@ -507,15 +507,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] MAF-generated identities are named `WorkflowRequestId` everywhere they are captured, restored, compared, or persisted.
-- [ ] Pending wait types cannot be mistaken for durable domain request records, and remediation correlation explicitly distinguishes both IDs.
-- [ ] Checkpoint restoration, mismatch rejection, response typing, and no-business-effect-on-invalid-continuation behavior remain unchanged.
+- [x] MAF-generated identities are named `WorkflowRequestId` everywhere they are captured, restored, compared, or persisted.
+- [x] Pending wait types cannot be mistaken for durable domain request records, and remediation correlation explicitly distinguishes both IDs.
+- [x] Checkpoint restoration, mismatch rejection, response typing, and no-business-effect-on-invalid-continuation behavior remain unchanged.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~CheckpointContract|FullyQualifiedName~ExternalRequestContract|FullyQualifiedName~DecisionIntegrity"`
-- [ ] Search confirms no `PendingWorkflowRequest.RequestId`, `DomainRequestId`, or `Pending*Request` workflow type remains.
-- [ ] `dotnet build --no-restore`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~CheckpointContract|FullyQualifiedName~ExternalRequestContract|FullyQualifiedName~DecisionIntegrity"`
+- [x] Search confirms no `PendingWorkflowRequest.RequestId`, `DomainRequestId`, or `Pending*Request` workflow type remains.
+- [x] `dotnet build --no-restore`
 
 **Dependencies:** Task 16A
 

@@ -145,7 +145,10 @@ public sealed class ChangeReadinessBranchExecutionTests
         var provider = new CountingProvider(evidence: null);
         var policy = new CountingPolicy(PassingEvaluation());
 
-        var result = await Executor(provider, policy).ExecuteAsync(Submission(), WorkItem());
+        var result = await Executor(provider, policy).ExecuteAsync(
+            Guid.NewGuid(),
+            Submission(),
+            WorkItem());
 
         Assert.Equal(BranchOutcome.MissingEvidence, result.Outcome);
         Assert.Null(result.EvidenceId);
@@ -167,7 +170,10 @@ public sealed class ChangeReadinessBranchExecutionTests
                 ["approval"] = "The Change is not approved.",
             }));
 
-        var result = await Executor(provider, policy).ExecuteAsync(Submission(), WorkItem());
+        var result = await Executor(provider, policy).ExecuteAsync(
+            Guid.NewGuid(),
+            Submission(),
+            WorkItem());
 
         Assert.Equal(BranchOutcome.Blocked, result.Outcome);
         Assert.Equal(evidence.Id, result.EvidenceId);
@@ -183,7 +189,10 @@ public sealed class ChangeReadinessBranchExecutionTests
         var provider = new CountingProvider(evidence, transientFailures: 3);
         var policy = new CountingPolicy(PassingEvaluation());
 
-        var result = await Executor(provider, policy).ExecuteAsync(Submission(), WorkItem());
+        var result = await Executor(provider, policy).ExecuteAsync(
+            Guid.NewGuid(),
+            Submission(),
+            WorkItem());
 
         Assert.Equal(BranchOutcome.TransientFailure, result.Outcome);
         Assert.Equal(evidence.Id, result.EvidenceId);
@@ -201,7 +210,10 @@ public sealed class ChangeReadinessBranchExecutionTests
         var policy = new CountingPolicy(PassingEvaluation());
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Executor(provider, policy).ExecuteAsync(Submission(), WorkItem()));
+            () => Executor(provider, policy).ExecuteAsync(
+                Guid.NewGuid(),
+                Submission(),
+                WorkItem()));
 
         Assert.Equal(1, provider.CallCount);
         Assert.Equal(0, policy.CallCount);
@@ -214,7 +226,10 @@ public sealed class ChangeReadinessBranchExecutionTests
         var policy = new ThrowingPolicy();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Executor(provider, policy).ExecuteAsync(Submission(), WorkItem()));
+            () => Executor(provider, policy).ExecuteAsync(
+                Guid.NewGuid(),
+                Submission(),
+                WorkItem()));
 
         Assert.Equal(1, provider.CallCount);
         Assert.Equal(1, policy.CallCount);

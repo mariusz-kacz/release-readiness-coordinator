@@ -34,7 +34,7 @@ internal sealed class RoundAggregator(
                 $"Release revision '{releaseRevision.ReleaseId}/{releaseRevision.Revision}' does not exist.");
         var completedAt = new UtcInstant(_timeProvider.GetUtcNow());
         var round = new EvaluationRound(
-            start.Id,
+            start.RoundId,
             releaseRevision,
             start.RoundNumber,
             start.StartedAt,

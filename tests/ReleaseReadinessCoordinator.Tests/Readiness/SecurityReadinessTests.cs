@@ -219,7 +219,7 @@ public sealed class SecurityReadinessBranchExecutionTests
         var policy = new CountingPolicy(PassingEvaluation());
         var executor = Executor(provider, policy);
 
-        var result = await executor.ExecuteAsync(Submission(), WorkItem());
+        var result = await executor.ExecuteAsync(Guid.NewGuid(), Submission(), WorkItem());
 
         Assert.Equal(BranchOutcome.MissingEvidence, result.Outcome);
         Assert.Null(result.EvidenceId);
@@ -241,7 +241,7 @@ public sealed class SecurityReadinessBranchExecutionTests
             }));
         var executor = Executor(provider, policy);
 
-        var result = await executor.ExecuteAsync(Submission(), WorkItem());
+        var result = await executor.ExecuteAsync(Guid.NewGuid(), Submission(), WorkItem());
 
         Assert.Equal(BranchOutcome.Blocked, result.Outcome);
         Assert.Equal(1, provider.CallCount);
@@ -256,7 +256,7 @@ public sealed class SecurityReadinessBranchExecutionTests
         var policy = new CountingPolicy(PassingEvaluation());
         var executor = Executor(provider, policy);
 
-        var result = await executor.ExecuteAsync(Submission(), WorkItem());
+        var result = await executor.ExecuteAsync(Guid.NewGuid(), Submission(), WorkItem());
 
         Assert.Equal(BranchOutcome.TransientFailure, result.Outcome);
         Assert.Equal(evidence.Id, result.EvidenceId);
@@ -274,7 +274,7 @@ public sealed class SecurityReadinessBranchExecutionTests
         var executor = Executor(provider, policy);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => executor.ExecuteAsync(Submission(), WorkItem()));
+            () => executor.ExecuteAsync(Guid.NewGuid(), Submission(), WorkItem()));
 
         Assert.Equal(1, provider.CallCount);
         Assert.Equal(0, policy.CallCount);

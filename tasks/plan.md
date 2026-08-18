@@ -125,8 +125,8 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] Task 14: Implement selective execution and safe reuse planning
 - [x] Task 15: Complete aggregation and remediation resumption
 - [x] Task 16: Build immutable snapshots and terminal MAF human decisions
-- [ ] Task 16A: Allocate round and result identities once
-- [ ] Task 16B: Separate workflow waits from business requests
+- [x] Task 16A: Allocate round and result identities once
+- [x] Task 16B: Separate workflow waits from business requests
 - [ ] Task 16C: Clarify persisted approval-response references
 
 ### Checkpoint D: Core End-to-End Workflow

@@ -106,14 +106,14 @@ internal sealed record RoundPlanningRequest
 internal sealed record EvaluationRoundStart
 {
     public EvaluationRoundStart(
-        Guid id,
+        Guid roundId,
         int roundNumber,
         UtcInstant startedAt,
         IEnumerable<ReadinessCheck> explicitlySelectedChecks)
     {
-        if (id == Guid.Empty)
+        if (roundId == Guid.Empty)
         {
-            throw new ArgumentException("An evaluation round start ID cannot be empty.", nameof(id));
+            throw new ArgumentException("An evaluation round ID cannot be empty.", nameof(roundId));
         }
 
         if (roundNumber <= 0)
@@ -121,7 +121,7 @@ internal sealed record EvaluationRoundStart
             throw new ArgumentOutOfRangeException(nameof(roundNumber));
         }
 
-        Id = id;
+        RoundId = roundId;
         RoundNumber = roundNumber;
         StartedAt = startedAt;
         ExplicitlySelectedChecks = explicitlySelectedChecks
@@ -130,7 +130,7 @@ internal sealed record EvaluationRoundStart
             .ToImmutableArray();
     }
 
-    public Guid Id { get; }
+    public Guid RoundId { get; }
 
     public int RoundNumber { get; }
 
