@@ -67,13 +67,13 @@ public sealed class ReleaseSubmissionApplicationService
         var correlation = new WorkflowCorrelationRecord(
             submission.Key,
             sessionId,
-            started.PendingRequest.RequestId,
-            started.PendingRequest.Kind switch
+            started.RequestId,
+            started switch
             {
-                ExternalWaitKind.Remediation => WorkflowRequestKind.Remediation,
-                ExternalWaitKind.Approval => WorkflowRequestKind.Approval,
+                PendingRemediationRequest => WorkflowRequestKind.Remediation,
+                PendingApprovalRequest => WorkflowRequestKind.Approval,
                 _ => throw new InvalidOperationException(
-                    $"Unknown workflow request kind '{started.PendingRequest.Kind}'."),
+                    $"Unknown pending workflow request '{started.GetType().Name}'."),
             },
             correlatedAt);
         await _dataService.SaveWorkflowCorrelationAsync(

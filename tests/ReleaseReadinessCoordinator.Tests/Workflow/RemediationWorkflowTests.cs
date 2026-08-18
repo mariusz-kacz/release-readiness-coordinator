@@ -315,12 +315,12 @@ public sealed class RemediationWorkflowRealGraphTests
             ReleaseWorkflowFactory.Create(submission, dataService, timeProvider, dependencies);
 
         using var coordinator = new CheckpointStoreCoordinator(checkpoints.Info);
-        var started = await coordinator.StartAsync(
-            Workflow(),
-            new EvaluationRoundStart(Guid.NewGuid(), 1, now, []),
-            "real-graph-remediation");
+        var started = Assert.IsType<PendingRemediationRequest>(
+            await coordinator.StartAsync(
+                Workflow(),
+                new EvaluationRoundStart(Guid.NewGuid(), 1, now, []),
+                "real-graph-remediation"));
 
-        Assert.Equal(ExternalWaitKind.Remediation, started.PendingRequest.Kind);
         var afterFirstRound = await dataService.GetReleaseDetailAsync(submission.Key);
         Assert.NotNull(afterFirstRound);
         var request = Assert.Single(afterFirstRound.RemediationRequests);
@@ -349,7 +349,7 @@ public sealed class RemediationWorkflowRealGraphTests
             coordinator.ResumeRemediationAsync(
                 Workflow(),
                 "real-graph-remediation",
-                started.PendingRequest,
+                started,
                 mismatched));
         Assert.Empty((await dataService.GetReleaseDetailAsync(submission.Key))!.RemediationSubmissions);
 
@@ -357,10 +357,10 @@ public sealed class RemediationWorkflowRealGraphTests
         var resumed = await coordinator.ResumeRemediationAsync(
             Workflow(),
             "real-graph-remediation",
-            started.PendingRequest,
+            started,
             response);
 
-        Assert.Equal(ExternalWaitKind.Approval, resumed.NextRequest.Kind);
+        Assert.IsType<PendingApprovalRequest>(resumed);
         var detail = await dataService.GetReleaseDetailAsync(submission.Key);
         Assert.NotNull(detail);
         Assert.Equal(2, detail.EvaluationRounds.Length);
@@ -395,7 +395,7 @@ public sealed class RemediationWorkflowRealGraphTests
             coordinator.ResumeRemediationAsync(
                 Workflow(),
                 "real-graph-remediation",
-                started.PendingRequest,
+                started,
                 response));
         detail = await dataService.GetReleaseDetailAsync(submission.Key);
         Assert.NotNull(detail);

@@ -27,19 +27,15 @@ internal sealed class WorkflowContinuationException : InvalidOperationException
     public ContinuationFailureKind Kind { get; }
 }
 
-internal sealed record PendingWorkflowRequest(
+internal abstract record PendingWorkflowRequest(string RequestId);
+
+internal sealed record PendingRemediationRequest(
     string RequestId,
-    ExternalWaitKind Kind,
-    string PortId,
-    Guid? DomainRequestId = null);
+    Guid? DomainRequestId)
+    : PendingWorkflowRequest(RequestId);
 
-internal sealed record WorkflowStartResult(PendingWorkflowRequest PendingRequest);
-
-internal sealed record WorkflowResumeResult<TResponse>(
-    PendingWorkflowRequest RestoredRequest,
-    TResponse Output);
-
-internal sealed record WorkflowRemediationResumeResult(PendingWorkflowRequest NextRequest);
+internal sealed record PendingApprovalRequest(string RequestId)
+    : PendingWorkflowRequest(RequestId);
 
 internal sealed class CheckpointStoreCoordinator : IDisposable
 {
@@ -58,7 +54,7 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
     }
 
-    public async Task<WorkflowStartResult> StartAsync(
+    public async Task<PendingWorkflowRequest> StartAsync(
         Microsoft.Agents.AI.Workflows.Workflow workflow,
         EvaluationRoundStart input,
         string sessionId,
@@ -99,10 +95,10 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
             if (run.LastCheckpoint is null)
                 throw new InvalidOperationException(
                     "The workflow reached an external wait without creating a checkpoint.");
-            return new WorkflowStartResult(
-                pendingRequest
-                    ?? throw new InvalidOperationException(
-                        "The workflow completed without exposing an external request."));
+            if (pendingRequest is null)
+                throw new InvalidOperationException(
+                    "The workflow completed without exposing an external request.");
+            return pendingRequest;
         }
         finally
         {
@@ -110,10 +106,10 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         }
     }
 
-    public async Task<WorkflowRemediationResumeResult> ResumeRemediationAsync(
+    public async Task<PendingWorkflowRequest> ResumeRemediationAsync(
         Microsoft.Agents.AI.Workflows.Workflow workflow,
         string sessionId,
-        PendingWorkflowRequest expectedRequest,
+        PendingRemediationRequest expectedRequest,
         RemediationWorkflowResponse response,
         CancellationToken cancellationToken = default)
     {
@@ -143,10 +139,10 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         }
     }
 
-    public async Task<WorkflowResumeResult<ApprovalResponse>> ResumeApprovalAsync(
+    public async Task<ApprovalResponse> ResumeApprovalAsync(
         Microsoft.Agents.AI.Workflows.Workflow workflow,
         string sessionId,
-        PendingWorkflowRequest expectedRequest,
+        PendingApprovalRequest expectedRequest,
         ApprovalResponse response,
         CancellationToken cancellationToken = default)
     {
@@ -220,9 +216,9 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         }
     }
 
-    private static async Task<WorkflowResumeResult<ApprovalResponse>> ContinueAfterApprovalAsync(
+    private static async Task<ApprovalResponse> ContinueAfterApprovalAsync(
         StreamingRun run,
-        PendingWorkflowRequest expectedRequest,
+        PendingApprovalRequest expectedRequest,
         ApprovalResponse response,
         string sessionId,
         CancellationToken cancellationToken)
@@ -260,7 +256,7 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
                     "did not restore the expected request and terminal response");
             }
 
-            return new WorkflowResumeResult<ApprovalResponse>(restoredRequest, output);
+            return output;
         }
         catch (WorkflowContinuationException)
         {
@@ -284,9 +280,9 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         }
     }
 
-    private static async Task<WorkflowRemediationResumeResult> ContinueAfterRemediationAsync(
+    private static async Task<PendingWorkflowRequest> ContinueAfterRemediationAsync(
         StreamingRun run,
-        PendingWorkflowRequest expectedRequest,
+        PendingRemediationRequest expectedRequest,
         RemediationWorkflowResponse response,
         string sessionId,
         CancellationToken cancellationToken)
@@ -350,7 +346,7 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
                     "did not reach the next external request");
             }
 
-            return new WorkflowRemediationResumeResult(nextRequest);
+            return nextRequest;
         }
         catch (WorkflowContinuationException)
         {
@@ -377,7 +373,7 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
     private static async Task<PendingWorkflowRequest> RespondToRestoredRemediationAsync(
         StreamingRun run,
         ExternalRequest request,
-        PendingWorkflowRequest expectedRequest,
+        PendingRemediationRequest expectedRequest,
         RemediationWorkflowResponse response,
         string sessionId)
     {
@@ -430,20 +426,15 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
             var domainRequestId = request.TryGetDataAs<DomainRemediationRequest>(out var domainRequest)
                 ? domainRequest.Id
                 : (Guid?)null;
-            return new PendingWorkflowRequest(
+            return new PendingRemediationRequest(
                 request.RequestId,
-                ExternalWaitKind.Remediation,
-                request.PortInfo.PortId,
                 domainRequestId);
         }
 
         if (request.PortInfo.PortId == ReleaseWorkflowPortIds.Approval
             && request.IsDataOfType<ApprovalRequest>())
         {
-            return new PendingWorkflowRequest(
-                request.RequestId,
-                ExternalWaitKind.Approval,
-                request.PortInfo.PortId);
+            return new PendingApprovalRequest(request.RequestId);
         }
 
         throw new WorkflowContinuationException(
@@ -453,15 +444,14 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
 
     private static PendingWorkflowRequest ToRestoredPendingWorkflowRequest(ExternalRequest request)
     {
-        var kind = request.PortInfo.PortId switch
+        return request.PortInfo.PortId switch
         {
-            ReleaseWorkflowPortIds.Remediation => ExternalWaitKind.Remediation,
-            ReleaseWorkflowPortIds.Approval => ExternalWaitKind.Approval,
+            ReleaseWorkflowPortIds.Remediation => new PendingRemediationRequest(request.RequestId, null),
+            ReleaseWorkflowPortIds.Approval => new PendingApprovalRequest(request.RequestId),
             _ => throw new WorkflowContinuationException(
                 ContinuationFailureKind.Mismatched,
                 $"Restored external request '{request.RequestId}' has an unknown port."),
         };
-        return new PendingWorkflowRequest(request.RequestId, kind, request.PortInfo.PortId);
     }
 
     private static void EnsureExpected(
@@ -469,29 +459,31 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         PendingWorkflowRequest actual,
         string sessionId)
     {
-        if (expected != actual)
+        var sameRequest = (expected, actual) switch
         {
-            var sameRequest = expected.RequestId == actual.RequestId
-                && expected.Kind == actual.Kind
-                && expected.PortId == actual.PortId
-                && (!expected.DomainRequestId.HasValue
-                    || !actual.DomainRequestId.HasValue
-                    || expected.DomainRequestId == actual.DomainRequestId);
-            if (sameRequest)
-            {
-                return;
-            }
-
-            throw ContinuationFailure(
-                ContinuationFailureKind.Mismatched,
-                sessionId,
-                $"restored request '{actual.RequestId}' ({actual.Kind}) instead of "
-                    + $"'{expected.RequestId}' ({expected.Kind})");
+            (PendingRemediationRequest expectedRemediation, PendingRemediationRequest actualRemediation) =>
+                expectedRemediation.RequestId == actualRemediation.RequestId
+                && (!expectedRemediation.DomainRequestId.HasValue
+                    || !actualRemediation.DomainRequestId.HasValue
+                    || expectedRemediation.DomainRequestId == actualRemediation.DomainRequestId),
+            (PendingApprovalRequest expectedApproval, PendingApprovalRequest actualApproval) =>
+                expectedApproval.RequestId == actualApproval.RequestId,
+            _ => false,
+        };
+        if (sameRequest)
+        {
+            return;
         }
+
+        throw ContinuationFailure(
+            ContinuationFailureKind.Mismatched,
+            sessionId,
+            $"restored {actual.GetType().Name} request '{actual.RequestId}' instead of "
+                + $"{expected.GetType().Name} request '{expected.RequestId}'");
     }
 
     private static void EnsureRemediationCorrelated(
-        PendingWorkflowRequest expectedRequest,
+        PendingRemediationRequest expectedRequest,
         RemediationWorkflowResponse response,
         string sessionId)
     {

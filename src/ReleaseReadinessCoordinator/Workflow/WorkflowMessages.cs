@@ -12,12 +12,6 @@ public enum ReadinessBranch
     Change = 3,
 }
 
-public enum ExternalWaitKind
-{
-    Remediation = 1,
-    Approval = 2,
-}
-
 public sealed record ApprovalRequest(int RoundNumber);
 
 public sealed record ApprovalResponse(bool Approved);

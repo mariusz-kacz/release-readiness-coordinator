@@ -46,7 +46,7 @@ public sealed class WorkflowTopologyTests
             roundMessageTypes,
             messageType => Assert.DoesNotContain(
                 messageType.GetProperties(),
-                property => property.PropertyType == typeof(ExternalWaitKind)));
+                property => typeof(PendingWorkflowRequest).IsAssignableFrom(property.PropertyType)));
     }
 
     [Fact]

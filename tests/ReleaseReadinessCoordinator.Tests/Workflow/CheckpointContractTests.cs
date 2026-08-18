@@ -8,14 +8,31 @@ namespace ReleaseReadinessCoordinator.Tests.Workflow;
 public sealed class CheckpointContractTests
 {
     [Fact]
-    public void Coordinator_results_expose_only_consumed_state()
+    public void Coordinator_exposes_typed_pending_requests()
     {
+        Assert.True(typeof(PendingWorkflowRequest).IsAbstract);
+        Assert.True(typeof(PendingRemediationRequest).IsSealed);
+        Assert.True(typeof(PendingApprovalRequest).IsSealed);
         Assert.Equal(
-            [nameof(WorkflowStartResult.PendingRequest)],
-            typeof(WorkflowStartResult).GetProperties().Select(property => property.Name).Order());
+            [nameof(PendingRemediationRequest.DomainRequestId), nameof(PendingWorkflowRequest.RequestId)],
+            typeof(PendingRemediationRequest).GetProperties().Select(property => property.Name).Order());
         Assert.Equal(
-            [nameof(WorkflowRemediationResumeResult.NextRequest)],
-            typeof(WorkflowRemediationResumeResult).GetProperties().Select(property => property.Name).Order());
+            [nameof(PendingWorkflowRequest.RequestId)],
+            typeof(PendingApprovalRequest).GetProperties().Select(property => property.Name).Order());
+    }
+
+    [Fact]
+    public void Coordinator_actions_accept_only_their_valid_request_types()
+    {
+        var remediation = typeof(CheckpointStoreCoordinator)
+            .GetMethod(nameof(CheckpointStoreCoordinator.ResumeRemediationAsync))!;
+        var approval = typeof(CheckpointStoreCoordinator)
+            .GetMethod(nameof(CheckpointStoreCoordinator.ResumeApprovalAsync))!;
+
+        Assert.Equal(typeof(PendingRemediationRequest), remediation.GetParameters()[2].ParameterType);
+        Assert.Equal(typeof(Task<PendingWorkflowRequest>), remediation.ReturnType);
+        Assert.Equal(typeof(PendingApprovalRequest), approval.GetParameters()[2].ParameterType);
+        Assert.Equal(typeof(Task<ApprovalResponse>), approval.ReturnType);
     }
 
     [Fact]
@@ -25,18 +42,17 @@ public sealed class CheckpointContractTests
             BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         const string SessionId = "release-42-revision-3";
-        WorkflowStartResult started;
+        PendingApprovalRequest started;
 
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
         {
-            started = await firstProcess.StartAsync(
-                host.CreateWorkflow(),
-                host.Input,
-                SessionId);
+            started = Assert.IsType<PendingApprovalRequest>(
+                await firstProcess.StartAsync(
+                    host.CreateWorkflow(),
+                    host.Input,
+                    SessionId));
 
-            Assert.Equal(ExternalWaitKind.Approval, started.PendingRequest.Kind);
-            Assert.Equal(ReleaseWorkflowPortIds.Approval, started.PendingRequest.PortId);
-            Assert.False(string.IsNullOrWhiteSpace(started.PendingRequest.RequestId));
+            Assert.False(string.IsNullOrWhiteSpace(started.RequestId));
         }
 
         var persistedJson = Directory
@@ -44,17 +60,16 @@ public sealed class CheckpointContractTests
             .Select(File.ReadAllText)
             .ToArray();
         Assert.NotEmpty(persistedJson);
-        Assert.Contains(persistedJson, json => json.Contains(started.PendingRequest.RequestId, StringComparison.Ordinal));
+        Assert.Contains(persistedJson, json => json.Contains(started.RequestId, StringComparison.Ordinal));
 
         using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
         var resumed = await secondProcess.ResumeApprovalAsync(
             host.CreateWorkflow(),
             SessionId,
-            started.PendingRequest,
+            started,
             new ApprovalResponse(Approved: true));
 
-        Assert.Equal(started.PendingRequest, resumed.RestoredRequest);
-        Assert.True(resumed.Output.Approved);
+        Assert.True(resumed.Approved);
     }
 
     [Fact]
@@ -64,18 +79,19 @@ public sealed class CheckpointContractTests
             BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         const string SessionId = "release-7-revision-1";
-        WorkflowStartResult started;
+        PendingApprovalRequest started;
 
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
         {
-            started = await firstProcess.StartAsync(
-                host.CreateWorkflow(),
-                host.Input,
-                SessionId);
+            started = Assert.IsType<PendingApprovalRequest>(
+                await firstProcess.StartAsync(
+                    host.CreateWorkflow(),
+                    host.Input,
+                    SessionId));
         }
 
         using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
-        var mismatch = started.PendingRequest with { RequestId = Guid.NewGuid().ToString("N") };
+        var mismatch = started with { RequestId = Guid.NewGuid().ToString("N") };
 
         var exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
             () => secondProcess.ResumeApprovalAsync(
@@ -86,26 +102,12 @@ public sealed class CheckpointContractTests
 
         Assert.Equal(ContinuationFailureKind.Mismatched, exception.Kind);
 
-        var wrongType = started.PendingRequest with
-        {
-            Kind = ExternalWaitKind.Remediation,
-            PortId = ReleaseWorkflowPortIds.Remediation,
-        };
-        exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
-            () => secondProcess.ResumeApprovalAsync(
-                host.CreateWorkflow(),
-                SessionId,
-                wrongType,
-                new ApprovalResponse(Approved: true)));
-
-        Assert.Equal(ContinuationFailureKind.Mismatched, exception.Kind);
-
         var resumed = await secondProcess.ResumeApprovalAsync(
             host.CreateWorkflow(),
             SessionId,
-            started.PendingRequest,
+            started,
             new ApprovalResponse(Approved: true));
-        Assert.True(resumed.Output.Approved);
+        Assert.True(resumed.Approved);
     }
 
     [Fact]
@@ -120,7 +122,7 @@ public sealed class CheckpointContractTests
             () => coordinator.ResumeApprovalAsync(
                 host.CreateWorkflow(),
                 "missing-session",
-                new PendingWorkflowRequest("missing-request", ExternalWaitKind.Approval, ReleaseWorkflowPortIds.Approval),
+                new PendingApprovalRequest("missing-request"),
                 new ApprovalResponse(Approved: true)));
 
         Assert.Equal(ContinuationFailureKind.Missing, exception.Kind);
@@ -133,19 +135,20 @@ public sealed class CheckpointContractTests
             BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         const string SessionId = "release-corrupt";
-        WorkflowStartResult started;
+        PendingApprovalRequest started;
 
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
         {
-            started = await firstProcess.StartAsync(
-                host.CreateWorkflow(),
-                host.Input,
-                SessionId);
+            started = Assert.IsType<PendingApprovalRequest>(
+                await firstProcess.StartAsync(
+                    host.CreateWorkflow(),
+                    host.Input,
+                    SessionId));
         }
 
         var checkpointFile = Directory
             .EnumerateFiles(directory.Info.FullName, "*", SearchOption.AllDirectories)
-            .Single(path => File.ReadAllText(path).Contains(started.PendingRequest.RequestId, StringComparison.Ordinal));
+            .Single(path => File.ReadAllText(path).Contains(started.RequestId, StringComparison.Ordinal));
         await File.WriteAllTextAsync(checkpointFile, "{not-valid-json");
 
         using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
@@ -153,7 +156,7 @@ public sealed class CheckpointContractTests
             () => secondProcess.ResumeApprovalAsync(
                 host.CreateWorkflow(),
                 SessionId,
-                started.PendingRequest,
+                started,
                 new ApprovalResponse(Approved: true)));
 
         Assert.Equal(ContinuationFailureKind.Corrupt, exception.Kind);
@@ -166,14 +169,15 @@ public sealed class CheckpointContractTests
             BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         const string SessionId = "release-incompatible";
-        WorkflowStartResult started;
+        PendingApprovalRequest started;
 
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
         {
-            started = await firstProcess.StartAsync(
-                host.CreateWorkflow(),
-                host.Input,
-                SessionId);
+            started = Assert.IsType<PendingApprovalRequest>(
+                await firstProcess.StartAsync(
+                    host.CreateWorkflow(),
+                    host.Input,
+                    SessionId));
         }
 
         var incompatibleExecutor = new ApprovalCompletionExecutor();
@@ -186,7 +190,7 @@ public sealed class CheckpointContractTests
             () => secondProcess.ResumeApprovalAsync(
                 incompatibleWorkflow,
                 SessionId,
-                started.PendingRequest,
+                started,
                 new ApprovalResponse(Approved: true)));
 
         Assert.Equal(ContinuationFailureKind.Incompatible, exception.Kind);
