@@ -63,6 +63,15 @@ public sealed class DatabaseSchemaTests
             context,
             nameof(BranchResultRow.EvaluationRoundId),
             nameof(BranchResultRow.Check));
+        AssertUniqueIndex<EvaluationRoundRow>(
+            context,
+            nameof(EvaluationRoundRow.ReleaseId),
+            nameof(EvaluationRoundRow.Revision),
+            nameof(EvaluationRoundRow.RoundNumber));
+        AssertUniqueIndex<WorkflowRequestRow>(
+            context,
+            nameof(WorkflowRequestRow.EvaluationRoundId),
+            nameof(WorkflowRequestRow.Kind));
         var activeRequestIndex = AssertUniqueIndex<WorkflowRequestRow>(
             context,
             nameof(WorkflowRequestRow.ReleaseId),
@@ -106,7 +115,6 @@ public sealed class DatabaseSchemaTests
             context.Model.FindEntityType(typeof(TimelineEntryRow))!
                 .FindProperty(nameof(TimelineEntryRow.Summary))!
                 .GetAfterSaveBehavior());
-
         foreach (var entityType in context.Model.GetEntityTypes()
                      .Where(entity => entity.FindProperty("OperationKey") is not null))
         {
@@ -119,7 +127,7 @@ public sealed class DatabaseSchemaTests
     }
 
     [Fact]
-    public async Task Initial_migration_creates_expected_tables_and_indexes_in_fresh_sqlite_database()
+    public async Task Ensure_created_creates_expected_tables_and_indexes_without_migration_history()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"release-readiness-{Guid.NewGuid():N}.db");
 
@@ -127,7 +135,7 @@ public sealed class DatabaseSchemaTests
         {
             await using (var context = CreateContext($"Data Source={databasePath};Pooling=False"))
             {
-                await context.Database.MigrateAsync();
+                await context.Database.EnsureCreatedAsync();
             }
 
             await using (var verification = CreateContext($"Data Source={databasePath};Pooling=False"))
@@ -135,6 +143,7 @@ public sealed class DatabaseSchemaTests
                 await verification.Database.OpenConnectionAsync();
 
                 var tables = await ReadSchemaObjectNames(verification, "table");
+                Assert.DoesNotContain("__EFMigrationsHistory", tables);
                 Assert.Contains("ReleaseRevisions", tables);
                 Assert.Contains("EvidenceRecords", tables);
                 Assert.Contains("BranchResults", tables);
@@ -144,8 +153,21 @@ public sealed class DatabaseSchemaTests
                 var indexes = await ReadSchemaObjectNames(verification, "index");
                 Assert.Contains("UX_EvidenceRecords_Release_Kind_Version", indexes);
                 Assert.Contains("UX_BranchResults_Round_Check", indexes);
+                Assert.Contains("UX_WorkflowRequests_Round_Kind", indexes);
                 Assert.Contains("UX_WorkflowRequests_Active_Release", indexes);
                 Assert.Contains("UX_HumanResponses_Terminal_Release", indexes);
+
+                Assert.Equal(
+                    [
+                        "Id", "EvaluationRoundId", "Check", "Outcome", "Disposition",
+                        "PlanningReason", "PlanningDetail", "EvidenceId", "EvidenceKind",
+                        "ValidUntilUtc", "AttemptsJson", "FindingsJson", "ReuseSourceResultId",
+                        "ReuseSourceRound", "OperationKey",
+                    ],
+                    await ReadColumnNames(verification, "BranchResults"));
+                Assert.Equal(
+                    ["DecisionSnapshotId", "Check", "BranchResultId", "EvidenceId"],
+                    await ReadColumnNames(verification, "DecisionSnapshotSources"));
             }
         }
         finally
@@ -165,7 +187,7 @@ public sealed class DatabaseSchemaTests
         {
             await using (var setup = CreateContext($"Data Source={databasePath};Pooling=False"))
             {
-                await setup.Database.MigrateAsync();
+                await setup.Database.EnsureCreatedAsync();
                 setup.ReleaseRevisions.Add(new ReleaseRevisionRow
                 {
                     ReleaseId = releaseId,
@@ -254,6 +276,23 @@ public sealed class DatabaseSchemaTests
         while (await reader.ReadAsync())
         {
             names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    private static async Task<HashSet<string>> ReadColumnNames(
+        DbContext context,
+        string tableName)
+    {
+        await using var command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"PRAGMA table_info(\"{tableName}\")";
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(1));
         }
 
         return names;

@@ -66,8 +66,8 @@ The MVP does not require production-grade identity or authorization. Actor names
 4. The workflow forms a complete three-branch result view.
 5. When any branch blocks, lacks evidence, or exhausts a known transient retry, the workflow creates one remediation request after fan-in and pauses.
 6. The coordinator supplies new versions of affected branch evidence.
-7. A new evaluation round executes only branches that are unsuccessful, use an evidence record that is no longer current, have a changed evaluator version, are expired, or are explicitly selected.
-8. Successful branch results whose evidence identity, evaluator version, and deadline still match are reused without recomputation.
+7. A new evaluation round executes only branches that are unsuccessful, use an evidence record that is no longer current, are expired, or are explicitly selected.
+8. Successful branch results whose evidence identity and deadline still match are reused without recomputation.
 9. When all three branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, then pauses for a human decision.
 10. Before accepting approval or rejection, the workflow revalidates the snapshot and all evidence freshness conditions.
 11. A current approval or rejection is persisted as a terminal decision.
@@ -112,9 +112,9 @@ Do not create one universal status enum. Keep these concepts separate:
 - process phase: `Evaluating`, `WaitingForRemediation`, `WaitingForApproval`, `Approved`, `Rejected`, or `Failed`;
 - branch outcome: `Passed`, `Blocked`, `MissingEvidence`, or `TransientFailure`;
 - execution disposition: `Executed` or `Reused`;
-- planning reason: `InitialEvaluation`, `PreviousResultNotPassed`, `EvidenceChanged`, `EvaluatorChanged`, `Expired`, `ExplicitlySelected`, or `StillCurrent`.
+- planning reason: `InitialEvaluation`, `PreviousResultNotPassed`, `EvidenceChanged`, `Expired`, `ExplicitlySelected`, or `StillCurrent`.
 
-A historical `BranchResult` is immutable and is never mutated into an invalidated state. It records the exact evidence record and evaluator versions used. A passing result also records an externally calculated `ValidUntil` deadline; non-passing results need no deadline because they are never reusable. The round planner decides whether that result is reusable in the current context.
+A historical `BranchResult` is immutable and is never mutated into an invalidated state. It records the exact evidence record used. A passing result also records an externally calculated `ValidUntil` deadline; non-passing results need no deadline because they are never reusable. The round planner decides whether that result is reusable in the current context.
 
 ### 6.3 Aggregation
 
@@ -135,7 +135,7 @@ Fixed MVP policy constants:
 - a passing Change result is current until the end of its approved window;
 - Test pass rate must be at least 95 percent;
 - evidence release versions must match the submitted release version exactly;
-- policy constants are code-owned and versioned.
+- policy constants are code-owned.
 
 | Branch | Required evidence and pass policy | Result mapping |
 |---|---|---|
@@ -154,34 +154,33 @@ A previous branch result may be reused only when it:
 - passed;
 - has a `ValidUntil` later than the current time;
 - references the evidence record that is still current for that branch;
-- was produced by the current policy version;
 - was not explicitly selected for rerun.
 
-A branch must execute again for the corresponding planning reason when there is no prior result, the prior result did not pass, its evidence record is no longer current, its policy version changed, its deadline was reached, or the coordinator explicitly selected it.
+A branch must execute again for the corresponding planning reason when there is no prior result, the prior result did not pass, its evidence record is no longer current, its deadline was reached, or the coordinator explicitly selected it.
 
 A reused branch must:
 
 - perform no evidence-provider call;
 - perform no policy-evaluator call;
-- verify the supplied evidence identity, policy version, and deadline defensively;
+- verify the supplied evidence identity and deadline defensively;
 - emit a result for the new round linked to the source result and source round;
 - explain why reuse was safe.
 
 Each branch has zero or one current immutable/versioned evidence record. Initial submission may omit a branch record to exercise `MissingEvidence`. Remediation may create or replace current evidence for one or more branches; doing so affects only those matching branches. A newly current record always counts as changed evidence even when its facts equal an older record.
 
-Release metadata does not participate in change detection because it is immutable within the revision. Policy version changes, explicit branch selection, and reaching a validity deadline affect the planner decision directly without changing evidence.
+Release metadata does not participate in change detection because it is immutable within the revision. Explicit branch selection and reaching a validity deadline affect the planner decision directly without changing evidence.
 
 The bounded application data service must atomically persist a new evidence version, link it to the record it supersedes, and make it current. Do not compute input generations, content fingerprints, canonical payloads, or hashes for release, evidence, result, snapshot, or decision-brief change detection.
 
 Every round and timeline entry must state `Executed because …` or `Reused from round N because …`. Persist the stable planning reason code and a concise human-readable detail; do not create a separate reason enum for each release field.
 
-When more than one condition applies, choose one planning reason deterministically in this order: `InitialEvaluation`, `ExplicitlySelected`, `EvidenceChanged`, `PreviousResultNotPassed`, `EvaluatorChanged`, `Expired`, then `StillCurrent`. Human-readable detail may mention additional facts without creating additional domain reason codes.
+When more than one condition applies, choose one planning reason deterministically in this order: `InitialEvaluation`, `ExplicitlySelected`, `EvidenceChanged`, `PreviousResultNotPassed`, `Expired`, then `StillCurrent`. Human-readable detail may mention additional facts without creating additional domain reason codes.
 
 ## 9. Change readiness
 
 Change evidence contains the approval state and approved deployment window. Change readiness passes when the change is approved and the requested deployment window is wholly inside the approved window.
 
-Approval or window corrections create a new immutable Change evidence version. The current evidence identity, Change policy version, and approved-window deadline participate in selective reuse like the equivalent inputs for the other readiness branches.
+Approval or window corrections create a new immutable Change evidence version. The current evidence identity and approved-window deadline participate in selective reuse like the equivalent inputs for the other readiness branches.
 
 ## 10. Human decision integrity
 
@@ -189,7 +188,6 @@ When all three branches pass, persist an immutable `DecisionSnapshot` containing
 
 - the passing evaluation round;
 - resolved source result IDs and evidence IDs for all three checks;
-- policy versions;
 - the earliest validity bound;
 - the deterministic decision brief as immutable snapshot content.
 
@@ -200,12 +198,11 @@ Before accepting a response, deterministically revalidate:
 - current process phase and active request identity;
 - snapshot identity and concurrency token;
 - current evidence identity for every branch;
-- policy versions;
 - every result validity deadline.
 
 The decision brief is not regenerated or hashed when a response arrives. It is immutable content owned by the correlated snapshot; snapshot identity and the active-request concurrency token protect which brief the manager answered.
 
-A stale response is recorded as declined, with a bounded reason such as request changed, evidence changed, evaluator changed, or result expired. The workflow returns to selective evaluation, where only branches whose reuse conditions no longer hold execute. The old response must never be applied automatically after reevaluation.
+A stale response is recorded as declined, with a bounded reason such as request changed, evidence changed, or result expired. The workflow returns to selective evaluation, where only branches whose reuse conditions no longer hold execute. The old response must never be applied automatically after reevaluation.
 
 A current approval or rejection is persisted once and is terminal for that release revision.
 
@@ -303,7 +300,7 @@ The plan and implementation must preserve these concepts without turning them in
 - `ReleaseSubmission` / release revision;
 - immutable or versioned `EvidenceRecord`;
 - `BranchWorkItem` with `Execute|Reuse`;
-- `BranchResult` with outcome, disposition, optional evidence ID and `ValidUntil`, evaluator versions, attempts, findings, and optional reuse source; a passing result always has evidence and a deadline;
+- `BranchResult` with outcome, disposition, optional evidence ID and `ValidUntil`, attempts, findings, and optional reuse source; a passing result always has evidence and a deadline;
 - complete `EvaluationRound` containing one result per check;
 - `RemediationRequest` and `RemediationSubmission`;
 - immutable `DecisionSnapshot`;

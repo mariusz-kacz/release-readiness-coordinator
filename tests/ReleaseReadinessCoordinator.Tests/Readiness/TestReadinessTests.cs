@@ -11,6 +11,14 @@ public sealed class TestReadinessPolicyTests
     private static readonly UtcInstant Deadline = Utc(2026, 8, 18, 8);
 
     [Fact]
+    public void Readiness_policy_contracts_expose_only_evaluation_behavior()
+    {
+        Assert.Empty(typeof(ITestReadinessPolicy).GetProperties());
+        Assert.Empty(typeof(ISecurityReadinessPolicy).GetProperties());
+        Assert.Empty(typeof(IChangeReadinessPolicy).GetProperties());
+    }
+
+    [Fact]
     public void Required_test_facts_must_all_be_present()
     {
         var policy = PolicyAt(CompletedAt.Value.AddHours(1));
@@ -44,7 +52,6 @@ public sealed class TestReadinessPolicyTests
 
         Assert.Equal(BranchOutcome.Passed, evaluation.Outcome);
         Assert.Equal(Deadline, evaluation.ValidUntil);
-        Assert.Equal(TestReadinessPolicy.PolicyVersion, policy.Version);
     }
 
     [Theory]
@@ -277,8 +284,6 @@ public sealed class TestReadinessBranchExecutionTests
     {
         public int CallCount { get; private set; }
 
-        public string Version => TestReadinessPolicy.PolicyVersion;
-
         public TestPolicyEvaluation Evaluate(
             ReleaseSubmission submission,
             TestEvidenceRecord evidence)
@@ -298,25 +303,26 @@ public sealed class TestReadinessWorkflowIntegrationTests
         var evidence = Evidence(submission.Key);
         var provider = new CountingProvider(evidence);
         var policy = new CountingPolicy();
-        var workflow = ReadinessWorkflowTestFactory.CreateWithTest(submission, provider, policy);
-        var input = new EvaluationRoundPlan(
-            RoundNumber: 1,
-            Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Blocked),
-            Security: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-            Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed));
+        await using var host = await ReadinessWorkflowTestHost.CreateWithTestAsync(
+            submission,
+            evidence,
+            provider,
+            policy);
 
-        await using var run = await InProcessExecution.RunAsync(workflow, input);
+        await using var run = await InProcessExecution.RunAsync(
+            host.CreateWorkflow(),
+            host.Input);
 
-        var output = Assert.Single(run.NewEvents.OfType<WorkflowOutputEvent>());
-        var round = Assert.IsType<EvaluationRoundResult>(output.Data);
+        Assert.DoesNotContain(
+            run.NewEvents.OfType<WorkflowOutputEvent>(),
+            output => output.Data is EvaluationRound);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var round = Assert.Single(detail!.EvaluationRounds);
         var testResult = Assert.Single(
             round.Results,
-            result => result.Branch is ReadinessBranch.Test);
+            result => result.Check is ReadinessCheck.Test);
         Assert.Equal(BranchOutcome.Passed, testResult.Outcome);
-        var evaluation = Assert.IsType<ReleaseReadinessCoordinator.Domain.BranchResult>(
-            testResult.Evaluation);
-        Assert.Equal(evidence.Id, evaluation.EvidenceId);
-        Assert.Equal(TestReadinessPolicy.PolicyVersion, evaluation.PolicyVersion);
+        Assert.Equal(evidence.Id, testResult.EvidenceId);
         Assert.Equal(1, provider.CallCount);
         Assert.Equal(1, policy.CallCount);
     }
@@ -358,8 +364,6 @@ public sealed class TestReadinessWorkflowIntegrationTests
     private sealed class CountingPolicy : ITestReadinessPolicy
     {
         public int CallCount { get; private set; }
-
-        public string Version => TestReadinessPolicy.PolicyVersion;
 
         public TestPolicyEvaluation Evaluate(
             ReleaseSubmission submission,

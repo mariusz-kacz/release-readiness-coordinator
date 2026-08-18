@@ -32,8 +32,7 @@ Official references:
   - `/Releases/{releaseId}/{revision}/Decision`
 - One bounded application data service uses EF Core directly. There are no generic repositories, CQRS layers, event sourcing, workers, queues, or additional deployables.
 - Built-in `TimeProvider` is injected for all time-sensitive logic.
-- Release metadata is immutable within a revision. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs, policy versions, and `ValidUntil` deadlines.
-- Policy versions are code-owned constants. Initial identifiers use explicit semantic strings such as `test-policy/1`.
+- Release metadata is immutable within a revision. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs and `ValidUntil` deadlines.
 - Local simulated providers implement typed evidence-source contracts. Only known typed transient failures receive one initial attempt plus two immediate retries.
 - SQLite stores immutable/versioned business records and an append-only timeline. MAF checkpoints live under a configurable private application-data directory that is excluded from source control.
 - Stable operation keys make replayed SQLite writes idempotent. A single application-lifetime checkpoint store is protected by an async critical section.
@@ -121,8 +120,8 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 4: Selective Workflow and Human Integrity
 
-- [ ] Task 14: Implement selective execution and safe reuse planning
-- [ ] Task 15: Complete aggregation and remediation resumption
+- [x] Task 14: Implement selective execution and safe reuse planning
+- [x] Task 15: Complete aggregation and remediation resumption
 - [ ] Task 16: Build immutable snapshots and handle human decisions
 
 ### Checkpoint D: Core End-to-End Workflow
@@ -178,7 +177,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 | SQLite writes and filesystem checkpoints cannot be atomic | High | Use stable operation keys, unique constraints, replay-safe upserts, correlation verification, and explicit reconciliation tests. |
 | Reuse accidentally calls providers or policies | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
 | Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate revision without adding supersession/cancellation behavior to the MVP. |
-| A stale human response is accepted | High | Bind responses to request ID, snapshot ID, concurrency token, current evidence IDs, evaluator versions, and deadlines; persist declined responses with bounded reason codes. |
+| A stale human response is accepted | High | Bind responses to request ID, snapshot ID, concurrency token, current evidence IDs, and deadlines; persist declined responses with bounded reason codes. |
 | Mutable release/evidence data erases audit history | Medium | Append immutable/versioned records and expose current projections without updating historical facts. |
 | Checkpoint store is accessed concurrently or from multiple instances | Medium | Register one application-lifetime store, guard all start/resume access, document the single-process constraint, and test concurrent response handling. |
 | UI scope expands beyond the portfolio MVP | Medium | Implement only four Razor routes, PRG interactions, manual refresh, and the exact fields/views in `SPEC.md`. |

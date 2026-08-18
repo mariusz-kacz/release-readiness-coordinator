@@ -4,6 +4,21 @@ namespace ReleaseReadinessCoordinator.Tests.Domain;
 
 public sealed class DecisionContractTests
 {
+    [Fact]
+    public void Human_response_decline_reasons_are_limited_to_current_state_checks()
+    {
+        Assert.Equal(
+            [
+                HumanResponseDeclineReason.ProcessPhaseChanged,
+                HumanResponseDeclineReason.RequestMismatch,
+                HumanResponseDeclineReason.SnapshotMismatch,
+                HumanResponseDeclineReason.ConcurrencyTokenChanged,
+                HumanResponseDeclineReason.EvidenceChanged,
+                HumanResponseDeclineReason.ResultExpired,
+            ],
+            Enum.GetValues<HumanResponseDeclineReason>());
+    }
+
     private static readonly ReleaseRevisionKey RevisionKey = new("release-42", 3);
     private static readonly UtcInstant ValidUntil = Utc(2026, 8, 15, 8);
 
@@ -30,7 +45,6 @@ public sealed class DecisionContractTests
         Assert.All(snapshot.Sources, source =>
         {
             Assert.NotNull(source.EvidenceId);
-            Assert.False(string.IsNullOrWhiteSpace(source.PolicyVersion));
             Assert.NotNull(source.ValidUntil);
         });
         Assert.Equal(Utc(2026, 8, 15, 7), snapshot.EarliestValidityBound);
@@ -42,12 +56,11 @@ public sealed class DecisionContractTests
     }
 
     [Fact]
-    public void Human_response_validation_uses_identity_version_and_deadline_reasons()
+    public void Human_response_validation_uses_identity_and_deadline_reasons()
     {
         var reasonNames = Enum.GetNames<HumanResponseDeclineReason>();
 
         Assert.Contains(nameof(HumanResponseDeclineReason.EvidenceChanged), reasonNames);
-        Assert.Contains(nameof(HumanResponseDeclineReason.EvaluatorChanged), reasonNames);
         Assert.Contains(nameof(HumanResponseDeclineReason.ResultExpired), reasonNames);
         Assert.DoesNotContain("FingerprintChanged", reasonNames);
         Assert.DoesNotContain("DecisionBriefHashChanged", reasonNames);
@@ -74,7 +87,6 @@ public sealed class DecisionContractTests
             "Concise planning detail.",
             evidenceId,
             EvidenceKindFor(check),
-            policyVersion: $"{check.ToString().ToLowerInvariant()}-policy/1",
             validUntil,
             attempts: ["Evidence evaluated."],
             findings: new Dictionary<string, string> { ["ready"] = "The deterministic policy passed." },

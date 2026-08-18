@@ -5,8 +5,6 @@ namespace ReleaseReadinessCoordinator.Readiness;
 
 internal interface IChangeReadinessPolicy
 {
-    string Version { get; }
-
     ChangePolicyEvaluation Evaluate(
         ReleaseSubmission submission,
         ChangeEvidenceRecord evidence);
@@ -14,10 +12,6 @@ internal interface IChangeReadinessPolicy
 
 internal sealed class ChangeReadinessPolicy : IChangeReadinessPolicy
 {
-    public const string PolicyVersion = "change-policy/1";
-
-    public string Version => PolicyVersion;
-
     public ChangePolicyEvaluation Evaluate(
         ReleaseSubmission submission,
         ChangeEvidenceRecord evidence)

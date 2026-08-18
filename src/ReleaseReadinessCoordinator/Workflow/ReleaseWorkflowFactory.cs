@@ -1,6 +1,8 @@
 using Microsoft.Agents.AI.Workflows;
+using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Readiness;
+using DomainRemediationRequest = ReleaseReadinessCoordinator.Domain.RemediationRequest;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
@@ -42,59 +44,64 @@ public static class ReleaseWorkflowFactory
 {
     internal static Microsoft.Agents.AI.Workflows.Workflow Create(
         ReleaseSubmission submission,
+        IApplicationDataService dataService,
+        TimeProvider timeProvider,
         ReadinessWorkflowDependencies dependencies)
     {
+        ArgumentNullException.ThrowIfNull(submission);
+        ArgumentNullException.ThrowIfNull(dataService);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(dependencies);
-        return Build(
-            new ReadinessBranchExecutor(
-                submission,
-                dependencies.TestEvidenceProvider,
-                dependencies.TestPolicy),
-            new ReadinessBranchExecutor(
-                submission,
-                dependencies.SecurityEvidenceProvider,
-                dependencies.SecurityPolicy),
-            new ReadinessBranchExecutor(
-                submission,
-                dependencies.ChangeEvidenceProvider,
-                dependencies.ChangePolicy));
-    }
 
-    private static Microsoft.Agents.AI.Workflows.Workflow Build(
-        ReadinessBranchExecutor test,
-        ReadinessBranchExecutor security,
-        ReadinessBranchExecutor change)
-    {
-        var planner = new ReadinessPlanner();
-        var aggregator = new ReadinessAggregator();
-        var remediation = RequestPort.Create<RemediationRequest, RemediationResponse>(
+        var planner = new ReadinessPlanner(
+            submission.Key,
+            dataService,
+            timeProvider);
+        var test = new ReadinessBranchExecutor(
+            submission,
+            dependencies.TestEvidenceProvider,
+            dependencies.TestPolicy,
+            timeProvider);
+        var security = new ReadinessBranchExecutor(
+            submission,
+            dependencies.SecurityEvidenceProvider,
+            dependencies.SecurityPolicy,
+            timeProvider);
+        var change = new ReadinessBranchExecutor(
+            submission,
+            dependencies.ChangeEvidenceProvider,
+            dependencies.ChangePolicy,
+            timeProvider);
+        var aggregator = new ReadinessAggregator(dataService, timeProvider);
+        var remediation = RequestPort.Create<DomainRemediationRequest, RemediationWorkflowResponse>(
             ReleaseWorkflowPortIds.Remediation);
+        var remediationHandler = new RemediationWorkflowExecutor(submission.Key, dataService);
         var approval = RequestPort.Create<ApprovalRequest, ApprovalResponse>(
             ReleaseWorkflowPortIds.Approval);
         var approvalCompletion = new ApprovalCompletionExecutor();
 
         ExecutorBinding[] branchBindings = [test, security, change];
-
         var builder = new WorkflowBuilder(planner);
-        builder.AddEdge<BranchWorkItem>(
+        builder.AddEdge<PlannedBranchWorkItem>(
             planner,
             test,
-            workItem => workItem is { Branch: ReadinessBranch.Test });
-        builder.AddEdge<BranchWorkItem>(
+            item => item is not null && item.WorkItem.Check is ReadinessCheck.Test);
+        builder.AddEdge<PlannedBranchWorkItem>(
             planner,
             security,
-            workItem => workItem is { Branch: ReadinessBranch.Security });
-        builder.AddEdge<BranchWorkItem>(
+            item => item is not null && item.WorkItem.Check is ReadinessCheck.Security);
+        builder.AddEdge<PlannedBranchWorkItem>(
             planner,
             change,
-            workItem => workItem is { Branch: ReadinessBranch.Change });
+            item => item is not null && item.WorkItem.Check is ReadinessCheck.Change);
         builder.AddFanInBarrierEdge(branchBindings, aggregator);
         builder.AddEdge(aggregator, remediation);
         builder.AddEdge(aggregator, approval);
-        builder.AddEdge(remediation, planner);
+        builder.AddEdge(remediation, remediationHandler);
+        builder.AddEdge(remediationHandler, planner);
         builder.AddEdge(approval, approvalCompletion);
-        builder.WithOutputFrom(aggregator, approvalCompletion);
-
+        builder.WithOutputFrom(approvalCompletion);
         return builder.Build();
     }
+
 }

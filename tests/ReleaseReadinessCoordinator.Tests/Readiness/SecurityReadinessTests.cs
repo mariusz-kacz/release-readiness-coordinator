@@ -50,7 +50,6 @@ public sealed class SecurityReadinessPolicyTests
 
         Assert.Equal(BranchOutcome.Passed, evaluation.Outcome);
         Assert.Equal(FreshnessDeadline, evaluation.ValidUntil);
-        Assert.Equal(SecurityReadinessPolicy.PolicyVersion, policy.Version);
     }
 
     [Fact]
@@ -357,8 +356,6 @@ public sealed class SecurityReadinessBranchExecutionTests
     {
         public int CallCount { get; private set; }
 
-        public string Version => SecurityReadinessPolicy.PolicyVersion;
-
         public SecurityPolicyEvaluation Evaluate(
             ReleaseSubmission submission,
             SecurityEvidenceRecord evidence)
@@ -378,28 +375,26 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
         var securityEvidence = SecurityEvidence(submission.Key);
         var securityProvider = new CountingProvider(securityEvidence);
         var securityPolicy = new CountingPolicy();
-        var workflow = ReadinessWorkflowTestFactory.CreateWithSecurity(
+        await using var host = await ReadinessWorkflowTestHost.CreateWithSecurityAsync(
             submission,
+            securityEvidence,
             securityProvider,
             securityPolicy);
-        var input = new EvaluationRoundPlan(
-            RoundNumber: 1,
-            Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-            Security: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Blocked),
-            Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed));
 
-        await using var run = await InProcessExecution.RunAsync(workflow, input);
+        await using var run = await InProcessExecution.RunAsync(
+            host.CreateWorkflow(),
+            host.Input);
 
-        var output = Assert.Single(run.NewEvents.OfType<WorkflowOutputEvent>());
-        var round = Assert.IsType<EvaluationRoundResult>(output.Data);
+        Assert.DoesNotContain(
+            run.NewEvents.OfType<WorkflowOutputEvent>(),
+            output => output.Data is EvaluationRound);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var round = Assert.Single(detail!.EvaluationRounds);
         var securityResult = Assert.Single(
             round.Results,
-            result => result.Branch is ReadinessBranch.Security);
+            result => result.Check is ReadinessCheck.Security);
         Assert.Equal(BranchOutcome.Passed, securityResult.Outcome);
-        var evaluation = Assert.IsType<ReleaseReadinessCoordinator.Domain.BranchResult>(
-            securityResult.Evaluation);
-        Assert.Equal(securityEvidence.Id, evaluation.EvidenceId);
-        Assert.Equal(SecurityReadinessPolicy.PolicyVersion, evaluation.PolicyVersion);
+        Assert.Equal(securityEvidence.Id, securityResult.EvidenceId);
         Assert.Equal(1, securityProvider.CallCount);
         Assert.Equal(1, securityPolicy.CallCount);
     }
@@ -442,8 +437,6 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
     private sealed class CountingPolicy : ISecurityReadinessPolicy
     {
         public int CallCount { get; private set; }
-
-        public string Version => SecurityReadinessPolicy.PolicyVersion;
 
         public SecurityPolicyEvaluation Evaluate(
             ReleaseSubmission submission,

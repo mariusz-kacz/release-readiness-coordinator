@@ -340,7 +340,7 @@ public sealed class ApplicationDataServiceTests
     }
 
     [Fact]
-    public async Task Reusing_a_workflow_operation_key_for_a_different_record_fails_loudly()
+    public async Task Evaluation_round_replay_uses_the_composite_key_and_preserves_durable_generated_ids()
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-workflow-payload");
@@ -359,17 +359,50 @@ public sealed class ApplicationDataServiceTests
             CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
             "workflow-payload:round");
 
-        var differentRound = CreateRound(submission.Key, 1, evidence, passed: true);
-        var conflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(() =>
-            service.SaveEvaluationRoundAsync(
-                differentRound,
-                CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
-                "workflow-payload:round"));
+        var replayAttempt = CreateRound(submission.Key, 1, evidence, passed: true);
+        var replayed = await service.SaveEvaluationRoundAsync(
+            replayAttempt,
+            CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
+            "workflow-payload:round");
 
-        Assert.Equal(ApplicationDataConflictKind.OperationKeyReused, conflict.Kind);
+        Assert.Equal(round.Id, replayed.Id);
+        Assert.NotEqual(replayAttempt.Id, replayed.Id);
+        Assert.Equal(
+            round.Results.Select(result => result.Id),
+            replayed.Results.Select(result => result.Id));
         Assert.Equal(1, await context.EvaluationRounds.CountAsync());
         Assert.Equal(3, await context.BranchResults.CountAsync());
         Assert.Equal(2, await context.TimelineEntries.CountAsync());
+    }
+
+    [Fact]
+    public async Task Reusing_a_workflow_operation_key_for_a_different_composite_key_fails_loudly()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync();
+        var submission = CreateSubmission("release-workflow-composite-conflict");
+        var evidence = CreateEveryEvidence(submission.Key);
+
+        await using var context = database.CreateContext();
+        var service = new ApplicationDataService(context);
+        await service.SubmitReleaseAsync(
+            submission,
+            evidence,
+            CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            "workflow-composite-conflict:submit");
+        var firstRound = CreateRound(submission.Key, 1, evidence, passed: true);
+        await service.SaveEvaluationRoundAsync(
+            firstRound,
+            CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Round 1 completed."),
+            "workflow-composite-conflict:round");
+
+        var secondRound = CreateRound(submission.Key, 2, evidence, passed: true);
+        var conflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(() =>
+            service.SaveEvaluationRoundAsync(
+                secondRound,
+                CreateTimeline(submission.Key, 3, TimelineEntryKind.EvaluationCompleted, "Round 2 completed."),
+                "workflow-composite-conflict:round"));
+
+        Assert.Equal(ApplicationDataConflictKind.OperationKeyReused, conflict.Kind);
     }
 
     private static ChangeEvidenceRecord CreateChangeEvidence(ReleaseRevisionKey key, Guid id) => new(
@@ -431,7 +464,6 @@ public sealed class ApplicationDataServiceTests
                 "Executed because this is the initial evaluation.",
                 source?.Id,
                 kind,
-                $"{check.ToString().ToLowerInvariant()}-policy/1",
                 passed ? Utc(2026, 8, 17, 12 + (int)check) : null,
                 ["attempt-1"],
                 new Dictionary<string, string> { ["summary"] = outcome.ToString() },
@@ -499,7 +531,7 @@ public sealed class ApplicationDataServiceTests
                     System.IO.Path.GetTempPath(),
                     $"release-readiness-data-{Guid.NewGuid():N}.db"));
             await using var context = database.CreateContext();
-            await context.Database.MigrateAsync();
+            await context.Database.EnsureCreatedAsync();
             return database;
         }
 

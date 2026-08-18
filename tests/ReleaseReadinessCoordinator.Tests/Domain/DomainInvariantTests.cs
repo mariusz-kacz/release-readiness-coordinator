@@ -266,7 +266,6 @@ public sealed class DomainInvariantTests
             planningDetail,
             evidenceId: Guid.NewGuid(),
             evidenceKind,
-            policyVersion: $"{check.ToString().ToLowerInvariant()}-policy/1",
             validUntil: outcome is BranchOutcome.Passed ? Utc(2026, 8, 15, 8) : null,
             attempts: ["Evidence evaluated."],
             findings: new Dictionary<string, string> { ["ready"] = "The deterministic policy passed." },

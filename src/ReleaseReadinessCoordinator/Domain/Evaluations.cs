@@ -28,10 +28,9 @@ public enum PlanningReason
     InitialEvaluation = 1,
     PreviousResultNotPassed = 2,
     EvidenceChanged = 3,
-    EvaluatorChanged = 4,
-    Expired = 5,
-    ExplicitlySelected = 6,
-    StillCurrent = 7,
+    Expired = 4,
+    ExplicitlySelected = 5,
+    StillCurrent = 6,
 }
 
 public enum ExecutionDisposition
@@ -119,7 +118,6 @@ public sealed record BranchResult
         string planningDetail,
         Guid? evidenceId,
         EvidenceKind evidenceKind,
-        string policyVersion,
         UtcInstant? validUntil,
         IEnumerable<string> attempts,
         IReadOnlyDictionary<string, string> findings,
@@ -178,7 +176,6 @@ public sealed record BranchResult
         PlanningDetail = DomainGuard.Required(planningDetail, nameof(planningDetail));
         EvidenceId = evidenceId;
         EvidenceKind = evidenceKind;
-        PolicyVersion = DomainGuard.Required(policyVersion, nameof(policyVersion));
         ValidUntil = validUntil;
         Attempts = DomainGuard.Copy(
             attempts.Select(value => DomainGuard.Required(value, nameof(attempts))),
@@ -210,8 +207,6 @@ public sealed record BranchResult
     public Guid? EvidenceId { get; }
 
     public EvidenceKind EvidenceKind { get; }
-
-    public string PolicyVersion { get; }
 
     public UtcInstant? ValidUntil { get; }
 

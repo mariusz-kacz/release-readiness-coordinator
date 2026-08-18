@@ -152,6 +152,9 @@ internal static class EntityConfiguration
             .IsUnique()
             .HasFilter("IsActive = 1")
             .HasDatabaseName("UX_WorkflowRequests_Active_Release");
+        builder.HasIndex(row => new { row.EvaluationRoundId, row.Kind })
+            .IsUnique()
+            .HasDatabaseName("UX_WorkflowRequests_Round_Kind");
         builder.HasOne<ReleaseRevisionRow>()
             .WithMany()
             .HasForeignKey(row => new { row.ReleaseId, row.Revision })

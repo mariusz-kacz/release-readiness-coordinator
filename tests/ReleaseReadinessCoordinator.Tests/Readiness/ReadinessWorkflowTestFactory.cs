@@ -1,3 +1,6 @@
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
@@ -5,73 +8,189 @@ using AgentWorkflow = Microsoft.Agents.AI.Workflows.Workflow;
 
 namespace ReleaseReadinessCoordinator.Tests.Readiness;
 
-internal static class ReadinessWorkflowTestFactory
+internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
 {
     private static readonly Guid TestEvidenceId = new("11111111-1111-1111-1111-111111111111");
     private static readonly Guid SecurityEvidenceId = new("22222222-2222-2222-2222-222222222222");
     private static readonly Guid ChangeEvidenceId = new("33333333-3333-3333-3333-333333333333");
 
-    public static AgentWorkflow CreateForPlan(EvaluationRoundPlan plan)
+    private readonly SqliteConnection _connection;
+    private readonly AppDbContext _context;
+    private readonly ReadinessWorkflowDependencies _dependencies;
+    private readonly TimeProvider _timeProvider;
+
+    private ReadinessWorkflowTestHost(
+        SqliteConnection connection,
+        AppDbContext context,
+        ReleaseSubmission submission,
+        ApplicationDataService dataService,
+        TimeProvider timeProvider,
+        ReadinessWorkflowDependencies dependencies,
+        EvaluationRoundStart input)
     {
-        ArgumentNullException.ThrowIfNull(plan);
+        _connection = connection;
+        _context = context;
+        _dependencies = dependencies;
+        _timeProvider = timeProvider;
+        Submission = submission;
+        DataService = dataService;
+        Input = input;
+    }
+
+    public ReleaseSubmission Submission { get; }
+
+    public IApplicationDataService DataService { get; }
+
+    public EvaluationRoundStart Input { get; }
+
+    public AgentWorkflow CreateWorkflow() =>
+        ReleaseWorkflowFactory.Create(
+            Submission,
+            DataService,
+            _timeProvider,
+            _dependencies);
+
+    public static Task<ReadinessWorkflowTestHost> CreateForOutcomesAsync(
+        BranchOutcome testOutcome,
+        BranchOutcome securityOutcome = BranchOutcome.Passed,
+        BranchOutcome changeOutcome = BranchOutcome.Passed)
+    {
         var submission = ContractSubmission();
-        var timeProvider = new FixedTimeProvider(submission.SubmittedAt.Value);
-        return ReleaseWorkflowFactory.Create(
+        var now = submission.RequestedDeploymentWindow.Start;
+        var timeProvider = new FixedTimeProvider(now.Value);
+        var testEvidence = TestEvidence(submission, blocked: testOutcome is BranchOutcome.Blocked);
+        var securityEvidence = SecurityEvidence(
             submission,
+            blocked: securityOutcome is BranchOutcome.Blocked);
+        var changeEvidence = ChangeEvidence(
+            submission,
+            approved: changeOutcome is not BranchOutcome.Blocked);
+        var evidence = new EvidenceRecord?[]
+        {
+            testOutcome is BranchOutcome.MissingEvidence ? null : testEvidence,
+            securityOutcome is BranchOutcome.MissingEvidence ? null : securityEvidence,
+            changeOutcome is BranchOutcome.MissingEvidence ? null : changeEvidence,
+        }.OfType<EvidenceRecord>().ToArray();
+        var dependencies = new ReadinessWorkflowDependencies(
+            TestProvider(testEvidence, testOutcome),
+            new TestReadinessPolicy(timeProvider),
+            SecurityProvider(securityEvidence, securityOutcome),
+            new SecurityReadinessPolicy(timeProvider),
+            ChangeProvider(changeEvidence, changeOutcome),
+            new ChangeReadinessPolicy());
+
+        return CreateAsync(submission, evidence, timeProvider, dependencies);
+    }
+
+    public static Task<ReadinessWorkflowTestHost> CreateWithTestAsync(
+        ReleaseSubmission submission,
+        TestEvidenceRecord evidence,
+        ITestEvidenceProvider provider,
+        ITestReadinessPolicy policy)
+    {
+        var timeProvider = new FixedTimeProvider(submission.RequestedDeploymentWindow.Start.Value);
+        return CreateAsync(
+            submission,
+            [evidence, SecurityEvidence(submission), ChangeEvidence(submission)],
+            timeProvider,
             new ReadinessWorkflowDependencies(
-                TestProvider(submission, plan.Test.SimulatedOutcome),
-                new TestReadinessPolicy(timeProvider),
-                SecurityProvider(submission, plan.Security.SimulatedOutcome),
+                provider,
+                policy,
+                new SimulatedSecurityEvidenceProvider(SecurityEvidence(submission)),
                 new SecurityReadinessPolicy(timeProvider),
-                ChangeProvider(submission, plan.Change.SimulatedOutcome),
+                new SimulatedChangeEvidenceProvider(ChangeEvidence(submission)),
                 new ChangeReadinessPolicy()));
     }
 
-    public static AgentWorkflow CreateWithTest(
+    public static Task<ReadinessWorkflowTestHost> CreateWithSecurityAsync(
         ReleaseSubmission submission,
-        ITestEvidenceProvider provider,
-        ITestReadinessPolicy policy) =>
-        Create(submission, testProvider: provider, testPolicy: policy);
-
-    public static AgentWorkflow CreateWithSecurity(
-        ReleaseSubmission submission,
+        SecurityEvidenceRecord evidence,
         ISecurityEvidenceProvider provider,
-        ISecurityReadinessPolicy policy) =>
-        Create(submission, securityProvider: provider, securityPolicy: policy);
-
-    public static AgentWorkflow CreateWithChange(
-        ReleaseSubmission submission,
-        IChangeEvidenceProvider provider,
-        IChangeReadinessPolicy policy) =>
-        Create(submission, changeProvider: provider, changePolicy: policy);
-
-    private static AgentWorkflow Create(
-        ReleaseSubmission submission,
-        ITestEvidenceProvider? testProvider = null,
-        ITestReadinessPolicy? testPolicy = null,
-        ISecurityEvidenceProvider? securityProvider = null,
-        ISecurityReadinessPolicy? securityPolicy = null,
-        IChangeEvidenceProvider? changeProvider = null,
-        IChangeReadinessPolicy? changePolicy = null)
+        ISecurityReadinessPolicy policy)
     {
-        var timeProvider = new FixedTimeProvider(submission.SubmittedAt.Value);
-        return ReleaseWorkflowFactory.Create(
+        var timeProvider = new FixedTimeProvider(submission.RequestedDeploymentWindow.Start.Value);
+        return CreateAsync(
             submission,
+            [TestEvidence(submission), evidence, ChangeEvidence(submission)],
+            timeProvider,
             new ReadinessWorkflowDependencies(
-                testProvider ?? new SimulatedTestEvidenceProvider(TestEvidence(submission)),
-                testPolicy ?? new TestReadinessPolicy(timeProvider),
-                securityProvider ?? new SimulatedSecurityEvidenceProvider(SecurityEvidence(submission)),
-                securityPolicy ?? new SecurityReadinessPolicy(timeProvider),
-                changeProvider ?? new SimulatedChangeEvidenceProvider(ChangeEvidence(submission)),
-                changePolicy ?? new ChangeReadinessPolicy()));
+                new SimulatedTestEvidenceProvider(TestEvidence(submission)),
+                new TestReadinessPolicy(timeProvider),
+                provider,
+                policy,
+                new SimulatedChangeEvidenceProvider(ChangeEvidence(submission)),
+                new ChangeReadinessPolicy()));
+    }
+
+    public static Task<ReadinessWorkflowTestHost> CreateWithChangeAsync(
+        ReleaseSubmission submission,
+        ChangeEvidenceRecord evidence,
+        IChangeEvidenceProvider provider,
+        IChangeReadinessPolicy policy)
+    {
+        var timeProvider = new FixedTimeProvider(submission.RequestedDeploymentWindow.Start.Value);
+        return CreateAsync(
+            submission,
+            [TestEvidence(submission), SecurityEvidence(submission), evidence],
+            timeProvider,
+            new ReadinessWorkflowDependencies(
+                new SimulatedTestEvidenceProvider(TestEvidence(submission)),
+                new TestReadinessPolicy(timeProvider),
+                new SimulatedSecurityEvidenceProvider(SecurityEvidence(submission)),
+                new SecurityReadinessPolicy(timeProvider),
+                provider,
+                policy));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _context.DisposeAsync();
+        await _connection.DisposeAsync();
+    }
+
+    private static async Task<ReadinessWorkflowTestHost> CreateAsync(
+        ReleaseSubmission submission,
+        IReadOnlyCollection<EvidenceRecord> initialEvidence,
+        TimeProvider timeProvider,
+        ReadinessWorkflowDependencies dependencies)
+    {
+        var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        var context = new AppDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+        var dataService = new ApplicationDataService(context);
+        await dataService.SubmitReleaseAsync(
+            submission,
+            initialEvidence,
+            new TimelineEntry(
+                Guid.NewGuid(),
+                submission.Key,
+                1,
+                TimelineEntryKind.ReleaseSubmitted,
+                "Release submitted.",
+                submission.SubmittedAt),
+            $"workflow-contract:{submission.Key.ReleaseId}:submit");
+        var input = new EvaluationRoundStart(
+            Guid.NewGuid(),
+            1,
+            new UtcInstant(timeProvider.GetUtcNow()),
+            []);
+        return new ReadinessWorkflowTestHost(
+            connection,
+            context,
+            submission,
+            dataService,
+            timeProvider,
+            dependencies,
+            input);
     }
 
     private static ITestEvidenceProvider TestProvider(
-        ReleaseSubmission submission,
-        BranchOutcome outcome)
-    {
-        var evidence = TestEvidence(submission, blocked: outcome is BranchOutcome.Blocked);
-        return outcome switch
+        TestEvidenceRecord evidence,
+        BranchOutcome outcome) => outcome switch
         {
             BranchOutcome.MissingEvidence => new SimulatedTestEvidenceProvider(null),
             BranchOutcome.TransientFailure => new SimulatedTestEvidenceProvider(
@@ -80,14 +199,10 @@ internal static class ReadinessWorkflowTestFactory
             BranchOutcome.Blocked or BranchOutcome.Passed => new SimulatedTestEvidenceProvider(evidence),
             _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Unknown Test outcome."),
         };
-    }
 
     private static ISecurityEvidenceProvider SecurityProvider(
-        ReleaseSubmission submission,
-        BranchOutcome outcome)
-    {
-        var evidence = SecurityEvidence(submission, blocked: outcome is BranchOutcome.Blocked);
-        return outcome switch
+        SecurityEvidenceRecord evidence,
+        BranchOutcome outcome) => outcome switch
         {
             BranchOutcome.MissingEvidence => new SimulatedSecurityEvidenceProvider(null),
             BranchOutcome.TransientFailure => new SimulatedSecurityEvidenceProvider(
@@ -96,14 +211,10 @@ internal static class ReadinessWorkflowTestFactory
             BranchOutcome.Blocked or BranchOutcome.Passed => new SimulatedSecurityEvidenceProvider(evidence),
             _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Unknown Security outcome."),
         };
-    }
 
     private static IChangeEvidenceProvider ChangeProvider(
-        ReleaseSubmission submission,
-        BranchOutcome outcome)
-    {
-        var evidence = ChangeEvidence(submission, approved: outcome is not BranchOutcome.Blocked);
-        return outcome switch
+        ChangeEvidenceRecord evidence,
+        BranchOutcome outcome) => outcome switch
         {
             BranchOutcome.MissingEvidence => new SimulatedChangeEvidenceProvider(null),
             BranchOutcome.TransientFailure => new SimulatedChangeEvidenceProvider(
@@ -112,7 +223,6 @@ internal static class ReadinessWorkflowTestFactory
             BranchOutcome.Blocked or BranchOutcome.Passed => new SimulatedChangeEvidenceProvider(evidence),
             _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Unknown Change outcome."),
         };
-    }
 
     private static TestEvidenceRecord TestEvidence(
         ReleaseSubmission submission,

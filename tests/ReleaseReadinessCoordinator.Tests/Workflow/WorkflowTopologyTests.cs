@@ -1,21 +1,45 @@
 using Microsoft.Agents.AI.Workflows;
+using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Tests.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
-using BranchOutcome = ReleaseReadinessCoordinator.Domain.BranchOutcome;
+using System.Reflection;
 
 namespace ReleaseReadinessCoordinator.Tests.Workflow;
 
 public sealed class WorkflowTopologyTests
 {
     [Fact]
+    public void Workflow_contract_has_one_factory_and_canonical_executor_types()
+    {
+        var factoryMethods = typeof(ReleaseWorkflowFactory)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Where(method => method.Name == "Create")
+            .ToArray();
+        var workflowAssembly = typeof(ReleaseWorkflowFactory).Assembly;
+
+        Assert.Single(factoryMethods);
+        Assert.Equal(4, factoryMethods[0].GetParameters().Length);
+        Assert.Null(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.EvaluationRoundPlan"));
+        Assert.Null(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.BranchPlan"));
+        Assert.NotNull(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.ReadinessPlanner"));
+        Assert.NotNull(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.ReadinessBranchExecutor"));
+        Assert.NotNull(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.ReadinessAggregator"));
+        Assert.NotNull(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.RemediationWorkflowExecutor"));
+        Assert.Null(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.PersistentReadinessPlanner"));
+        Assert.Null(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.PersistentReadinessBranchExecutor"));
+        Assert.Null(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.PersistentReadinessAggregator"));
+        Assert.Null(workflowAssembly.GetType("ReleaseReadinessCoordinator.Workflow.PersistentRemediationHandler"));
+    }
+
+    [Fact]
     public void Round_messages_do_not_preselect_the_external_wait()
     {
         Type[] roundMessageTypes =
         [
-            typeof(EvaluationRoundPlan),
-            typeof(BranchWorkItem),
-            typeof(BranchResult),
-            typeof(EvaluationRoundResult),
+            typeof(EvaluationRoundStart),
+            typeof(PlannedBranchWorkItem),
+            typeof(CompletedBranchWork),
+            typeof(EvaluationRound),
         ];
 
         Assert.All(
@@ -34,47 +58,38 @@ public sealed class WorkflowTopologyTests
     }
 
     [Fact]
-    public void Aggregator_rejects_duplicate_branch_results()
-    {
-        var results = CompleteResults()
-            .Select(result => result.Branch == ReadinessBranch.Change
-                ? result with { Branch = ReadinessBranch.Test, ExecutorId = ReleaseWorkflowExecutorIds.Test }
-                : result)
-            .ToArray();
-
-        Assert.Throws<InvalidOperationException>(() => ReadinessAggregator.Aggregate(results));
-    }
-
-    [Fact]
-    public void Aggregator_rejects_omitted_branch_results()
-    {
-        var results = CompleteResults()
-            .Where(result => result.Branch != ReadinessBranch.Change)
-            .ToArray();
-
-        Assert.Throws<InvalidOperationException>(() => ReadinessAggregator.Aggregate(results));
-    }
-
-    [Fact]
-    public void Aggregator_rejects_impossible_branch_identities()
+    public void Durable_round_contract_rejects_duplicate_check_results()
     {
         var results = CompleteResults();
-        results[2] = results[2] with { Branch = (ReadinessBranch)999 };
+        results[2] = Result(ReadinessCheck.Test);
 
-        Assert.Throws<InvalidOperationException>(() => ReadinessAggregator.Aggregate(results));
+        Assert.Throws<InvalidOperationException>(() => Round(results));
+    }
+
+    [Fact]
+    public void Durable_round_contract_rejects_omitted_check_results()
+    {
+        var results = CompleteResults()
+            .Where(result => result.Check is not ReadinessCheck.Change);
+
+        Assert.Throws<InvalidOperationException>(() => Round(results));
+    }
+
+    [Fact]
+    public void Durable_result_contract_rejects_impossible_check_identity()
+    {
+        Assert.ThrowsAny<ArgumentException>(() => Result((ReadinessCheck)999));
     }
 
     [Fact]
     public async Task Real_graph_routes_once_per_branch_before_aggregation()
     {
-        var input = new EvaluationRoundPlan(
-            RoundNumber: 7,
-            Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-            Security: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-            Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed));
-        var workflow = ReadinessWorkflowTestFactory.CreateForPlan(input);
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Passed);
 
-        await using var run = await InProcessExecution.RunAsync(workflow, input);
+        await using var run = await InProcessExecution.RunAsync(
+            host.CreateWorkflow(),
+            host.Input);
         var events = run.NewEvents.ToArray();
         var completions = events.OfType<ExecutorCompletedEvent>().ToArray();
         var branchExecutorIds = ReleaseWorkflowExecutorIds.Branches.Values.ToArray();
@@ -100,23 +115,58 @@ public sealed class WorkflowTopologyTests
                 && completion.ExecutorId == ReleaseWorkflowExecutorIds.Aggregator);
         Assert.True(requestIndex > aggregationEventIndex);
 
-        var output = Assert.Single(events.OfType<WorkflowOutputEvent>());
-        var round = Assert.IsType<EvaluationRoundResult>(output.Data);
-        Assert.Equal(7, round.RoundNumber);
+        Assert.DoesNotContain(
+            events.OfType<WorkflowOutputEvent>(),
+            output => output.Data is EvaluationRound);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var round = Assert.Single(detail!.EvaluationRounds);
+        Assert.Equal(1, round.RoundNumber);
         Assert.Equal(
             new[]
             {
-                (ReadinessBranch.Test, BranchDisposition.Execute),
-                (ReadinessBranch.Security, BranchDisposition.Execute),
-                (ReadinessBranch.Change, BranchDisposition.Execute),
+                (ReadinessCheck.Test, ExecutionDisposition.Executed),
+                (ReadinessCheck.Security, ExecutionDisposition.Executed),
+                (ReadinessCheck.Change, ExecutionDisposition.Executed),
             },
-            round.Results.Select(result => (result.Branch, result.Disposition)));
+            round.Results.Select(result => (result.Check, result.Disposition)));
     }
+
+    private static EvaluationRound Round(IEnumerable<BranchResult> results) => new(
+        Guid.NewGuid(),
+        new ReleaseRevisionKey("topology-contract", 1),
+        1,
+        Utc(10),
+        Utc(10, 5),
+        results);
 
     private static BranchResult[] CompleteResults() =>
     [
-        new(3, ReadinessBranch.Test, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Test, BranchOutcome.Passed),
-        new(3, ReadinessBranch.Security, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Security, BranchOutcome.Passed),
-        new(3, ReadinessBranch.Change, BranchDisposition.Execute, ReleaseWorkflowExecutorIds.Change, BranchOutcome.Passed),
+        Result(ReadinessCheck.Test),
+        Result(ReadinessCheck.Security),
+        Result(ReadinessCheck.Change),
     ];
+
+    private static BranchResult Result(ReadinessCheck check) => new(
+        Guid.NewGuid(),
+        new ReleaseRevisionKey("topology-contract", 1),
+        1,
+        check,
+        BranchOutcome.Passed,
+        ExecutionDisposition.Executed,
+        PlanningReason.InitialEvaluation,
+        "Executed because this is the initial evaluation.",
+        Guid.NewGuid(),
+        check is ReadinessCheck.Security
+            ? EvidenceKind.Security
+            : check is ReadinessCheck.Change
+                ? EvidenceKind.Change
+                : EvidenceKind.Test,
+        Utc(11),
+        ["Attempt 1 succeeded."],
+        new Dictionary<string, string> { ["ready"] = "true" },
+        null,
+        null);
+
+    private static UtcInstant Utc(int hour, int minute = 0) =>
+        new(new DateTimeOffset(2026, 8, 17, hour, minute, 0, TimeSpan.Zero));
 }

@@ -77,7 +77,6 @@ public sealed class ChangeReadinessPolicyTests
 
         Assert.Equal(BranchOutcome.Passed, evaluation.Outcome);
         Assert.Equal(ApprovedEnd, evaluation.ValidUntil);
-        Assert.Equal(ChangeReadinessPolicy.PolicyVersion, policy.Version);
     }
 
     [Fact]
@@ -294,8 +293,6 @@ public sealed class ChangeReadinessBranchExecutionTests
     {
         public int CallCount { get; private set; }
 
-        public string Version => ChangeReadinessPolicy.PolicyVersion;
-
         public ChangePolicyEvaluation Evaluate(
             ReleaseSubmission submission,
             ChangeEvidenceRecord evidence)
@@ -308,8 +305,6 @@ public sealed class ChangeReadinessBranchExecutionTests
     private sealed class ThrowingPolicy : IChangeReadinessPolicy
     {
         public int CallCount { get; private set; }
-
-        public string Version => ChangeReadinessPolicy.PolicyVersion;
 
         public ChangePolicyEvaluation Evaluate(
             ReleaseSubmission submission,
@@ -330,28 +325,26 @@ public sealed class ChangeReadinessWorkflowIntegrationTests
         var changeEvidence = ChangeEvidence(submission.Key);
         var changeProvider = new CountingProvider(changeEvidence);
         var changePolicy = new CountingPolicy();
-        var workflow = ReadinessWorkflowTestFactory.CreateWithChange(
+        await using var host = await ReadinessWorkflowTestHost.CreateWithChangeAsync(
             submission,
+            changeEvidence,
             changeProvider,
             changePolicy);
-        var input = new EvaluationRoundPlan(
-            RoundNumber: 1,
-            Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-            Security: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-            Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Blocked));
 
-        await using var run = await InProcessExecution.RunAsync(workflow, input);
+        await using var run = await InProcessExecution.RunAsync(
+            host.CreateWorkflow(),
+            host.Input);
 
-        var output = Assert.Single(run.NewEvents.OfType<WorkflowOutputEvent>());
-        var round = Assert.IsType<EvaluationRoundResult>(output.Data);
+        Assert.DoesNotContain(
+            run.NewEvents.OfType<WorkflowOutputEvent>(),
+            output => output.Data is EvaluationRound);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var round = Assert.Single(detail!.EvaluationRounds);
         var changeResult = Assert.Single(
             round.Results,
-            result => result.Branch is ReadinessBranch.Change);
+            result => result.Check is ReadinessCheck.Change);
         Assert.Equal(BranchOutcome.Passed, changeResult.Outcome);
-        var evaluation = Assert.IsType<ReleaseReadinessCoordinator.Domain.BranchResult>(
-            changeResult.Evaluation);
-        Assert.Equal(changeEvidence.Id, evaluation.EvidenceId);
-        Assert.Equal(ChangeReadinessPolicy.PolicyVersion, evaluation.PolicyVersion);
+        Assert.Equal(changeEvidence.Id, changeResult.EvidenceId);
         Assert.Equal(1, changeProvider.CallCount);
         Assert.Equal(1, changePolicy.CallCount);
     }
@@ -391,8 +384,6 @@ public sealed class ChangeReadinessWorkflowIntegrationTests
     private sealed class CountingPolicy : IChangeReadinessPolicy
     {
         public int CallCount { get; private set; }
-
-        public string Version => ChangeReadinessPolicy.PolicyVersion;
 
         public ChangePolicyEvaluation Evaluate(
             ReleaseSubmission submission,

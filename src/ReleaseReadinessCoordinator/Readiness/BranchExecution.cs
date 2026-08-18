@@ -61,7 +61,6 @@ internal sealed class TestReadinessBranchExecutor
             ReadinessCheck.Test,
             EvidenceKind.Test,
             _provider,
-            _policy.Version,
             _policy.Evaluate,
             cancellationToken);
 }
@@ -89,7 +88,6 @@ internal sealed class SecurityReadinessBranchExecutor
             ReadinessCheck.Security,
             EvidenceKind.Security,
             _provider,
-            _policy.Version,
             _policy.Evaluate,
             cancellationToken);
 }
@@ -117,7 +115,6 @@ internal sealed class ChangeReadinessBranchExecutor
             ReadinessCheck.Change,
             EvidenceKind.Change,
             _provider,
-            _policy.Version,
             _policy.Evaluate,
             cancellationToken);
 }
@@ -130,7 +127,6 @@ internal static class BranchExecution
         ReadinessCheck check,
         EvidenceKind evidenceKind,
         IEvidenceProvider<TEvidence> provider,
-        string policyVersion,
         Func<ReleaseSubmission, TEvidence, TEvaluation> evaluate,
         CancellationToken cancellationToken)
         where TEvidence : EvidenceRecord
@@ -152,7 +148,6 @@ internal static class BranchExecution
                 workItem,
                 check,
                 evidenceKind,
-                policyVersion,
                 BranchOutcome.TransientFailure,
                 retrieval.ExhaustedEvidenceId,
                 validUntil: null,
@@ -169,7 +164,6 @@ internal static class BranchExecution
                 workItem,
                 check,
                 evidenceKind,
-                policyVersion,
                 BranchOutcome.MissingEvidence,
                 evidenceId: null,
                 validUntil: null,
@@ -191,7 +185,6 @@ internal static class BranchExecution
             workItem,
             check,
             evidenceKind,
-            policyVersion,
             evaluation.Outcome,
             retrieval.Evidence.Id,
             evaluation.ValidUntil,
@@ -203,7 +196,6 @@ internal static class BranchExecution
         BranchWorkItem workItem,
         ReadinessCheck check,
         EvidenceKind evidenceKind,
-        string policyVersion,
         BranchOutcome outcome,
         Guid? evidenceId,
         UtcInstant? validUntil,
@@ -219,7 +211,6 @@ internal static class BranchExecution
             workItem.PlanningDetail,
             evidenceId,
             evidenceKind,
-            policyVersion,
             validUntil,
             attempts,
             findings,

@@ -5,8 +5,6 @@ namespace ReleaseReadinessCoordinator.Readiness;
 
 internal interface ITestReadinessPolicy
 {
-    string Version { get; }
-
     TestPolicyEvaluation Evaluate(
         ReleaseSubmission submission,
         TestEvidenceRecord evidence);
@@ -14,13 +12,10 @@ internal interface ITestReadinessPolicy
 
 internal sealed class TestReadinessPolicy(TimeProvider timeProvider) : ITestReadinessPolicy
 {
-    public const string PolicyVersion = "test-policy/1";
     private const decimal MinimumPassRate = 0.95m;
 
     private readonly TimeProvider _timeProvider =
         timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-
-    public string Version => PolicyVersion;
 
     public TestPolicyEvaluation Evaluate(
         ReleaseSubmission submission,

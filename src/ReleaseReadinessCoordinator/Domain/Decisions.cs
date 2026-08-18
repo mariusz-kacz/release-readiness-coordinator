@@ -164,8 +164,7 @@ public enum HumanResponseDeclineReason
     SnapshotMismatch = 3,
     ConcurrencyTokenChanged = 4,
     EvidenceChanged = 5,
-    EvaluatorChanged = 6,
-    ResultExpired = 7,
+    ResultExpired = 6,
 }
 
 public sealed record HumanResponseValidation

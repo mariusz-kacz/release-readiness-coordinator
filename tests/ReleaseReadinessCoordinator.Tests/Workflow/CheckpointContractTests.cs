@@ -1,15 +1,28 @@
 using Microsoft.Agents.AI.Workflows;
 using ReleaseReadinessCoordinator.Tests.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
-using BranchOutcome = ReleaseReadinessCoordinator.Domain.BranchOutcome;
+using ReleaseReadinessCoordinator.Domain;
 
 namespace ReleaseReadinessCoordinator.Tests.Workflow;
 
 public sealed class CheckpointContractTests
 {
     [Fact]
+    public void Coordinator_results_expose_only_consumed_state()
+    {
+        Assert.Equal(
+            [nameof(WorkflowStartResult.PendingRequest)],
+            typeof(WorkflowStartResult).GetProperties().Select(property => property.Name).Order());
+        Assert.Equal(
+            [nameof(WorkflowRemediationResumeResult.NextRequest)],
+            typeof(WorkflowRemediationResumeResult).GetProperties().Select(property => property.Name).Order());
+    }
+
+    [Fact]
     public async Task Pending_request_is_rehydrated_after_process_boundary_and_accepts_correlated_response()
     {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         const string SessionId = "release-42-revision-3";
         WorkflowStartResult started;
@@ -17,8 +30,8 @@ public sealed class CheckpointContractTests
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
         {
             started = await firstProcess.StartAsync(
-                PassingWorkflow(),
-                PassingPlan(),
+                host.CreateWorkflow(),
+                host.Input,
                 SessionId);
 
             Assert.Equal(ExternalWaitKind.Approval, started.PendingRequest.Kind);
@@ -35,7 +48,7 @@ public sealed class CheckpointContractTests
 
         using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
         var resumed = await secondProcess.ResumeApprovalAsync(
-            PassingWorkflow(),
+            host.CreateWorkflow(),
             SessionId,
             started.PendingRequest,
             new ApprovalResponse(Approved: true));
@@ -47,6 +60,8 @@ public sealed class CheckpointContractTests
     [Fact]
     public async Task Mismatched_request_is_rejected_without_consuming_the_pending_wait()
     {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         const string SessionId = "release-7-revision-1";
         WorkflowStartResult started;
@@ -54,8 +69,8 @@ public sealed class CheckpointContractTests
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
         {
             started = await firstProcess.StartAsync(
-                PassingWorkflow(),
-                PassingPlan(),
+                host.CreateWorkflow(),
+                host.Input,
                 SessionId);
         }
 
@@ -64,7 +79,7 @@ public sealed class CheckpointContractTests
 
         var exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
             () => secondProcess.ResumeApprovalAsync(
-                PassingWorkflow(),
+                host.CreateWorkflow(),
                 SessionId,
                 mismatch,
                 new ApprovalResponse(Approved: true)));
@@ -78,7 +93,7 @@ public sealed class CheckpointContractTests
         };
         exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
             () => secondProcess.ResumeApprovalAsync(
-                PassingWorkflow(),
+                host.CreateWorkflow(),
                 SessionId,
                 wrongType,
                 new ApprovalResponse(Approved: true)));
@@ -86,7 +101,7 @@ public sealed class CheckpointContractTests
         Assert.Equal(ContinuationFailureKind.Mismatched, exception.Kind);
 
         var resumed = await secondProcess.ResumeApprovalAsync(
-            PassingWorkflow(),
+            host.CreateWorkflow(),
             SessionId,
             started.PendingRequest,
             new ApprovalResponse(Approved: true));
@@ -96,12 +111,14 @@ public sealed class CheckpointContractTests
     [Fact]
     public async Task Missing_continuation_state_is_a_visible_technical_failure()
     {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         using var coordinator = new CheckpointStoreCoordinator(directory.Info);
 
         var exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
             () => coordinator.ResumeApprovalAsync(
-                PassingWorkflow(),
+                host.CreateWorkflow(),
                 "missing-session",
                 new PendingWorkflowRequest("missing-request", ExternalWaitKind.Approval, ReleaseWorkflowPortIds.Approval),
                 new ApprovalResponse(Approved: true)));
@@ -112,6 +129,8 @@ public sealed class CheckpointContractTests
     [Fact]
     public async Task Corrupt_continuation_state_is_a_visible_technical_failure()
     {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         const string SessionId = "release-corrupt";
         WorkflowStartResult started;
@@ -119,8 +138,8 @@ public sealed class CheckpointContractTests
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
         {
             started = await firstProcess.StartAsync(
-                PassingWorkflow(),
-                PassingPlan(),
+                host.CreateWorkflow(),
+                host.Input,
                 SessionId);
         }
 
@@ -132,7 +151,7 @@ public sealed class CheckpointContractTests
         using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
         var exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
             () => secondProcess.ResumeApprovalAsync(
-                PassingWorkflow(),
+                host.CreateWorkflow(),
                 SessionId,
                 started.PendingRequest,
                 new ApprovalResponse(Approved: true)));
@@ -143,6 +162,8 @@ public sealed class CheckpointContractTests
     [Fact]
     public async Task Incompatible_rebuilt_graph_is_a_visible_technical_failure()
     {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
         const string SessionId = "release-incompatible";
         WorkflowStartResult started;
@@ -150,14 +171,14 @@ public sealed class CheckpointContractTests
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
         {
             started = await firstProcess.StartAsync(
-                PassingWorkflow(),
-                PassingPlan(),
+                host.CreateWorkflow(),
+                host.Input,
                 SessionId);
         }
 
-        var incompatiblePlanner = new ReadinessPlanner();
-        var incompatibleWorkflow = new WorkflowBuilder(incompatiblePlanner)
-            .WithOutputFrom(incompatiblePlanner)
+        var incompatibleExecutor = new ApprovalCompletionExecutor();
+        var incompatibleWorkflow = new WorkflowBuilder(incompatibleExecutor)
+            .WithOutputFrom(incompatibleExecutor)
             .Build();
 
         using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
@@ -170,15 +191,6 @@ public sealed class CheckpointContractTests
 
         Assert.Equal(ContinuationFailureKind.Incompatible, exception.Kind);
     }
-
-    private static EvaluationRoundPlan PassingPlan() => new(
-        RoundNumber: 3,
-        Test: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-        Security: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed),
-        Change: new BranchPlan(BranchDisposition.Execute, BranchOutcome.Passed));
-
-    private static Microsoft.Agents.AI.Workflows.Workflow PassingWorkflow() =>
-        ReadinessWorkflowTestFactory.CreateForPlan(PassingPlan());
 
     private sealed class TemporaryDirectory : IDisposable
     {

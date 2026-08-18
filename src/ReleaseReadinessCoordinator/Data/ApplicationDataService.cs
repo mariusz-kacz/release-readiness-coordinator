@@ -9,6 +9,41 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly AppDbContext _dbContext = dbContext;
+    private readonly SemaphoreSlim _currentEvidenceGate = new(1, 1);
+
+    public async Task<EvidenceRecord?> GetCurrentEvidenceAsync(
+        ReleaseRevisionKey releaseRevision,
+        EvidenceKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(releaseRevision);
+        DomainGuard.Defined(kind, nameof(kind));
+
+        await _currentEvidenceGate.WaitAsync(cancellationToken);
+        try
+        {
+            var current = await _dbContext.CurrentEvidence
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    row => row.ReleaseId == releaseRevision.ReleaseId
+                        && row.Revision == releaseRevision.Revision
+                        && row.Kind == kind,
+                    cancellationToken);
+            if (current is null)
+            {
+                return null;
+            }
+
+            var evidence = await _dbContext.EvidenceRecords
+                .AsNoTracking()
+                .SingleAsync(row => row.Id == current.EvidenceId, cancellationToken);
+            return ToDomain(evidence);
+        }
+        finally
+        {
+            _currentEvidenceGate.Release();
+        }
+    }
 
     public Task<ReleaseRevision> SubmitReleaseAsync(
         ReleaseSubmission submission,

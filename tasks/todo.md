@@ -126,7 +126,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 **Acceptance criteria:**
 
 - [x] Readiness check, branch outcome, work disposition, execution disposition, and planning reason remain separate bounded concepts.
-- [x] Work items enforce valid Execute/Reuse reason combinations; results record exact evidence identity, evaluator versions, optional deadline, findings, attempts, and valid reuse-source linkage.
+- [x] Work items enforce valid Execute/Reuse reason combinations; results record exact evidence identity, optional deadline, findings, attempts, and valid reuse-source linkage.
 - [x] Passing results require evidence and a deadline, non-passing results have no deadline, and completed rounds contain exactly one result for each readiness check.
 
 **Verification:**
@@ -179,7 +179,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 - [x] A new evidence version has a new reuse identity even when its business facts equal the prior record, and only its matching branch identity changes.
 - [x] Test and Security deadlines use the 24-hour maximum with earlier evidence-specific bounds honored; boundary checks use an injected `TimeProvider`.
-- [x] Domain change detection uses evidence IDs, evaluator versions, explicit selection, and `ValidUntil`; it has no fingerprint, input-generation, invalidation-map, or stored-validity-state contract.
+- [x] Domain change detection uses evidence IDs, explicit selection, and `ValidUntil`; it has no fingerprint, input-generation, invalidation-map, or stored-validity-state contract.
 
 **Verification:**
 
@@ -390,19 +390,19 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Task 14: Implement selective execution and safe reuse planning
 
-**Description:** Build the round planner that always emits three work items and chooses Execute/Reuse from prior outcome, current evidence identity, deadline, policy versions, and explicit branch selection. Implement a separate defensive reuse path.
+**Description:** Build the round planner that always emits three work items and chooses Execute/Reuse from prior outcome, current evidence identity, deadline, and explicit branch selection. Implement a separate defensive reuse path.
 
 **Acceptance criteria:**
 
-- [ ] Every reuse prerequisite and overlapping-condition case produces the correct disposition and the specification's single prioritized planning reason; additional detail remains explanatory text rather than new domain reason types.
-- [ ] Reuse verifies exact evidence ID, evaluator versions, and deadline, emits a new result linked to source result/round, and explains why reuse is safe.
-- [ ] Reused work makes zero provider or policy calls; failed defensive verification becomes a technical failure rather than silent execution.
+- [x] Every reuse prerequisite and overlapping-condition case produces the correct disposition and the specification's single prioritized planning reason; additional detail remains explanatory text rather than new domain reason types.
+- [x] Reuse verifies exact evidence ID and deadline, emits a new result linked to source result/round, and explains why reuse is safe.
+- [x] Reused work makes zero provider or policy calls; failed defensive verification becomes a technical failure rather than silent execution.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~SelectiveRerun"`
-- [ ] Counting fakes prove zero forbidden calls on reuse and expected calls on execution.
-- [ ] Evidence- and time-driven tests replace or expire one branch without executing unrelated branches.
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~SelectiveRerun"`
+- [x] Counting fakes prove zero forbidden calls on reuse and expected calls on execution.
+- [x] Evidence- and time-driven tests replace or expire one branch without executing unrelated branches.
 
 **Dependencies:** Tasks 7 and 11-13
 
@@ -421,15 +421,15 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] Each round persists exactly three results and complete Executed/Reused explanations before routing.
-- [ ] Any non-pass combination creates exactly one remediation request containing every current problem; no branch waits independently.
-- [ ] A current correlated remediation response creates only new evidence versions, atomically changes their matching current-evidence selections, records explicit branch selections without changing evidence, closes the request once, and resumes selective evaluation; release metadata cannot be edited.
+- [x] Each round persists exactly three results and complete Executed/Reused explanations before routing.
+- [x] Any non-pass combination creates exactly one remediation request containing every current problem; no branch waits independently.
+- [x] A current correlated remediation response creates only new evidence versions, atomically changes their matching current-evidence selections, records explicit branch selections without changing evidence, closes the request once, and resumes selective evaluation; release metadata cannot be edited.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~RemediationWorkflow"`
-- [ ] Real-graph test blocks multiple branches, remediates them, and proves unaffected branches reuse.
-- [ ] Duplicate or mismatched remediation responses have no duplicate effect.
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~RemediationWorkflow"`
+- [x] Real-graph test blocks multiple branches, remediates them, and proves unaffected branches reuse.
+- [x] Duplicate or mismatched remediation responses have no duplicate effect.
 
 **Dependencies:** Tasks 9 and 14
 
@@ -449,8 +449,8 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] Snapshot resolves three source results and their evidence IDs, policy versions, earliest deadline, and immutable deterministic brief.
-- [ ] A response must match the active request, latest fully passing snapshot, concurrency token, current evidence IDs, evaluator versions, and deadlines before it can terminate Approved/Rejected; the immutable brief is not regenerated or hashed.
+- [ ] Snapshot resolves three source results and their evidence IDs, earliest deadline, and immutable deterministic brief.
+- [ ] A response must match the active request, latest fully passing snapshot, concurrency token, current evidence IDs, and deadlines before it can terminate Approved/Rejected; the immutable brief is not regenerated or hashed.
 - [ ] Stale responses persist as declined with bounded reasons, close the old request, resume selective planning, and require a fresh response after reevaluation.
 
 **Verification:**

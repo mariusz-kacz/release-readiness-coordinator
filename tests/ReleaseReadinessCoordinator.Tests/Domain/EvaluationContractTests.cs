@@ -7,6 +7,28 @@ public sealed class EvaluationContractTests
     private static readonly ReleaseRevisionKey RevisionKey = new("release-42", 3);
     private static readonly UtcInstant ValidUntil = Utc(2026, 8, 15, 8);
 
+    [Fact]
+    public void Evaluation_contract_exposes_only_current_planning_inputs_and_outputs()
+    {
+        Assert.Equal(
+            [
+                PlanningReason.InitialEvaluation,
+                PlanningReason.PreviousResultNotPassed,
+                PlanningReason.EvidenceChanged,
+                PlanningReason.Expired,
+                PlanningReason.ExplicitlySelected,
+                PlanningReason.StillCurrent,
+            ],
+            Enum.GetValues<PlanningReason>());
+        Assert.Equal(
+            [
+                "Attempts", "Check", "Disposition", "EvidenceId", "EvidenceKind", "Findings",
+                "Id", "Outcome", "PlanningDetail", "PlanningReason", "ReleaseRevision",
+                "ReuseSourceResultId", "ReuseSourceRound", "RoundNumber", "ValidUntil",
+            ],
+            typeof(BranchResult).GetProperties().Select(property => property.Name).Order());
+    }
+
     [Theory]
     [InlineData(WorkDisposition.Execute, PlanningReason.StillCurrent)]
     [InlineData(WorkDisposition.Reuse, PlanningReason.InitialEvaluation)]
@@ -34,7 +56,7 @@ public sealed class EvaluationContractTests
             ReadinessCheck.Test,
             WorkDisposition.Reuse,
             PlanningReason.StillCurrent,
-            "Evidence and evaluator versions remain current."));
+            "Evidence identity and deadline remain current."));
     }
 
     [Fact]
@@ -46,7 +68,7 @@ public sealed class EvaluationContractTests
             ReadinessCheck.Test,
             WorkDisposition.Reuse,
             PlanningReason.StillCurrent,
-            "Evidence and evaluator versions remain current.",
+            "Evidence identity and deadline remain current.",
             Guid.Empty));
 
         Assert.Throws<ArgumentException>(() => Result(
@@ -135,7 +157,6 @@ public sealed class EvaluationContractTests
             "Concise planning detail.",
             evidenceId,
             EvidenceKindFor(check),
-            policyVersion: $"{check.ToString().ToLowerInvariant()}-policy/1",
             validUntil,
             attempts: ["Evidence evaluated."],
             findings: new Dictionary<string, string> { ["ready"] = "The deterministic policy passed." },

@@ -5,8 +5,6 @@ namespace ReleaseReadinessCoordinator.Readiness;
 
 internal interface ISecurityReadinessPolicy
 {
-    string Version { get; }
-
     SecurityPolicyEvaluation Evaluate(
         ReleaseSubmission submission,
         SecurityEvidenceRecord evidence);
@@ -14,12 +12,8 @@ internal interface ISecurityReadinessPolicy
 
 internal sealed class SecurityReadinessPolicy(TimeProvider timeProvider) : ISecurityReadinessPolicy
 {
-    public const string PolicyVersion = "security-policy/1";
-
     private readonly TimeProvider _timeProvider =
         timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-
-    public string Version => PolicyVersion;
 
     public SecurityPolicyEvaluation Evaluate(
         ReleaseSubmission submission,

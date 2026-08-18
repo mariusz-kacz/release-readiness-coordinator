@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Design;
 
 namespace ReleaseReadinessCoordinator.Data;
 
@@ -31,16 +30,4 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         EntityConfiguration.Configure(modelBuilder);
-}
-
-public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
-{
-    public AppDbContext CreateDbContext(string[] args)
-    {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=release-readiness.design.db")
-            .Options;
-
-        return new AppDbContext(options);
-    }
 }

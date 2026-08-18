@@ -67,7 +67,6 @@ internal sealed class BranchResultRow : IOperationRow
     public string PlanningDetail { get; set; } = null!;
     public Guid? EvidenceId { get; set; }
     public EvidenceKind EvidenceKind { get; set; }
-    public string PolicyVersion { get; set; } = null!;
     public DateTimeOffset? ValidUntilUtc { get; set; }
     public string AttemptsJson { get; set; } = null!;
     public string FindingsJson { get; set; } = null!;
@@ -121,7 +120,6 @@ internal sealed class DecisionSnapshotSourceRow
     public ReadinessCheck Check { get; set; }
     public Guid BranchResultId { get; set; }
     public Guid EvidenceId { get; set; }
-    public string PolicyVersion { get; set; } = null!;
 }
 
 internal sealed class HumanResponseRow : IOperationRow

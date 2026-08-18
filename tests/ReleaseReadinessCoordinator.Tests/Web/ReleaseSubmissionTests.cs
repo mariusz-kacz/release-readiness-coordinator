@@ -59,8 +59,12 @@ public sealed class ReleaseSubmissionTests
         Assert.Equal(DemoReleaseFixtures.Complete.ChangeWindowEnd, change.ApprovedWindow?.End.Value);
         Assert.NotNull(detail.WorkflowCorrelation);
         Assert.Equal(WorkflowRequestKind.Approval, detail.WorkflowCorrelation.PendingRequestKind);
-        Assert.Single(detail.Timeline);
+        var round = Assert.Single(detail.EvaluationRounds);
+        Assert.Equal(3, round.Results.Length);
+        Assert.All(round.Results, result => Assert.Equal(ExecutionDisposition.Executed, result.Disposition));
+        Assert.Equal(2, detail.Timeline.Length);
         Assert.Equal(TimelineEntryKind.ReleaseSubmitted, detail.Timeline[0].Kind);
+        Assert.Equal(TimelineEntryKind.EvaluationCompleted, detail.Timeline[1].Kind);
     }
 
     [Fact]
@@ -138,7 +142,7 @@ public sealed class ReleaseSubmissionTests
                 .UseSqlite($"Data Source={databasePath};Pooling=False")
                 .Options;
             var context = new AppDbContext(options);
-            await context.Database.MigrateAsync();
+            await context.Database.EnsureCreatedAsync();
             var checkpointCoordinator = new CheckpointStoreCoordinator(
                 Directory.CreateDirectory(checkpointPath));
             return new SubmissionHarness(databasePath, checkpointPath, context, checkpointCoordinator);

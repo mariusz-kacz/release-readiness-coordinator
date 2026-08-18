@@ -21,10 +21,18 @@ public sealed partial class ApplicationDataService
         return ExecuteReplaySafeAsync(
             async token =>
             {
-                var row = await FindOperationAsync(
-                    _dbContext.EvaluationRounds, operationKey, round.Id, value => value.Id, token);
+                var row = await _dbContext.EvaluationRounds.AsNoTracking().SingleOrDefaultAsync(
+                    value => value.ReleaseId == round.ReleaseRevision.ReleaseId
+                        && value.Revision == round.ReleaseRevision.Revision
+                        && value.RoundNumber == round.RoundNumber,
+                    token);
                 if (row is null)
                 {
+                    await EnsureOperationKeyIsAvailable(
+                        _dbContext.EvaluationRounds,
+                        operationKey,
+                        "evaluation round",
+                        token);
                     return null;
                 }
 
@@ -68,10 +76,24 @@ public sealed partial class ApplicationDataService
         return ExecuteReplaySafeAsync(
             async token =>
             {
-                var row = await FindOperationAsync(
-                    _dbContext.WorkflowRequests, operationKey, request.Id, value => value.Id, token);
+                var round = await _dbContext.EvaluationRounds.AsNoTracking().SingleOrDefaultAsync(
+                    value => value.ReleaseId == request.ReleaseRevision.ReleaseId
+                        && value.Revision == request.ReleaseRevision.Revision
+                        && value.RoundNumber == request.RoundNumber,
+                    token);
+                var row = round is null
+                    ? null
+                    : await _dbContext.WorkflowRequests.AsNoTracking().SingleOrDefaultAsync(
+                        value => value.EvaluationRoundId == round.Id
+                            && value.Kind == WorkflowRequestKind.Remediation,
+                        token);
                 if (row is null)
                 {
+                    await EnsureOperationKeyIsAvailable(
+                        _dbContext.WorkflowRequests,
+                        operationKey,
+                        "workflow request",
+                        token);
                     return null;
                 }
 
@@ -436,6 +458,21 @@ public sealed partial class ApplicationDataService
         return row;
     }
 
+    private async Task EnsureOperationKeyIsAvailable<TRow>(
+        DbSet<TRow> rows,
+        string operationKey,
+        string recordType,
+        CancellationToken token)
+        where TRow : class, IOperationRow
+    {
+        if (await rows.AsNoTracking().AnyAsync(value => value.OperationKey == operationKey, token))
+        {
+            throw Conflict(
+                ApplicationDataConflictKind.OperationKeyReused,
+                $"Operation key '{operationKey}' belongs to a different {recordType}.");
+        }
+    }
+
     private static void Transition(ReleaseRevisionRow row, ProcessPhase phase, UtcInstant changedAt)
     {
         _ = ToDomain(row).TransitionTo(phase, changedAt);
@@ -471,7 +508,6 @@ public sealed partial class ApplicationDataService
         PlanningDetail = result.PlanningDetail,
         EvidenceId = result.EvidenceId,
         EvidenceKind = result.EvidenceKind,
-        PolicyVersion = result.PolicyVersion,
         ValidUntilUtc = result.ValidUntil?.Value,
         AttemptsJson = JsonSerializer.Serialize(result.Attempts, JsonOptions),
         FindingsJson = SerializeDictionary(result.Findings),
@@ -491,7 +527,6 @@ public sealed partial class ApplicationDataService
         row.PlanningDetail,
         row.EvidenceId,
         row.EvidenceKind,
-        row.PolicyVersion,
         ToInstant(row.ValidUntilUtc),
         Deserialize<string[]>(row.AttemptsJson),
         DeserializeDictionary(row.FindingsJson),
@@ -596,7 +631,6 @@ public sealed partial class ApplicationDataService
         Check = source.Check,
         BranchResultId = source.Id,
         EvidenceId = source.EvidenceId!.Value,
-        PolicyVersion = source.PolicyVersion,
     };
 
     private static WorkflowRequestRow ToRow(HumanDecisionRequest request, string operationKey) => new()

@@ -4,6 +4,11 @@ namespace ReleaseReadinessCoordinator.Data;
 
 public interface IApplicationDataService
 {
+    Task<EvidenceRecord?> GetCurrentEvidenceAsync(
+        ReleaseRevisionKey releaseRevision,
+        EvidenceKind kind,
+        CancellationToken cancellationToken = default);
+
     Task<ReleaseRevision> SubmitReleaseAsync(
         ReleaseSubmission submission,
         IReadOnlyCollection<EvidenceRecord> initialEvidence,
