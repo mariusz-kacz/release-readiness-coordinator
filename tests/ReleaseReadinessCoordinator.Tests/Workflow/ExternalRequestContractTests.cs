@@ -46,12 +46,16 @@ public sealed class ExternalRequestContractTests
             Assert.True(request.TryGetDataAs<DomainRemediationRequest>(out var remediation));
             Assert.Equal(1, remediation.RoundNumber);
             Assert.Throws<InvalidOperationException>(
-                () => request.CreateResponse(new ApprovalResponse(Approved: true)));
+                () => request.CreateResponse(Approval()));
         }
         else
         {
             Assert.True(request.TryGetDataAs<ApprovalRequest>(out var approval));
             Assert.Equal(1, approval.RoundNumber);
+            Assert.Equal(approval.Snapshot.Id, approval.Request.SnapshotId);
+            Assert.Equal(host.Submission.Key, approval.Snapshot.ReleaseRevision);
+            Assert.Equal(3, approval.Snapshot.Sources.Length);
+            Assert.False(string.IsNullOrWhiteSpace(approval.Snapshot.DecisionBrief));
             Assert.Throws<InvalidOperationException>(
                 () => request.CreateResponse(new RemediationWorkflowResponse(
                     new RemediationSubmission(
@@ -63,4 +67,11 @@ public sealed class ExternalRequestContractTests
                     [])));
         }
     }
+
+    private static ApprovalResponse Approval() => new(new HumanResponse(
+        Guid.NewGuid(),
+        HumanDecision.Approve,
+        "release-manager",
+        "Reviewed.",
+        new UtcInstant(DateTimeOffset.UtcNow)));
 }

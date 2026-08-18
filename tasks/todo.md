@@ -147,12 +147,12 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Task 6: Define decision, correlation, and audit contracts
 
-**Description:** Model immutable decision snapshots, typed human requests/responses, response validation, workflow correlation, and chronological timeline records for durable business history.
+**Description:** Model immutable decision snapshots, typed human requests/responses, workflow correlation, and chronological timeline records for durable business history.
 
 **Acceptance criteria:**
 
 - [x] A decision snapshot contains exactly three passing source results, their evidence and evaluator identities, the earliest deadline, and one immutable deterministic brief.
-- [x] Human responses must correlate to their active request and snapshot token; validation records accepted or bounded stale-response reasons without mutating prior history.
+- [x] Human requests/responses preserve stable identities, terminal decision intent, actor, and UTC timestamps while keeping workflow correlation distinct from business history.
 - [x] Correlation and timeline records preserve stable identities, positive ordering, UTC timestamps, and distinct business/audit meanings.
 
 **Verification:**
@@ -206,13 +206,13 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Task 8: Create the SQLite schema and migrations
 
-**Description:** Map business/audit state to SQLite using EF Core. Use unique constraints and concurrency tokens for release revision identity, operation idempotency, one-result-per-branch-per-round, active requests, immutable snapshots, and terminal decisions.
+**Description:** Map business/audit state to SQLite using EF Core. Use unique constraints for release revision identity, operation idempotency, one-result-per-branch-per-round, active requests, immutable snapshots, and terminal decisions.
 
 **Acceptance criteria:**
 
 - [x] The schema represents all stores named in `SPEC.md` section 12.3, enforces immutable release metadata and at most one current evidence record per branch, and preserves versioned evidence plus append-only history.
 - [x] Unique indexes enforce duplicate submission conflicts, stable operation keys, and one branch result per check/round.
-- [x] A migration creates a fresh database and EF optimistic concurrency protects active request/snapshot mutation points.
+- [x] A migration creates a fresh database and database constraints protect active request/snapshot mutation points.
 
 **Verification:**
 
@@ -443,21 +443,21 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (5 files)
 
-## Task 16: Build immutable snapshots and handle human decisions
+## Task 16: Build immutable snapshots and terminal MAF human decisions
 
-**Description:** For an all-pass round, persist one immutable `DecisionSnapshot` and deterministic brief, issue typed approval, revalidate all integrity/freshness inputs, and persist one terminal approval/rejection or a declined stale response that selectively resumes evaluation.
+**Description:** For an all-pass round, persist one immutable `DecisionSnapshot` and deterministic brief, issue a typed MAF approval request, and persist one idempotent terminal approval/rejection delivered through the restored request. Simplify the prior decision contract by removing submitted snapshot/concurrency identities, stale-response persistence, freshness revalidation, and the approval-to-planner route.
 
 **Acceptance criteria:**
 
-- [ ] Snapshot resolves three source results and their evidence IDs, earliest deadline, and immutable deterministic brief.
-- [ ] A response must match the active request, latest fully passing snapshot, concurrency token, current evidence IDs, and deadlines before it can terminate Approved/Rejected; the immutable brief is not regenerated or hashed.
-- [ ] Stale responses persist as declined with bounded reasons, close the old request, resume selective planning, and require a fresh response after reevaluation.
+- [x] Snapshot resolves three source results and their evidence IDs, earliest deadline, and immutable deterministic brief; the brief is never regenerated or hashed when the response arrives.
+- [x] While approval is pending, evidence/remediation/rerun changes are disallowed. The restored MAF request ID and response type are the continuation authority; invalid continuation is rejected before workflow resumption and creates no human-response record.
+- [x] A correctly resumed Approve/Reject response persists exactly one terminal decision, exact replay is harmless, conflicting response-ID reuse fails, and human decision has no edge back to the planner.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~DecisionIntegrity"`
-- [ ] Tests cover current approve, current reject, every stale dimension, duplicate responses, and expiry while waiting.
-- [ ] Brief output is byte-stable for identical snapshot inputs.
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~DecisionIntegrity"`
+- [x] Tests cover terminal approval, terminal rejection, exact replay, conflicting response-ID reuse, invalid external-request continuation with no business effect, and absence of an approval-to-planner route.
+- [x] Brief output is byte-stable for identical snapshot inputs.
 
 **Dependencies:** Task 15
 
@@ -466,16 +466,105 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - `src/ReleaseReadinessCoordinator/Workflow/DecisionSnapshotBuilder.cs`
 - `src/ReleaseReadinessCoordinator/Workflow/HumanDecisionHandler.cs`
 - `src/ReleaseReadinessCoordinator/Workflow/ReleaseWorkflowFactory.cs`
+- `src/ReleaseReadinessCoordinator/Workflow/CheckpointStoreCoordinator.cs`
+- `src/ReleaseReadinessCoordinator/Domain/Decisions.cs`
+- `src/ReleaseReadinessCoordinator/Data/`
 - `tests/ReleaseReadinessCoordinator.Tests/Workflow/DecisionIntegrityTests.cs`
 
-**Estimated scope:** Medium (4 files)
+**Estimated scope:** Large contract simplification; implement incrementally across domain/data, workflow, then tests while keeping Task 16 as the single owner of the correction.
+
+## Task 16A: Allocate round and result identities once
+
+**Description:** Clarify evaluation identity ownership without changing workflow behavior. Rename the start-message identity to `RoundId`, allocate one `ResultId` per planned branch, and use that same result identity for both executed and reused branch results instead of generating and then ignoring an extra ID.
+
+**Acceptance criteria:**
+
+- [ ] `EvaluationRoundStart.RoundId` is the identity persisted as `EvaluationRound.Id`; no second round identity is created during aggregation.
+- [ ] Each `PlannedBranchWorkItem.ResultId` becomes the emitted `BranchResult.Id` for both Execute and Reuse paths.
+- [ ] Existing round ordering, branch outcomes, reuse linkage, provider calls, and persistence behavior remain unchanged.
+
+**Verification:**
+
+- [ ] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowTopology|FullyQualifiedName~SelectiveRerun|FullyQualifiedName~DecisionIntegrity"`
+- [ ] A focused test asserts planned round/result identities survive execution and reuse unchanged.
+- [ ] `dotnet build --no-restore`
+
+**Dependencies:** Task 16
+
+**Files likely touched:**
+
+- `src/ReleaseReadinessCoordinator/Workflow/WorkflowMessages.cs`
+- `src/ReleaseReadinessCoordinator/Workflow/ReadinessExecutors.cs`
+- `src/ReleaseReadinessCoordinator/Readiness/BranchExecution.cs`
+- `src/ReleaseReadinessCoordinator/Workflow/RoundAggregator.cs`
+- `tests/ReleaseReadinessCoordinator.Tests/Workflow/WorkflowTopologyTests.cs`
+
+**Estimated scope:** Medium (5 files)
+
+## Task 16B: Separate workflow waits from business requests
+
+**Description:** Make the MAF continuation boundary explicit in names. Rename pending workflow types from `Pending*Request` to `Pending*Wait`, rename their engine-generated identifier to `WorkflowRequestId`, and rename remediation's optional domain correlation to `RemediationRequestId`. Keep durable `HumanDecisionRequest` and `RemediationRequest` entities unchanged.
+
+**Acceptance criteria:**
+
+- [ ] MAF-generated identities are named `WorkflowRequestId` everywhere they are captured, restored, compared, or persisted.
+- [ ] Pending wait types cannot be mistaken for durable domain request records, and remediation correlation explicitly distinguishes both IDs.
+- [ ] Checkpoint restoration, mismatch rejection, response typing, and no-business-effect-on-invalid-continuation behavior remain unchanged.
+
+**Verification:**
+
+- [ ] `dotnet test --no-build --filter "FullyQualifiedName~CheckpointContract|FullyQualifiedName~ExternalRequestContract|FullyQualifiedName~DecisionIntegrity"`
+- [ ] Search confirms no `PendingWorkflowRequest.RequestId`, `DomainRequestId`, or `Pending*Request` workflow type remains.
+- [ ] `dotnet build --no-restore`
+
+**Dependencies:** Task 16A
+
+**Files likely touched:**
+
+- `src/ReleaseReadinessCoordinator/Workflow/CheckpointStoreCoordinator.cs`
+- `src/ReleaseReadinessCoordinator/Workflow/ReleaseSubmissionApplicationService.cs`
+- `tests/ReleaseReadinessCoordinator.Tests/Workflow/CheckpointContractTests.cs`
+- `tests/ReleaseReadinessCoordinator.Tests/Workflow/ExternalRequestContractTests.cs`
+- `tests/ReleaseReadinessCoordinator.Tests/Workflow/DecisionIntegrityTests.cs`
+
+**Estimated scope:** Medium (5 files)
+
+## Task 16C: Clarify persisted approval-response references
+
+**Description:** Rename the persisted response's `ActiveRequestId` reference to `ApprovalRequestId` across the domain projection, data-service boundary, and storage mapping. Preserve `HumanResponse.Id` as the response's own idempotency identity and preserve the one-terminal-response-per-release constraint.
+
+**Acceptance criteria:**
+
+- [ ] `PersistedHumanResponse.ApprovalRequestId` unambiguously identifies the durable `HumanDecisionRequest.Id` that was answered.
+- [ ] Data-service parameters, persistence rows, constraints, and error messages consistently use approval-request terminology without changing cardinality or response semantics.
+- [ ] No schema/data compatibility change is made silently; if renaming the SQLite column requires migration or existing-data handling, implementation stops for an explicit decision.
+
+**Verification:**
+
+- [ ] `dotnet test --no-build --filter "FullyQualifiedName~ApplicationDataServiceTests|FullyQualifiedName~DatabaseSchema|FullyQualifiedName~DecisionIntegrity"`
+- [ ] `dotnet test --no-build`
+- [ ] `dotnet format --verify-no-changes`
+- [ ] `dotnet build --no-restore`
+
+**Dependencies:** Task 16B
+
+**Files likely touched:**
+
+- `src/ReleaseReadinessCoordinator/Data/ReleaseDetailProjection.cs`
+- `src/ReleaseReadinessCoordinator/Data/IApplicationDataService.cs`
+- `src/ReleaseReadinessCoordinator/Data/ApplicationDataService.Workflow.cs`
+- `src/ReleaseReadinessCoordinator/Data/PersistenceRows.cs`
+- `tests/ReleaseReadinessCoordinator.Tests/Data/ApplicationDataServiceTests.cs`
+
+**Estimated scope:** Medium (5 files)
 
 ## Checkpoint D: Core end-to-end workflow
 
-- [ ] Tasks 14-16 acceptance criteria are met.
-- [ ] The all-pass, remediation/selective-reuse, stale-response, approval, and rejection paths run on the real graph.
-- [ ] Round/business history is complete, idempotent, and explainable.
-- [ ] No branch-local wait, rerun-all shortcut, or automatic approval exists.
+- [x] Tasks 14-16 acceptance criteria are met.
+- [x] The all-pass, remediation/selective-reuse, terminal approval, and terminal rejection paths run on the simplified real graph.
+- [x] Round/business history is complete, idempotent, and explainable.
+- [x] No branch-local wait, rerun-all shortcut, automatic approval, or human-decision edge back to the planner exists.
+- [ ] Identity names distinguish entity IDs, cross-entity references, and MAF continuation IDs without relying on comments.
 
 ## Task 17: Add restart recovery, synchronization, and reconciliation
 
@@ -493,7 +582,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Integration test creates a wait, disposes the host, creates a new host over the same SQLite/checkpoint directories, responds, and verifies one continuation.
 - [ ] Concurrent response test proves serialization/idempotency.
 
-**Dependencies:** Tasks 3, 9, and 15-16
+**Dependencies:** Tasks 3, 9, 15-16, and 16A-16C
 
 **Files likely touched:**
 
@@ -513,7 +602,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 - [ ] The page shows phase, three current results, evidence/findings, round history, planning reasons, `ValidUntil`, attempts, deterministic brief, active wait, and chronological timeline.
 - [ ] Every round labels `Executed because ...` or `Reused from round N because ...` and links a reused result to its source.
-- [ ] Technical failure and stale-response reasons are visible without exposing secrets or raw checkpoint contents.
+- [ ] Technical and continuation failures are visible without exposing secrets or raw checkpoint contents.
 
 **Verification:**
 
@@ -567,18 +656,18 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 ## Task 20: Build decision interaction UI
 
-**Description:** Add the typed human-decision page and PRG handler, displaying the immutable snapshot/brief and accepting Approve/Reject, actor, comment, request identity, snapshot identity, and concurrency token.
+**Description:** Add the typed human-decision page and PRG handler, displaying the immutable snapshot/brief and active MAF request identity, then accepting Approve/Reject, actor, and comment.
 
 **Acceptance criteria:**
 
-- [ ] The page renders only the active latest fully passing snapshot and makes all submitted identities explicit.
-- [ ] Approve/Reject requires actor and comment, invokes deterministic revalidation, and redirects to terminal detail when current.
-- [ ] A stale response displays decline reasons and the newly resumed selective-evaluation state; the old response is never auto-applied.
+- [ ] The page renders only the snapshot carried by the restored active approval request; snapshot identity and a separate concurrency token are not accepted from the form.
+- [ ] Approve/Reject requires actor and comment, resumes the matching typed request, persists one terminal decision, and redirects to terminal detail.
+- [ ] Missing, mismatched, corrupt, or incompatible continuation displays safe feedback, creates no human-response record, and leaves the workflow unresumed; exact double-submit has one terminal effect.
 
 **Verification:**
 
 - [ ] `dotnet test --no-build --filter "FullyQualifiedName~DecisionPage"`
-- [ ] Manual current approval, current rejection, and expired-evidence stale-response journeys succeed.
+- [ ] Manual approval, rejection, and invalid-continuation journeys succeed.
 - [ ] Double-submit produces one terminal decision.
 
 **Dependencies:** Tasks 16-18
@@ -597,7 +686,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [ ] Tasks 17-20 acceptance criteria are met.
 - [ ] Remediation and approval waits both survive a real host restart.
 - [ ] The four-page Razor UI supports the complete approved journey with manual refresh.
-- [ ] Accessibility, correlation, stale feedback, failure visibility, and duplicate protection are manually reviewed.
+- [ ] Accessibility, request correlation, continuation-error feedback, failure visibility, and duplicate protection are manually reviewed.
 
 ## Task 21: Complete real-graph workflow scenario coverage
 
@@ -605,7 +694,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] The suite covers all-pass approval, multi-block remediation/selective reuse, missing/transient aggregation, restart/resume-once, approval-time expiry/selective rerun, and current rejection.
+- [ ] The suite covers all-pass approval, multi-block remediation/selective reuse, missing/transient aggregation, remediation-wait restart/resume-once, approval-wait restart/resume-once, and terminal rejection.
 - [ ] Each scenario verifies three-result fan-in, wait timing, phase transitions, timeline explanations, idempotency, and provider/policy call counts.
 - [ ] Unexpected exceptions remain technical failures and terminal decisions cannot reopen.
 
@@ -632,7 +721,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] Browser coverage proves submit -> passing round -> current human decision reaches a terminal phase.
+- [ ] Browser coverage proves submit -> passing round -> restored human decision reaches a terminal phase.
 - [ ] Browser coverage proves blocker -> remediation -> selective rerun and visibly distinguishes Executed from Reused with source linkage.
 - [ ] Tests use isolated temporary stores, deterministic fakes, and capture actionable diagnostics on failure without adding SPA or real-time infrastructure.
 

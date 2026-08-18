@@ -40,7 +40,7 @@ public sealed partial class ApplicationDataService
             },
             async token =>
             {
-                await RequireMutableRelease(round.ReleaseRevision, token);
+                await RequireReleaseInPhase(round.ReleaseRevision, ProcessPhase.Evaluating, token);
                 _dbContext.EvaluationRounds.Add(new EvaluationRoundRow
                 {
                     Id = round.Id,
@@ -101,7 +101,10 @@ public sealed partial class ApplicationDataService
             },
             async token =>
             {
-                var release = await RequireMutableRelease(request.ReleaseRevision, token);
+                var release = await RequireReleaseInPhase(
+                    request.ReleaseRevision,
+                    ProcessPhase.Evaluating,
+                    token);
                 var round = await _dbContext.EvaluationRounds.AsNoTracking().SingleAsync(
                     value => value.ReleaseId == request.ReleaseRevision.ReleaseId
                         && value.Revision == request.ReleaseRevision.Revision
@@ -150,7 +153,10 @@ public sealed partial class ApplicationDataService
             },
             async token =>
             {
-                var release = await RequireMutableRelease(releaseRevision, token);
+                var release = await RequireReleaseInPhase(
+                    releaseRevision,
+                    ProcessPhase.WaitingForRemediation,
+                    token);
                 var request = await _dbContext.WorkflowRequests.SingleAsync(
                     value => value.Id == submission.RequestId
                         && value.ReleaseId == releaseRevision.ReleaseId
@@ -222,7 +228,10 @@ public sealed partial class ApplicationDataService
             },
             async token =>
             {
-                var release = await RequireMutableRelease(snapshot.ReleaseRevision, token);
+                var release = await RequireReleaseInPhase(
+                    snapshot.ReleaseRevision,
+                    ProcessPhase.Evaluating,
+                    token);
                 var roundRow = await _dbContext.EvaluationRounds.AsNoTracking().SingleOrDefaultAsync(
                     value => value.Id == snapshot.EvaluationRoundId, token);
                 if (roundRow is null)
@@ -240,7 +249,7 @@ public sealed partial class ApplicationDataService
                         "The decision snapshot sources do not match the persisted evaluation round.");
                 }
 
-                _dbContext.DecisionSnapshots.Add(ToRow(snapshot, request.ConcurrencyToken, $"{operationKey}:snapshot"));
+                _dbContext.DecisionSnapshots.Add(ToRow(snapshot, $"{operationKey}:snapshot"));
                 foreach (var source in snapshot.Sources)
                 {
                     _dbContext.DecisionSnapshotSources.Add(ToSourceRow(snapshot.Id, source));
@@ -256,67 +265,71 @@ public sealed partial class ApplicationDataService
 
     public Task<PersistedHumanResponse> SaveHumanResponseAsync(
         ReleaseRevisionKey releaseRevision,
+        Guid activeRequestId,
         HumanResponse response,
-        HumanResponseValidation validation,
         TimelineEntry timelineEntry,
         string operationKey,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(releaseRevision);
-        ArgumentNullException.ThrowIfNull(response);
-        ArgumentNullException.ThrowIfNull(validation);
-        ArgumentNullException.ThrowIfNull(timelineEntry);
-        operationKey = RequireOperationKey(operationKey);
-        if (validation.ResponseId != response.Id)
+        if (activeRequestId == Guid.Empty)
         {
-            throw new ArgumentException("The validation must reference the supplied response.", nameof(validation));
+            throw new ArgumentException("The active request ID cannot be empty.", nameof(activeRequestId));
         }
 
-        var requiredKind = validation.State == HumanResponseValidationState.Accepted
-            ? TimelineEntryKind.HumanResponseAccepted
-            : TimelineEntryKind.HumanResponseDeclined;
-        ValidateTimeline(timelineEntry, releaseRevision, requiredKind);
+        ArgumentNullException.ThrowIfNull(response);
+        ArgumentNullException.ThrowIfNull(timelineEntry);
+        operationKey = RequireOperationKey(operationKey);
+        ValidateTimeline(timelineEntry, releaseRevision, TimelineEntryKind.HumanResponseAccepted);
 
         return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await FindOperationAsync(
                     _dbContext.HumanResponses, operationKey, response.Id, value => value.Id, token);
-                return row is null ? null : ToDomain(row);
+                if (row is null)
+                {
+                    return null;
+                }
+
+                var persisted = ToDomain(row);
+                if (row.ActiveRequestId != activeRequestId
+                    || persisted.Response != response)
+                {
+                    throw Conflict(
+                        ApplicationDataConflictKind.OperationKeyReused,
+                        $"Operation key '{operationKey}' was already used for a different human response.");
+                }
+
+                return persisted;
             },
             async token =>
             {
-                var release = await RequireMutableRelease(releaseRevision, token);
+                var release = await RequireReleaseInPhase(
+                    releaseRevision,
+                    ProcessPhase.WaitingForApproval,
+                    token);
                 var requestRow = await _dbContext.WorkflowRequests.SingleAsync(
-                    value => value.Id == response.RequestId
+                    value => value.Id == activeRequestId
                         && value.ReleaseId == releaseRevision.ReleaseId
                         && value.Revision == releaseRevision.Revision
-                        && value.Kind == WorkflowRequestKind.Approval,
+                        && value.Kind == WorkflowRequestKind.Approval
+                        && value.IsActive,
                     token);
-                if (validation.State == HumanResponseValidationState.Accepted)
-                {
-                    if (!requestRow.IsActive)
-                    {
-                        throw Conflict(
-                            ApplicationDataConflictKind.InvalidState,
-                            "An accepted response requires the active human decision request.");
-                    }
 
-                    ToHumanDecisionRequest(requestRow).EnsureCorrelated(response);
-                }
-
-                _dbContext.HumanResponses.Add(ToRow(releaseRevision, response, validation, operationKey));
-                if (requestRow.IsActive)
-                {
-                    Close(requestRow, validation.ValidatedAt);
-                    var phase = validation.State == HumanResponseValidationState.Declined
-                        ? ProcessPhase.Evaluating
-                        : response.Decision == HumanDecision.Approve ? ProcessPhase.Approved : ProcessPhase.Rejected;
-                    Transition(release, phase, validation.ValidatedAt);
-                }
+                _dbContext.HumanResponses.Add(ToRow(
+                    releaseRevision,
+                    activeRequestId,
+                    response,
+                    operationKey));
+                Close(requestRow, response.RespondedAt);
+                var phase = response.Decision == HumanDecision.Approve
+                    ? ProcessPhase.Approved
+                    : ProcessPhase.Rejected;
+                Transition(release, phase, response.RespondedAt);
 
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, TimelineOperationKey(operationKey)));
-                return new PersistedHumanResponse(releaseRevision, response, validation);
+                return new PersistedHumanResponse(releaseRevision, activeRequestId, response);
             },
             cancellationToken);
     }
@@ -610,7 +623,6 @@ public sealed partial class ApplicationDataService
 
     private static DecisionSnapshotRow ToRow(
         DecisionSnapshot snapshot,
-        string concurrencyToken,
         string operationKey) => new()
         {
             Id = snapshot.Id,
@@ -621,7 +633,6 @@ public sealed partial class ApplicationDataService
             EarliestValidityBoundUtc = snapshot.EarliestValidityBound.Value,
             DecisionBrief = snapshot.DecisionBrief,
             CreatedAtUtc = snapshot.CreatedAt.Value,
-            ConcurrencyToken = concurrencyToken,
             OperationKey = operationKey,
         };
 
@@ -642,7 +653,7 @@ public sealed partial class ApplicationDataService
         DecisionSnapshotId = request.SnapshotId,
         CreatedAtUtc = request.CreatedAt.Value,
         IsActive = true,
-        ConcurrencyToken = request.ConcurrencyToken,
+        ConcurrencyToken = NewConcurrencyToken(),
         OperationKey = operationKey,
     };
 
@@ -650,27 +661,22 @@ public sealed partial class ApplicationDataService
         row.Id,
         new ReleaseRevisionKey(row.ReleaseId, row.Revision),
         row.DecisionSnapshotId!.Value,
-        row.ConcurrencyToken,
         new UtcInstant(row.CreatedAtUtc));
 
     private static HumanResponseRow ToRow(
         ReleaseRevisionKey releaseRevision,
+        Guid activeRequestId,
         HumanResponse response,
-        HumanResponseValidation validation,
         string operationKey) => new()
         {
             Id = response.Id,
             ReleaseId = releaseRevision.ReleaseId,
             Revision = releaseRevision.Revision,
-            RequestId = response.RequestId,
-            SnapshotId = response.SnapshotId,
-            SnapshotConcurrencyToken = response.SnapshotConcurrencyToken,
+            ActiveRequestId = activeRequestId,
             Decision = response.Decision,
             Responder = response.Responder,
+            Comment = response.Comment,
             RespondedAtUtc = response.RespondedAt.Value,
-            ValidationState = validation.State,
-            ValidatedAtUtc = validation.ValidatedAt.Value,
-            DeclineReasonsJson = JsonSerializer.Serialize(validation.DeclineReasons, JsonOptions),
             OperationKey = operationKey,
         };
 
@@ -678,19 +684,14 @@ public sealed partial class ApplicationDataService
     {
         var response = new HumanResponse(
             row.Id,
-            row.RequestId,
-            row.SnapshotId,
-            row.SnapshotConcurrencyToken,
             row.Decision,
             row.Responder,
+            row.Comment,
             new UtcInstant(row.RespondedAtUtc));
-        var validation = row.ValidationState == HumanResponseValidationState.Accepted
-            ? HumanResponseValidation.Accepted(row.Id, new UtcInstant(row.ValidatedAtUtc))
-            : HumanResponseValidation.Declined(
-                row.Id,
-                new UtcInstant(row.ValidatedAtUtc),
-                Deserialize<HumanResponseDeclineReason[]>(row.DeclineReasonsJson));
-        return new PersistedHumanResponse(new ReleaseRevisionKey(row.ReleaseId, row.Revision), response, validation);
+        return new PersistedHumanResponse(
+            new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+            row.ActiveRequestId,
+            response);
     }
 
     private static WorkflowCorrelationRow ToRow(WorkflowCorrelationRecord correlation, string operationKey) => new()
@@ -756,12 +757,15 @@ public sealed partial class ApplicationDataService
     private async Task<ImmutableArray<HumanDecisionRequest>> ReadHumanDecisionRequests(ReleaseRevisionKey key, CancellationToken token) =>
         [.. (await ReadRequests(key, WorkflowRequestKind.Approval, token)).Select(ToHumanDecisionRequest)];
 
-    private async Task<ImmutableArray<PersistedHumanResponse>> ReadHumanResponses(ReleaseRevisionKey key, CancellationToken token) =>
-        [.. (await _dbContext.HumanResponses.AsNoTracking()
-            .Where(value => value.ReleaseId == key.ReleaseId && value.Revision == key.Revision)
-            .ToListAsync(token))
-            .OrderBy(value => value.RespondedAtUtc)
-            .Select(ToDomain)];
+    private async Task<PersistedHumanResponse?> ReadHumanResponse(
+        ReleaseRevisionKey key,
+        CancellationToken token)
+    {
+        var row = await _dbContext.HumanResponses.AsNoTracking().SingleOrDefaultAsync(
+            value => value.ReleaseId == key.ReleaseId && value.Revision == key.Revision,
+            token);
+        return row is null ? null : ToDomain(row);
+    }
 
     private async Task<WorkflowCorrelationRecord?> ReadWorkflowCorrelation(ReleaseRevisionKey key, CancellationToken token)
     {

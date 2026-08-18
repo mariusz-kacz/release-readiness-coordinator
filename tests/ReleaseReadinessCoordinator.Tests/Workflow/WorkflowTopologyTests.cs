@@ -39,7 +39,7 @@ public sealed class WorkflowTopologyTests
             typeof(EvaluationRoundStart),
             typeof(PlannedBranchWorkItem),
             typeof(CompletedBranchWork),
-            typeof(EvaluationRound),
+            typeof(BuildDecisionSnapshot),
         ];
 
         Assert.All(
@@ -47,6 +47,16 @@ public sealed class WorkflowTopologyTests
             messageType => Assert.DoesNotContain(
                 messageType.GetProperties(),
                 property => typeof(PendingWorkflowRequest).IsAssignableFrom(property.PropertyType)));
+    }
+
+    [Fact]
+    public void Decision_snapshot_command_carries_the_completed_round()
+    {
+        var round = Round(CompleteResults());
+
+        var command = new BuildDecisionSnapshot(round);
+
+        Assert.Same(round, command.Round);
     }
 
     [Fact]

@@ -110,7 +110,6 @@ internal sealed class DecisionSnapshotRow : IOperationRow
     public DateTimeOffset EarliestValidityBoundUtc { get; set; }
     public string DecisionBrief { get; set; } = null!;
     public DateTimeOffset CreatedAtUtc { get; set; }
-    public string ConcurrencyToken { get; set; } = null!;
     public string OperationKey { get; set; } = null!;
 }
 
@@ -127,15 +126,11 @@ internal sealed class HumanResponseRow : IOperationRow
     public Guid Id { get; set; }
     public string ReleaseId { get; set; } = null!;
     public int Revision { get; set; }
-    public Guid RequestId { get; set; }
-    public Guid SnapshotId { get; set; }
-    public string SnapshotConcurrencyToken { get; set; } = null!;
+    public Guid ActiveRequestId { get; set; }
     public HumanDecision Decision { get; set; }
     public string Responder { get; set; } = null!;
+    public string Comment { get; set; } = null!;
     public DateTimeOffset RespondedAtUtc { get; set; }
-    public HumanResponseValidationState ValidationState { get; set; }
-    public DateTimeOffset ValidatedAtUtc { get; set; }
-    public string DeclineReasonsJson { get; set; } = null!;
     public string OperationKey { get; set; } = null!;
 }
 

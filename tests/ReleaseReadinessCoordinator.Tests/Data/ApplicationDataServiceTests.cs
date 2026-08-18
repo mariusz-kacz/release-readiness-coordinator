@@ -298,7 +298,7 @@ public sealed class ApplicationDataServiceTests
             "All readiness checks passed.",
             Utc(2026, 8, 16, 10));
         var request = new HumanDecisionRequest(
-            Guid.NewGuid(), submission.Key, snapshot.Id, "snapshot-token", Utc(2026, 8, 16, 10));
+            Guid.NewGuid(), submission.Key, snapshot.Id, Utc(2026, 8, 16, 10));
         await service.OpenHumanDecisionRequestAsync(
             snapshot,
             request,
@@ -311,19 +311,18 @@ public sealed class ApplicationDataServiceTests
             "approval:request");
 
         var response = new HumanResponse(
-            Guid.NewGuid(), request.Id, snapshot.Id, request.ConcurrencyToken,
-            HumanDecision.Approve, "coordinator", Utc(2026, 8, 16, 11));
-        var validation = HumanResponseValidation.Accepted(response.Id, Utc(2026, 8, 16, 11));
+            Guid.NewGuid(), HumanDecision.Approve, "coordinator", "Approved for release.",
+            Utc(2026, 8, 16, 11));
         await service.SaveHumanResponseAsync(
             submission.Key,
+            request.Id,
             response,
-            validation,
             CreateTimeline(submission.Key, 4, TimelineEntryKind.HumanResponseAccepted, "Release approved."),
             "approval:response");
         await service.SaveHumanResponseAsync(
             submission.Key,
+            request.Id,
             response,
-            validation,
             CreateTimeline(submission.Key, 4, TimelineEntryKind.HumanResponseAccepted, "Release approved."),
             "approval:response");
 
@@ -332,7 +331,7 @@ public sealed class ApplicationDataServiceTests
         Assert.Equal(ProcessPhase.Approved, detail.Release.Phase);
         Assert.Single(detail.DecisionSnapshots);
         Assert.Single(detail.HumanDecisionRequests);
-        Assert.Single(detail.HumanResponses);
+        Assert.Equal(response, detail.TerminalResponse!.Response);
         Assert.Equal(4, detail.Timeline.Length);
         Assert.Equal(1, await context.DecisionSnapshots.CountAsync());
         Assert.Equal(3, await context.DecisionSnapshotSources.CountAsync());

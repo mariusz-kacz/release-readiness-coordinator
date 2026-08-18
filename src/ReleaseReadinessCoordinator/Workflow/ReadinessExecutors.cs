@@ -15,6 +15,8 @@ public static class ReleaseWorkflowExecutorIds
     public const string Change = "change-readiness";
     public const string Aggregator = "readiness-aggregator";
     public const string RemediationHandler = "remediation-handler";
+    public const string DecisionSnapshotBuilder = "decision-snapshot-builder";
+    public const string HumanDecisionHandler = "human-decision-handler";
     public const string ApprovalCompletion = "approval-completion";
 
     public static IReadOnlyDictionary<ReadinessBranch, string> Branches { get; } =
@@ -203,7 +205,7 @@ internal sealed partial class ReadinessAggregator : Executor, IResettableExecuto
         _aggregator = new RoundAggregator(dataService, timeProvider);
     }
 
-    [MessageHandler(Send = [typeof(DomainRemediationRequest), typeof(ApprovalRequest)])]
+    [MessageHandler(Send = [typeof(DomainRemediationRequest), typeof(BuildDecisionSnapshot)])]
     private async ValueTask ReceiveAsync(
         CompletedBranchWork completed,
         IWorkflowContext context,
@@ -238,7 +240,7 @@ internal sealed partial class ReadinessAggregator : Executor, IResettableExecuto
         else
         {
             await context.SendMessageAsync(
-                new ApprovalRequest(aggregation.Round.RoundNumber),
+                new BuildDecisionSnapshot(aggregation.Round),
                 cancellationToken);
         }
 
@@ -262,6 +264,30 @@ internal sealed partial class ReadinessAggregator : Executor, IResettableExecuto
     }
 }
 
+internal sealed partial class DecisionSnapshotWorkflowExecutor : Executor
+{
+    private readonly DecisionSnapshotBuilder _builder;
+
+    public DecisionSnapshotWorkflowExecutor(
+        ReleaseRevisionKey releaseRevision,
+        IApplicationDataService dataService,
+        TimeProvider timeProvider)
+        : base(ReleaseWorkflowExecutorIds.DecisionSnapshotBuilder)
+    {
+        _builder = new DecisionSnapshotBuilder(releaseRevision, dataService, timeProvider);
+    }
+
+    [MessageHandler]
+    private async ValueTask<ApprovalRequest> BuildAsync(
+        BuildDecisionSnapshot command,
+        IWorkflowContext context,
+        CancellationToken cancellationToken)
+    {
+        var built = await _builder.BuildAsync(command.Round, cancellationToken);
+        return new ApprovalRequest(built.Snapshot, built.Request);
+    }
+}
+
 internal sealed partial class RemediationWorkflowExecutor : Executor
 {
     private readonly RemediationHandler _handler;
@@ -282,6 +308,26 @@ internal sealed partial class RemediationWorkflowExecutor : Executor
         new(_handler.HandleAsync(response, cancellationToken));
 }
 
+internal sealed partial class HumanDecisionWorkflowExecutor : Executor
+{
+    private readonly HumanDecisionHandler _handler;
+
+    public HumanDecisionWorkflowExecutor(
+        ReleaseRevisionKey releaseRevision,
+        IApplicationDataService dataService)
+        : base(ReleaseWorkflowExecutorIds.HumanDecisionHandler)
+    {
+        _handler = new HumanDecisionHandler(releaseRevision, dataService);
+    }
+
+    [MessageHandler]
+    private ValueTask<PersistedHumanResponse> HandleAsync(
+        ApprovalResponse response,
+        IWorkflowContext context,
+        CancellationToken cancellationToken) =>
+        new(_handler.HandleAsync(response.Response, cancellationToken));
+}
+
 public sealed partial class ApprovalCompletionExecutor : Executor
 {
     public ApprovalCompletionExecutor()
@@ -290,5 +336,7 @@ public sealed partial class ApprovalCompletionExecutor : Executor
     }
 
     [MessageHandler]
-    private ApprovalResponse Complete(ApprovalResponse response, IWorkflowContext context) => response;
+    private PersistedHumanResponse Complete(
+        PersistedHumanResponse response,
+        IWorkflowContext context) => response;
 }

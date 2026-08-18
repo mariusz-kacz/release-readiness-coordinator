@@ -73,11 +73,18 @@ public static class ReleaseWorkflowFactory
             dependencies.ChangePolicy,
             timeProvider);
         var aggregator = new ReadinessAggregator(dataService, timeProvider);
+        var snapshotBuilder = new DecisionSnapshotWorkflowExecutor(
+            submission.Key,
+            dataService,
+            timeProvider);
         var remediation = RequestPort.Create<DomainRemediationRequest, RemediationWorkflowResponse>(
             ReleaseWorkflowPortIds.Remediation);
         var remediationHandler = new RemediationWorkflowExecutor(submission.Key, dataService);
         var approval = RequestPort.Create<ApprovalRequest, ApprovalResponse>(
             ReleaseWorkflowPortIds.Approval);
+        var humanDecisionHandler = new HumanDecisionWorkflowExecutor(
+            submission.Key,
+            dataService);
         var approvalCompletion = new ApprovalCompletionExecutor();
 
         ExecutorBinding[] branchBindings = [test, security, change];
@@ -96,10 +103,12 @@ public static class ReleaseWorkflowFactory
             item => item is not null && item.WorkItem.Check is ReadinessCheck.Change);
         builder.AddFanInBarrierEdge(branchBindings, aggregator);
         builder.AddEdge(aggregator, remediation);
-        builder.AddEdge(aggregator, approval);
+        builder.AddEdge(aggregator, snapshotBuilder);
+        builder.AddEdge(snapshotBuilder, approval);
         builder.AddEdge(remediation, remediationHandler);
         builder.AddEdge(remediationHandler, planner);
-        builder.AddEdge(approval, approvalCompletion);
+        builder.AddEdge(approval, humanDecisionHandler);
+        builder.AddEdge(humanDecisionHandler, approvalCompletion);
         builder.WithOutputFrom(approvalCompletion);
         return builder.Build();
     }

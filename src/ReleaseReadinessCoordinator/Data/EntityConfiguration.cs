@@ -207,7 +207,6 @@ internal static class EntityConfiguration
             .WithMany()
             .HasForeignKey(row => row.EvaluationRoundId)
             .OnDelete(DeleteBehavior.Restrict);
-        ConfigureConcurrencyToken(builder.Property(row => row.ConcurrencyToken));
         ConfigureOperationKey(builder, "UX_DecisionSnapshots_OperationKey");
         MakeAllPropertiesImmutable(builder);
     }
@@ -239,11 +238,9 @@ internal static class EntityConfiguration
         builder.HasKey(row => row.Id);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.Decision).HasConversion<int>();
-        builder.Property(row => row.ValidationState).HasConversion<int>();
-        builder.HasIndex(row => row.RequestId).IsUnique();
+        builder.HasIndex(row => row.ActiveRequestId).IsUnique();
         builder.HasIndex(row => new { row.ReleaseId, row.Revision })
             .IsUnique()
-            .HasFilter("ValidationState = 1")
             .HasDatabaseName("UX_HumanResponses_Terminal_Release");
         builder.HasOne<ReleaseRevisionRow>()
             .WithMany()
@@ -251,11 +248,7 @@ internal static class EntityConfiguration
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<WorkflowRequestRow>()
             .WithMany()
-            .HasForeignKey(row => row.RequestId)
-            .OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<DecisionSnapshotRow>()
-            .WithMany()
-            .HasForeignKey(row => row.SnapshotId)
+            .HasForeignKey(row => row.ActiveRequestId)
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureOperationKey(builder, "UX_HumanResponses_OperationKey");
         MakeAllPropertiesImmutable(builder);

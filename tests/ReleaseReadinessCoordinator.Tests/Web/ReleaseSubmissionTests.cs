@@ -62,9 +62,13 @@ public sealed class ReleaseSubmissionTests
         var round = Assert.Single(detail.EvaluationRounds);
         Assert.Equal(3, round.Results.Length);
         Assert.All(round.Results, result => Assert.Equal(ExecutionDisposition.Executed, result.Disposition));
-        Assert.Equal(2, detail.Timeline.Length);
+        Assert.Equal(ProcessPhase.WaitingForApproval, detail.Release.Phase);
+        Assert.Single(detail.DecisionSnapshots);
+        Assert.Single(detail.HumanDecisionRequests);
+        Assert.Equal(3, detail.Timeline.Length);
         Assert.Equal(TimelineEntryKind.ReleaseSubmitted, detail.Timeline[0].Kind);
         Assert.Equal(TimelineEntryKind.EvaluationCompleted, detail.Timeline[1].Kind);
+        Assert.Equal(TimelineEntryKind.ApprovalRequested, detail.Timeline[2].Kind);
     }
 
     [Fact]
@@ -111,7 +115,7 @@ public sealed class ReleaseSubmissionTests
             DemoReleaseFixtures.Complete.Revision);
         Assert.NotNull(detail);
         Assert.Equal(DemoReleaseFixtures.Complete.ServiceName, detail.Release.Submission.ServiceName);
-        Assert.Equal(ProcessPhase.Evaluating, detail.Release.Phase);
+        Assert.Equal(ProcessPhase.WaitingForApproval, detail.Release.Phase);
     }
 
     private sealed class SubmissionHarness : IAsyncDisposable

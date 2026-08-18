@@ -4,21 +4,6 @@ namespace ReleaseReadinessCoordinator.Tests.Domain;
 
 public sealed class DecisionContractTests
 {
-    [Fact]
-    public void Human_response_decline_reasons_are_limited_to_current_state_checks()
-    {
-        Assert.Equal(
-            [
-                HumanResponseDeclineReason.ProcessPhaseChanged,
-                HumanResponseDeclineReason.RequestMismatch,
-                HumanResponseDeclineReason.SnapshotMismatch,
-                HumanResponseDeclineReason.ConcurrencyTokenChanged,
-                HumanResponseDeclineReason.EvidenceChanged,
-                HumanResponseDeclineReason.ResultExpired,
-            ],
-            Enum.GetValues<HumanResponseDeclineReason>());
-    }
-
     private static readonly ReleaseRevisionKey RevisionKey = new("release-42", 3);
     private static readonly UtcInstant ValidUntil = Utc(2026, 8, 15, 8);
 
@@ -56,14 +41,13 @@ public sealed class DecisionContractTests
     }
 
     [Fact]
-    public void Human_response_validation_uses_identity_and_deadline_reasons()
+    public void Human_response_contains_only_terminal_intent_and_audit_fields()
     {
-        var reasonNames = Enum.GetNames<HumanResponseDeclineReason>();
+        var properties = typeof(HumanResponse).GetProperties().Select(property => property.Name).Order();
 
-        Assert.Contains(nameof(HumanResponseDeclineReason.EvidenceChanged), reasonNames);
-        Assert.Contains(nameof(HumanResponseDeclineReason.ResultExpired), reasonNames);
-        Assert.DoesNotContain("FingerprintChanged", reasonNames);
-        Assert.DoesNotContain("DecisionBriefHashChanged", reasonNames);
+        Assert.Equal(
+            ["Comment", "Decision", "Id", "RespondedAt", "Responder"],
+            properties);
     }
 
     private static BranchResult[] CompleteResults() =>

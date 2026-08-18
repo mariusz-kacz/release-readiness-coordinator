@@ -141,7 +141,13 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             },
             async token =>
             {
-                await RequireMutableRelease(evidence.ReleaseRevision, token);
+                var release = await RequireMutableRelease(evidence.ReleaseRevision, token);
+                if (release.Phase is ProcessPhase.WaitingForApproval)
+                {
+                    throw Conflict(
+                        ApplicationDataConflictKind.InvalidState,
+                        "Evidence cannot be replaced while human approval is pending.");
+                }
                 var current = await _dbContext.CurrentEvidence.SingleOrDefaultAsync(
                     row => row.ReleaseId == evidence.ReleaseRevision.ReleaseId
                         && row.Revision == evidence.ReleaseRevision.Revision
@@ -220,7 +226,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             await ReadRemediationSubmissions(releaseRevision, cancellationToken),
             await ReadDecisionSnapshots(releaseRevision, cancellationToken),
             await ReadHumanDecisionRequests(releaseRevision, cancellationToken),
-            await ReadHumanResponses(releaseRevision, cancellationToken),
+            await ReadHumanResponse(releaseRevision, cancellationToken),
             await ReadWorkflowCorrelation(releaseRevision, cancellationToken),
             [.. timelineRows.Select(ToDomain)]);
         await transaction.CommitAsync(cancellationToken);
@@ -258,6 +264,23 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             throw Conflict(
                 ApplicationDataConflictKind.TerminalRelease,
                 $"Release revision '{key.ReleaseId}/{key.Revision}' is terminal and cannot be reopened.");
+        }
+
+        return row;
+    }
+
+    private async Task<ReleaseRevisionRow> RequireReleaseInPhase(
+        ReleaseRevisionKey key,
+        ProcessPhase requiredPhase,
+        CancellationToken cancellationToken)
+    {
+        var row = await RequireMutableRelease(key, cancellationToken);
+        if (row.Phase != requiredPhase)
+        {
+            throw Conflict(
+                ApplicationDataConflictKind.InvalidState,
+                $"Release revision '{key.ReleaseId}/{key.Revision}' must be in phase "
+                    + $"'{requiredPhase}' instead of '{row.Phase}'.");
         }
 
         return row;

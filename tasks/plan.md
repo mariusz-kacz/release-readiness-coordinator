@@ -2,12 +2,12 @@
 
 ## Overview
 
-Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed three-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, and a minimal server-rendered UI. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
+Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed three-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, and a minimal server-rendered UI. Human decision intentionally uses a closed immutable snapshot and terminal approval/rejection so the portfolio emphasizes MAF orchestration rather than production-grade continuously editable approval evidence. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
 
 ## Planning Basis
 
 - `SPEC.md` is the sole authoritative product and architecture specification.
-- Tasks 1-7 are implemented and verified in the current repository; remaining work starts with the durable SQLite foundation.
+- Tasks 1-15 are implemented and verified in the current repository. Task 16 is reopened to replace its production-oriented stale-decision contract with the approved portfolio-focused terminal MAF decision flow.
 - The NuGet V3 package index was checked on 2026-08-11 and includes `Microsoft.Agents.AI.Workflows` version `1.17.0`.
 - Official MAF documentation confirms the planned superstep synchronization barrier, typed `RequestPort` external requests, checkpoint capture of pending requests, stable topology/executor identity requirements during rehydration, and the process-exclusive/non-thread-safe filesystem checkpoint store. Because some API reference pages display an older package label, Tasks 2 and 3 require compiled 1.17.0 contract tests before feature implementation continues.
 
@@ -33,6 +33,7 @@ Official references:
 - One bounded application data service uses EF Core directly. There are no generic repositories, CQRS layers, event sourcing, workers, queues, or additional deployables.
 - Built-in `TimeProvider` is injected for all time-sensitive logic.
 - Release metadata is immutable within a revision. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs and `ValidUntil` deadlines.
+- Evidence changes are allowed through remediation only and are locked while approval is pending. The restored typed MAF request is the authority for approval-response correlation; human decision never routes back to the planner.
 - Local simulated providers implement typed evidence-source contracts. Only known typed transient failures receive one initial attempt plus two immediate retries.
 - SQLite stores immutable/versioned business records and an append-only timeline. MAF checkpoints live under a configurable private application-data directory that is excluded from source control.
 - Stable operation keys make replayed SQLite writes idempotent. A single application-lifetime checkpoint store is protected by an async critical section.
@@ -55,7 +56,8 @@ flowchart TD
     G --> H
     H --> I[Complete aggregation and remediation]
     I --> J[Decision snapshot and response integrity]
-    J --> K[Restart recovery and reconciliation]
+    J --> ID[Identity vocabulary simplification]
+    ID --> K[Restart recovery and reconciliation]
     K --> L[Razor Pages interactions]
     L --> M[Workflow and browser evaluation]
     M --> N[Documentation and final acceptance]
@@ -122,14 +124,18 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 - [x] Task 14: Implement selective execution and safe reuse planning
 - [x] Task 15: Complete aggregation and remediation resumption
-- [ ] Task 16: Build immutable snapshots and handle human decisions
+- [x] Task 16: Build immutable snapshots and terminal MAF human decisions
+- [ ] Task 16A: Allocate round and result identities once
+- [ ] Task 16B: Separate workflow waits from business requests
+- [ ] Task 16C: Clarify persisted approval-response references
 
 ### Checkpoint D: Core End-to-End Workflow
 
-- [ ] Every round contains three results with explicit Executed/Reused reasons
-- [ ] Multiple current problems create one wait after complete fan-in
-- [ ] Passing results form one immutable snapshot and deterministic brief
-- [ ] Current decisions terminate; stale decisions selectively reevaluate
+- [x] Every round contains three results with explicit Executed/Reused reasons
+- [x] Multiple current problems create one wait after complete fan-in
+- [x] Passing results form one immutable snapshot and deterministic brief
+- [x] Restored approval requests terminate as Approved/Rejected, invalid continuation has no business effect, and human decision has no edge back to the planner
+- [ ] Entity-owned IDs remain conventional while every cross-entity and workflow-engine reference has an unambiguous name
 
 ### Phase 5: Recovery and Minimal Razor UI
 
@@ -177,7 +183,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 | SQLite writes and filesystem checkpoints cannot be atomic | High | Use stable operation keys, unique constraints, replay-safe upserts, correlation verification, and explicit reconciliation tests. |
 | Reuse accidentally calls providers or policies | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
 | Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate revision without adding supersession/cancellation behavior to the MVP. |
-| A stale human response is accepted | High | Bind responses to request ID, snapshot ID, concurrency token, current evidence IDs, and deadlines; persist declined responses with bounded reason codes. |
+| An approval response resumes the wrong external request | High | Rebuild the identical graph, restore the pending request, and verify its MAF request ID and response type before sending the response. Invalid continuation has no business effect. |
 | Mutable release/evidence data erases audit history | Medium | Append immutable/versioned records and expose current projections without updating historical facts. |
 | Checkpoint store is accessed concurrently or from multiple instances | Medium | Register one application-lifetime store, guard all start/resume access, document the single-process constraint, and test concurrent response handling. |
 | UI scope expands beyond the portfolio MVP | Medium | Implement only four Razor routes, PRG interactions, manual refresh, and the exact fields/views in `SPEC.md`. |

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Agents.AI.Workflows.Checkpointing;
+using ReleaseReadinessCoordinator.Data;
 using DomainRemediationRequest = ReleaseReadinessCoordinator.Domain.RemediationRequest;
 
 namespace ReleaseReadinessCoordinator.Workflow;
@@ -34,7 +35,9 @@ internal sealed record PendingRemediationRequest(
     Guid? DomainRequestId)
     : PendingWorkflowRequest(RequestId);
 
-internal sealed record PendingApprovalRequest(string RequestId)
+internal sealed record PendingApprovalRequest(
+    string RequestId,
+    ApprovalRequest? Approval = null)
     : PendingWorkflowRequest(RequestId);
 
 internal sealed class CheckpointStoreCoordinator : IDisposable
@@ -139,7 +142,7 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         }
     }
 
-    public async Task<ApprovalResponse> ResumeApprovalAsync(
+    public async Task<PersistedHumanResponse> ResumeApprovalAsync(
         Microsoft.Agents.AI.Workflows.Workflow workflow,
         string sessionId,
         PendingApprovalRequest expectedRequest,
@@ -216,7 +219,7 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         }
     }
 
-    private static async Task<ApprovalResponse> ContinueAfterApprovalAsync(
+    private static async Task<PersistedHumanResponse> ContinueAfterApprovalAsync(
         StreamingRun run,
         PendingApprovalRequest expectedRequest,
         ApprovalResponse response,
@@ -226,37 +229,44 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         try
         {
             PendingWorkflowRequest? restoredRequest = null;
-            ApprovalResponse? output = null;
+            PersistedHumanResponse? terminalResponse = null;
             await foreach (var workflowEvent in run.WatchStreamAsync(cancellationToken))
             {
                 switch (workflowEvent)
                 {
+                    case ExecutorFailedEvent failed:
+                        throw ContinuationFailure(
+                            ContinuationFailureKind.Incompatible,
+                            sessionId,
+                            $"failed in executor '{failed.ExecutorId}': {failed.Data?.Message}",
+                            failed.Data);
                     case RequestInfoEvent requestEvent when restoredRequest is null:
                         restoredRequest = ToRestoredPendingWorkflowRequest(requestEvent.Request);
                         EnsureExpected(expectedRequest, restoredRequest, sessionId);
                         await run.SendResponseAsync(
                             requestEvent.Request.CreateResponse(response));
                         break;
-                    case RequestInfoEvent:
+                    case RequestInfoEvent requestEvent:
                         throw ContinuationFailure(
                             ContinuationFailureKind.Incompatible,
                             sessionId,
-                            "produced another external request while completing approval");
-                    case WorkflowOutputEvent { Data: ApprovalResponse approval }:
-                        output = approval;
+                            $"reached unexpected external request '{requestEvent.Request.RequestId}' after a terminal decision");
+                    case WorkflowOutputEvent { Data: PersistedHumanResponse persisted }:
+                        terminalResponse = persisted;
                         break;
                 }
+
             }
 
-            if (restoredRequest is null || output is null)
+            if (restoredRequest is null || terminalResponse is null)
             {
                 throw ContinuationFailure(
                     ContinuationFailureKind.Incompatible,
                     sessionId,
-                    "did not restore the expected request and terminal response");
+                    "did not restore the expected request and reach one terminal response");
             }
 
-            return output;
+            return terminalResponse;
         }
         catch (WorkflowContinuationException)
         {
@@ -434,7 +444,8 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         if (request.PortInfo.PortId == ReleaseWorkflowPortIds.Approval
             && request.IsDataOfType<ApprovalRequest>())
         {
-            return new PendingApprovalRequest(request.RequestId);
+            var approval = request.TryGetDataAs<ApprovalRequest>(out var value) ? value : null;
+            return new PendingApprovalRequest(request.RequestId, approval);
         }
 
         throw new WorkflowContinuationException(
@@ -446,13 +457,19 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
     {
         return request.PortInfo.PortId switch
         {
-            ReleaseWorkflowPortIds.Remediation => new PendingRemediationRequest(request.RequestId, null),
-            ReleaseWorkflowPortIds.Approval => new PendingApprovalRequest(request.RequestId),
+            ReleaseWorkflowPortIds.Remediation when HasPortContract<DomainRemediationRequest, RemediationWorkflowResponse>(request) =>
+                new PendingRemediationRequest(request.RequestId, null),
+            ReleaseWorkflowPortIds.Approval when HasPortContract<ApprovalRequest, ApprovalResponse>(request) =>
+                new PendingApprovalRequest(request.RequestId),
             _ => throw new WorkflowContinuationException(
                 ContinuationFailureKind.Mismatched,
-                $"Restored external request '{request.RequestId}' has an unknown port."),
+                $"Restored external request '{request.RequestId}' has an unknown port or request type."),
         };
     }
+
+    private static bool HasPortContract<TRequest, TResponse>(ExternalRequest request) =>
+        request.PortInfo.RequestType.IsMatch(typeof(TRequest))
+        && request.PortInfo.ResponseType.IsMatch(typeof(TResponse));
 
     private static void EnsureExpected(
         PendingWorkflowRequest expected,

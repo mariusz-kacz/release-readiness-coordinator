@@ -71,38 +71,30 @@ public sealed record HumanResponse
 {
     public HumanResponse(
         Guid id,
-        Guid requestId,
-        Guid snapshotId,
-        string snapshotConcurrencyToken,
         HumanDecision decision,
         string responder,
+        string comment,
         UtcInstant respondedAt)
     {
-        if (id == Guid.Empty || requestId == Guid.Empty || snapshotId == Guid.Empty)
+        if (id == Guid.Empty)
         {
-            throw new ArgumentException("Response, request, and snapshot IDs cannot be empty.");
+            throw new ArgumentException("A response ID cannot be empty.", nameof(id));
         }
 
         Id = id;
-        RequestId = requestId;
-        SnapshotId = snapshotId;
-        SnapshotConcurrencyToken = DomainGuard.Required(snapshotConcurrencyToken, nameof(snapshotConcurrencyToken));
         Decision = DomainGuard.Defined(decision, nameof(decision));
         Responder = DomainGuard.Required(responder, nameof(responder));
+        Comment = DomainGuard.Required(comment, nameof(comment));
         RespondedAt = respondedAt;
     }
 
     public Guid Id { get; }
 
-    public Guid RequestId { get; }
-
-    public Guid SnapshotId { get; }
-
-    public string SnapshotConcurrencyToken { get; }
-
     public HumanDecision Decision { get; }
 
     public string Responder { get; }
+
+    public string Comment { get; }
 
     public UtcInstant RespondedAt { get; }
 }
@@ -113,7 +105,6 @@ public sealed record HumanDecisionRequest
         Guid id,
         ReleaseRevisionKey releaseRevision,
         Guid snapshotId,
-        string concurrencyToken,
         UtcInstant createdAt)
     {
         if (id == Guid.Empty || snapshotId == Guid.Empty)
@@ -124,7 +115,6 @@ public sealed record HumanDecisionRequest
         Id = id;
         ReleaseRevision = releaseRevision;
         SnapshotId = snapshotId;
-        ConcurrencyToken = DomainGuard.Required(concurrencyToken, nameof(concurrencyToken));
         CreatedAt = createdAt;
     }
 
@@ -134,88 +124,7 @@ public sealed record HumanDecisionRequest
 
     public Guid SnapshotId { get; }
 
-    public string ConcurrencyToken { get; }
-
     public UtcInstant CreatedAt { get; }
-
-    public void EnsureCorrelated(HumanResponse response)
-    {
-        ArgumentNullException.ThrowIfNull(response);
-        if (response.RequestId != Id
-            || response.SnapshotId != SnapshotId
-            || !string.Equals(response.SnapshotConcurrencyToken, ConcurrencyToken, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "The response does not match the active request, snapshot, and concurrency token.");
-        }
-    }
-}
-
-public enum HumanResponseValidationState
-{
-    Accepted = 1,
-    Declined = 2,
-}
-
-public enum HumanResponseDeclineReason
-{
-    ProcessPhaseChanged = 1,
-    RequestMismatch = 2,
-    SnapshotMismatch = 3,
-    ConcurrencyTokenChanged = 4,
-    EvidenceChanged = 5,
-    ResultExpired = 6,
-}
-
-public sealed record HumanResponseValidation
-{
-    private HumanResponseValidation(
-        Guid responseId,
-        UtcInstant validatedAt,
-        HumanResponseValidationState state,
-        IEnumerable<HumanResponseDeclineReason> reasons)
-    {
-        if (responseId == Guid.Empty)
-        {
-            throw new ArgumentException("A response ID cannot be empty.", nameof(responseId));
-        }
-
-        ResponseId = responseId;
-        ValidatedAt = validatedAt;
-        State = state;
-        DeclineReasons = [.. reasons.Distinct()];
-    }
-
-    public Guid ResponseId { get; }
-
-    public UtcInstant ValidatedAt { get; }
-
-    public HumanResponseValidationState State { get; }
-
-    public ImmutableArray<HumanResponseDeclineReason> DeclineReasons { get; }
-
-    public static HumanResponseValidation Accepted(Guid responseId, UtcInstant validatedAt) =>
-        new(responseId, validatedAt, HumanResponseValidationState.Accepted, []);
-
-    public static HumanResponseValidation Declined(
-        Guid responseId,
-        UtcInstant validatedAt,
-        IEnumerable<HumanResponseDeclineReason> reasons)
-    {
-        var validatedReasons = DomainGuard.Copy(reasons, nameof(reasons));
-        if (validatedReasons.IsEmpty)
-        {
-            throw new ArgumentException("A declined response requires at least one reason.", nameof(reasons));
-        }
-
-        foreach (var reason in validatedReasons)
-        {
-            DomainGuard.Defined(reason, nameof(reasons));
-        }
-
-        return new HumanResponseValidation(
-            responseId, validatedAt, HumanResponseValidationState.Declined, validatedReasons);
-    }
 }
 
 public enum WorkflowRequestKind
@@ -260,8 +169,7 @@ public enum TimelineEntryKind
     RemediationSubmitted = 5,
     ApprovalRequested = 6,
     HumanResponseAccepted = 7,
-    HumanResponseDeclined = 8,
-    WorkflowFailed = 9,
+    WorkflowFailed = 8,
 }
 
 public sealed record TimelineEntry

@@ -1,0 +1,514 @@
+using System.Text;
+using Microsoft.EntityFrameworkCore;
+using ReleaseReadinessCoordinator.Data;
+using ReleaseReadinessCoordinator.Domain;
+using ReleaseReadinessCoordinator.Readiness;
+using ReleaseReadinessCoordinator.Tests.Readiness;
+using ReleaseReadinessCoordinator.Workflow;
+
+namespace ReleaseReadinessCoordinator.Tests.Workflow;
+
+public sealed class DecisionIntegritySnapshotTests
+{
+    [Fact]
+    public async Task Fully_passing_round_persists_one_snapshot_request_and_byte_stable_brief()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync();
+        var submission = Submission("decision-snapshot");
+        var evidence = Evidence(submission);
+
+        await using var context = database.CreateContext();
+        var dataService = new ApplicationDataService(context);
+        await SubmitAndSaveRoundAsync(dataService, submission, evidence);
+        var detail = await dataService.GetReleaseDetailAsync(submission.Key);
+        var round = Assert.Single(detail!.EvaluationRounds);
+        var timeProvider = new FixedTimeProvider(Utc(2026, 8, 17, 10, 5).Value);
+        var builder = new DecisionSnapshotBuilder(submission.Key, dataService, timeProvider);
+
+        var first = await builder.BuildAsync(round);
+        var replay = await builder.BuildAsync(round);
+
+        Assert.Equal(first.Snapshot.Id, replay.Snapshot.Id);
+        Assert.Equal(first.Request.Id, replay.Request.Id);
+        Assert.Equal(round.Results.Select(result => result.Id), first.Snapshot.Sources.Select(result => result.Id));
+        Assert.Equal(round.Results.Select(result => result.EvidenceId), first.Snapshot.Sources.Select(result => result.EvidenceId));
+        Assert.Equal(Utc(2026, 8, 17, 11), first.Snapshot.EarliestValidityBound);
+        Assert.Equal(
+            Encoding.UTF8.GetBytes(DecisionSnapshotBuilder.BuildBrief(round)),
+            Encoding.UTF8.GetBytes(first.Snapshot.DecisionBrief));
+
+        detail = await dataService.GetReleaseDetailAsync(submission.Key);
+        Assert.Single(detail!.DecisionSnapshots);
+        Assert.Single(detail.HumanDecisionRequests);
+        Assert.Equal(ProcessPhase.WaitingForApproval, detail.Release.Phase);
+    }
+
+    private static async Task SubmitAndSaveRoundAsync(
+        IApplicationDataService dataService,
+        ReleaseSubmission submission,
+        IReadOnlyList<EvidenceRecord> evidence)
+    {
+        await dataService.SubmitReleaseAsync(
+            submission,
+            evidence,
+            Timeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            $"decision:{submission.Key.ReleaseId}:submit");
+        var round = Round(submission, evidence);
+        await dataService.SaveEvaluationRoundAsync(
+            round,
+            Timeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
+            $"decision:{submission.Key.ReleaseId}:round:1");
+    }
+
+    private static EvaluationRound Round(
+        ReleaseSubmission submission,
+        IReadOnlyList<EvidenceRecord> evidence) => new(
+        Guid.NewGuid(),
+        submission.Key,
+        1,
+        Utc(2026, 8, 17, 10),
+        Utc(2026, 8, 17, 10, 1),
+        [
+            Result(ReadinessCheck.Test, evidence[0], Utc(2026, 8, 18, 9)),
+            Result(ReadinessCheck.Security, evidence[1], Utc(2026, 8, 18, 9)),
+            Result(ReadinessCheck.Change, evidence[2], Utc(2026, 8, 17, 11)),
+        ]);
+
+    private static BranchResult Result(
+        ReadinessCheck check,
+        EvidenceRecord evidence,
+        UtcInstant validUntil) => new(
+        Guid.NewGuid(),
+        evidence.ReleaseRevision,
+        1,
+        check,
+        BranchOutcome.Passed,
+        ExecutionDisposition.Executed,
+        PlanningReason.InitialEvaluation,
+        "Executed because no prior result exists.",
+        evidence.Id,
+        evidence.Kind,
+        validUntil,
+        ["Attempt 1 succeeded."],
+        new Dictionary<string, string> { ["ready"] = "Passed." },
+        null,
+        null);
+
+    private static ReleaseSubmission Submission(string releaseId) => new(
+        new ReleaseRevisionKey(releaseId, 1),
+        "orders",
+        "2.4.0",
+        new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
+        Utc(2026, 8, 17, 9));
+
+    private static EvidenceRecord[] Evidence(ReleaseSubmission submission) =>
+    [
+        new TestEvidenceRecord(
+            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            submission.ReleaseVersion, submission.SubmittedAt, 0.99m, []),
+        new SecurityEvidenceRecord(
+            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            submission.ReleaseVersion, submission.SubmittedAt, [], [],
+            new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
+        new ChangeEvidenceRecord(
+            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            true, submission.RequestedDeploymentWindow),
+    ];
+
+    private static TimelineEntry Timeline(
+        ReleaseRevisionKey key,
+        long sequence,
+        TimelineEntryKind kind,
+        string summary) => new(Guid.NewGuid(), key, sequence, kind, summary, Utc(2026, 8, 17, 10, 1));
+
+    private static UtcInstant Utc(int year, int month, int day, int hour, int minute = 0) =>
+        new(new DateTimeOffset(year, month, day, hour, minute, 0, TimeSpan.Zero));
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+}
+
+public sealed class DecisionIntegrityResponseTests
+{
+    [Theory]
+    [InlineData(HumanDecision.Approve, ProcessPhase.Approved)]
+    [InlineData(HumanDecision.Reject, ProcessPhase.Rejected)]
+    public async Task Response_is_persisted_once_and_terminates_the_release(
+        HumanDecision decision,
+        ProcessPhase expectedPhase)
+    {
+        await using var fixture = await DecisionFixture.CreateAsync($"current-{decision}");
+        var response = fixture.Response(decision);
+        var handler = new HumanDecisionHandler(fixture.Submission.Key, fixture.DataService);
+
+        var first = await handler.HandleAsync(response);
+        var replay = await handler.HandleAsync(response);
+
+        Assert.Equal(first, replay);
+        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.Key);
+        Assert.Equal(expectedPhase, detail!.Release.Phase);
+        Assert.Equal(first, detail.TerminalResponse);
+        Assert.Equal(TimelineEntryKind.HumanResponseAccepted, detail.Timeline[^1].Kind);
+    }
+
+    [Fact]
+    public async Task Reusing_a_response_id_with_different_content_fails()
+    {
+        await using var fixture = await DecisionFixture.CreateAsync("conflicting-response-id");
+        var response = fixture.Response(HumanDecision.Approve);
+        var handler = new HumanDecisionHandler(fixture.Submission.Key, fixture.DataService);
+        await handler.HandleAsync(response);
+        var conflict = new HumanResponse(
+            response.Id,
+            HumanDecision.Reject,
+            response.Responder,
+            "Conflicting decision.",
+            response.RespondedAt);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(conflict));
+
+        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.Key);
+        Assert.Equal(ProcessPhase.Approved, detail!.Release.Phase);
+        Assert.Equal(response, detail.TerminalResponse!.Response);
+    }
+
+    [Fact]
+    public async Task Approval_does_not_regenerate_the_brief_or_revalidate_expired_results()
+    {
+        await using var fixture = await DecisionFixture.CreateAsync("closed-snapshot");
+        var originalBrief = fixture.Snapshot.DecisionBrief;
+        fixture.Clock.SetUtcNow(
+            new DateTimeOffset(2026, 8, 18, 12, 0, 0, TimeSpan.Zero));
+        var handler = new HumanDecisionHandler(fixture.Submission.Key, fixture.DataService);
+
+        await handler.HandleAsync(fixture.Response(HumanDecision.Approve));
+
+        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.Key);
+        Assert.Equal(ProcessPhase.Approved, detail!.Release.Phase);
+        Assert.Equal(originalBrief, Assert.Single(detail.DecisionSnapshots).DecisionBrief);
+        Assert.Single(detail.EvaluationRounds);
+    }
+
+    [Fact]
+    public async Task Approval_wait_locks_evidence_remediation_and_rerun_changes()
+    {
+        await using var fixture = await DecisionFixture.CreateAsync("approval-lock");
+
+        var evidenceConflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(
+            fixture.ReplaceTestEvidenceAsync);
+        var remediationConflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(
+            fixture.SubmitRemediationAsync);
+        var rerunConflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(
+            fixture.SaveRerunAsync);
+
+        Assert.All(
+            [evidenceConflict, remediationConflict, rerunConflict],
+            conflict => Assert.Equal(ApplicationDataConflictKind.InvalidState, conflict.Kind));
+        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.Key);
+        Assert.Equal(ProcessPhase.WaitingForApproval, detail!.Release.Phase);
+        Assert.Single(detail.EvaluationRounds);
+        Assert.Empty(detail.RemediationSubmissions);
+        Assert.Single(detail.EvidenceHistory.Where(item => item.Kind is EvidenceKind.Test));
+        Assert.Null(detail.TerminalResponse);
+    }
+
+    [Fact]
+    public void Human_response_does_not_submit_snapshot_or_concurrency_identity()
+    {
+        var responseProperties = typeof(HumanResponse).GetProperties().Select(property => property.Name);
+        var requestProperties = typeof(HumanDecisionRequest).GetProperties().Select(property => property.Name);
+
+        Assert.DoesNotContain("RequestId", responseProperties);
+        Assert.DoesNotContain("SnapshotId", responseProperties);
+        Assert.DoesNotContain("SnapshotConcurrencyToken", responseProperties);
+        Assert.DoesNotContain("ConcurrencyToken", requestProperties);
+        Assert.Null(typeof(HumanResponse).Assembly.GetType(
+            "ReleaseReadinessCoordinator.Domain.HumanResponseValidation"));
+    }
+}
+
+public sealed class DecisionIntegrityRealGraphTests
+{
+    [Theory]
+    [InlineData(HumanDecision.Approve, ProcessPhase.Approved)]
+    [InlineData(HumanDecision.Reject, ProcessPhase.Rejected)]
+    public async Task Real_graph_decision_is_terminal(
+        HumanDecision decision,
+        ProcessPhase expectedPhase)
+    {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(BranchOutcome.Passed);
+        using var checkpoints = new DecisionCheckpointDirectory();
+        using var coordinator = new CheckpointStoreCoordinator(checkpoints.Info);
+        var pending = Assert.IsType<PendingApprovalRequest>(
+            await coordinator.StartAsync(host.CreateWorkflow(), host.Input, $"current-{decision}"));
+
+        var continued = await coordinator.ResumeApprovalAsync(
+            host.CreateWorkflow(),
+            $"current-{decision}",
+            pending,
+            Response(pending, decision));
+
+        Assert.Equal(decision, continued.Response.Decision);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        Assert.Equal(expectedPhase, detail!.Release.Phase);
+        Assert.Equal(continued, detail.TerminalResponse);
+    }
+
+    [Fact]
+    public async Task Invalid_continuation_is_rejected_before_creating_a_human_response()
+    {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(BranchOutcome.Passed);
+        using var checkpoints = new DecisionCheckpointDirectory();
+        using var coordinator = new CheckpointStoreCoordinator(checkpoints.Info);
+        const string SessionId = "invalid-decision-continuation";
+        var pending = Assert.IsType<PendingApprovalRequest>(
+            await coordinator.StartAsync(host.CreateWorkflow(), host.Input, SessionId));
+        var mismatch = pending with { RequestId = Guid.NewGuid().ToString("N") };
+
+        var conflict = await Assert.ThrowsAsync<WorkflowContinuationException>(() =>
+            coordinator.ResumeApprovalAsync(
+                host.CreateWorkflow(), SessionId, mismatch, Response(pending, HumanDecision.Approve)));
+
+        Assert.Equal(ContinuationFailureKind.Mismatched, conflict.Kind);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        Assert.Equal(ProcessPhase.WaitingForApproval, detail!.Release.Phase);
+        Assert.Null(detail.TerminalResponse);
+    }
+
+    [Fact]
+    public async Task Human_decision_has_no_edge_back_to_the_planner()
+    {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(BranchOutcome.Passed);
+        var workflow = host.CreateWorkflow();
+
+        var edges = workflow.ReflectEdges().SelectMany(pair => pair.Value);
+
+        Assert.DoesNotContain(
+            edges,
+            edge => edge.Connection.SourceIds.Contains(ReleaseWorkflowExecutorIds.HumanDecisionHandler)
+                && edge.Connection.SinkIds.Contains(ReleaseWorkflowExecutorIds.Planner));
+    }
+
+    private static ApprovalResponse Response(PendingApprovalRequest pending, HumanDecision decision)
+    {
+        var approval = Assert.IsType<ApprovalRequest>(pending.Approval);
+        return new ApprovalResponse(new HumanResponse(
+            Guid.NewGuid(),
+            decision,
+            "release-manager",
+            "Reviewed the immutable decision brief.",
+            approval.Request.CreatedAt));
+    }
+}
+
+internal sealed class DecisionCheckpointDirectory : IDisposable
+{
+    public DecisionCheckpointDirectory()
+    {
+        Info = Directory.CreateDirectory(
+            Path.Combine(Path.GetTempPath(), "decision-integrity-checkpoints", Guid.NewGuid().ToString("N")));
+    }
+
+    public DirectoryInfo Info { get; }
+
+    public void Dispose()
+    {
+        if (Info.Exists)
+        {
+            Info.Delete(recursive: true);
+        }
+    }
+}
+
+internal sealed class DecisionFixture : IAsyncDisposable
+{
+    private readonly TemporaryDatabase _database;
+
+    private DecisionFixture(
+        TemporaryDatabase database,
+        AppDbContext context,
+        ReleaseSubmission submission,
+        ApplicationDataService dataService,
+        MutableTimeProvider clock,
+        DecisionSnapshot snapshot,
+        HumanDecisionRequest request)
+    {
+        _database = database;
+        Context = context;
+        Submission = submission;
+        DataService = dataService;
+        Clock = clock;
+        Snapshot = snapshot;
+        Request = request;
+    }
+
+    public AppDbContext Context { get; }
+
+    public ReleaseSubmission Submission { get; }
+
+    public ApplicationDataService DataService { get; }
+
+    public MutableTimeProvider Clock { get; }
+
+    public DecisionSnapshot Snapshot { get; }
+
+    public HumanDecisionRequest Request { get; }
+
+    public static async Task<DecisionFixture> CreateAsync(string releaseId)
+    {
+        var database = await TemporaryDatabase.CreateAsync();
+        var context = database.CreateContext();
+        var dataService = new ApplicationDataService(context);
+        var submission = new ReleaseSubmission(
+            new ReleaseRevisionKey(releaseId, 1),
+            "orders",
+            "2.4.0",
+            new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 13)),
+            Utc(2026, 8, 17, 9));
+        var evidence = Evidence(submission);
+        await dataService.SubmitReleaseAsync(
+            submission,
+            evidence,
+            Timeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            $"fixture:{releaseId}:submit");
+        var round = new EvaluationRound(
+            Guid.NewGuid(),
+            submission.Key,
+            1,
+            Utc(2026, 8, 17, 10),
+            Utc(2026, 8, 17, 10, 1),
+            [
+                Result(ReadinessCheck.Test, evidence[0], Utc(2026, 8, 17, 11)),
+                Result(ReadinessCheck.Security, evidence[1], Utc(2026, 8, 17, 12)),
+                Result(ReadinessCheck.Change, evidence[2], Utc(2026, 8, 17, 13)),
+            ]);
+        await dataService.SaveEvaluationRoundAsync(
+            round,
+            Timeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
+            $"fixture:{releaseId}:round:1");
+        var clock = new MutableTimeProvider(Utc(2026, 8, 17, 10, 5).Value);
+        var built = await new DecisionSnapshotBuilder(submission.Key, dataService, clock).BuildAsync(round);
+        return new DecisionFixture(
+            database,
+            context,
+            submission,
+            dataService,
+            clock,
+            built.Snapshot,
+            built.Request);
+    }
+
+    public HumanResponse Response(HumanDecision decision) => new(
+        Guid.NewGuid(),
+        decision,
+        "release-manager",
+        "Reviewed the immutable decision brief.",
+        new UtcInstant(Clock.GetUtcNow()));
+
+    public async Task ReplaceTestEvidenceAsync()
+    {
+        var current = (TestEvidenceRecord)(await DataService.GetCurrentEvidenceAsync(
+            Submission.Key,
+            EvidenceKind.Test))!;
+        await DataService.ReplaceEvidenceAsync(
+            new TestEvidenceRecord(
+                Guid.NewGuid(), Submission.Key, 2, Utc(2026, 8, 17, 10, 6), current.Id,
+                Submission.ReleaseVersion, Utc(2026, 8, 17, 10), 0.99m, []),
+            Timeline(Submission.Key, 4, TimelineEntryKind.RemediationSubmitted, "Evidence replaced."),
+            $"fixture:{Submission.Key.ReleaseId}:replace-test");
+    }
+
+    public Task<RemediationSubmission> SubmitRemediationAsync() =>
+        DataService.SaveRemediationSubmissionAsync(
+            Submission.Key,
+            new RemediationSubmission(
+                Guid.NewGuid(),
+                Request.Id,
+                new UtcInstant(Clock.GetUtcNow()),
+                new Dictionary<EvidenceKind, Guid>(),
+                [ReadinessCheck.Test]),
+            [],
+            Timeline(Submission.Key, 4, TimelineEntryKind.RemediationSubmitted, "Remediation submitted."),
+            $"fixture:{Submission.Key.ReleaseId}:remediation");
+
+    public Task<EvaluationRound> SaveRerunAsync()
+    {
+        var startedAt = new UtcInstant(Clock.GetUtcNow());
+        var round = new EvaluationRound(
+            Guid.NewGuid(),
+            Submission.Key,
+            2,
+            startedAt,
+            startedAt,
+            Snapshot.Sources.Select(source => new BranchResult(
+                Guid.NewGuid(),
+                Submission.Key,
+                2,
+                source.Check,
+                source.Outcome,
+                source.Disposition,
+                source.PlanningReason,
+                source.PlanningDetail,
+                source.EvidenceId,
+                source.EvidenceKind,
+                source.ValidUntil,
+                source.Attempts,
+                source.Findings,
+                source.ReuseSourceResultId,
+                source.ReuseSourceRound)));
+        return DataService.SaveEvaluationRoundAsync(
+            round,
+            Timeline(Submission.Key, 4, TimelineEntryKind.EvaluationCompleted, "Rerun completed."),
+            $"fixture:{Submission.Key.ReleaseId}:round:2");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await Context.DisposeAsync();
+        await _database.DisposeAsync();
+    }
+
+    private static EvidenceRecord[] Evidence(ReleaseSubmission submission) =>
+    [
+        new TestEvidenceRecord(
+            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            submission.ReleaseVersion, submission.SubmittedAt, 0.99m, []),
+        new SecurityEvidenceRecord(
+            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            submission.ReleaseVersion, submission.SubmittedAt, [], [],
+            new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
+        new ChangeEvidenceRecord(
+            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            true, submission.RequestedDeploymentWindow),
+    ];
+
+    private static BranchResult Result(
+        ReadinessCheck check,
+        EvidenceRecord evidence,
+        UtcInstant validUntil) => new(
+        Guid.NewGuid(), evidence.ReleaseRevision, 1, check, BranchOutcome.Passed,
+        ExecutionDisposition.Executed, PlanningReason.InitialEvaluation,
+        "Executed because no prior result exists.", evidence.Id, evidence.Kind, validUntil,
+        ["Attempt 1 succeeded."],
+        new Dictionary<string, string> { ["ready"] = "Passed." }, null, null);
+
+    private static TimelineEntry Timeline(
+        ReleaseRevisionKey key,
+        long sequence,
+        TimelineEntryKind kind,
+        string summary) => new(Guid.NewGuid(), key, sequence, kind, summary, Utc(2026, 8, 17, 10, 1));
+
+    private static UtcInstant Utc(int year, int month, int day, int hour, int minute = 0) =>
+        new(new DateTimeOffset(year, month, day, hour, minute, 0, TimeSpan.Zero));
+}
+
+internal sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
+{
+    private DateTimeOffset _utcNow = utcNow;
+
+    public override DateTimeOffset GetUtcNow() => _utcNow;
+
+    public void SetUtcNow(DateTimeOffset value) => _utcNow = value;
+}

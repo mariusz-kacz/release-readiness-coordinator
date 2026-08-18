@@ -1,4 +1,5 @@
 using Microsoft.Agents.AI.Workflows;
+using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Tests.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
 using ReleaseReadinessCoordinator.Domain;
@@ -17,7 +18,7 @@ public sealed class CheckpointContractTests
             [nameof(PendingRemediationRequest.DomainRequestId), nameof(PendingWorkflowRequest.RequestId)],
             typeof(PendingRemediationRequest).GetProperties().Select(property => property.Name).Order());
         Assert.Equal(
-            [nameof(PendingWorkflowRequest.RequestId)],
+            [nameof(PendingApprovalRequest.Approval), nameof(PendingWorkflowRequest.RequestId)],
             typeof(PendingApprovalRequest).GetProperties().Select(property => property.Name).Order());
     }
 
@@ -32,7 +33,7 @@ public sealed class CheckpointContractTests
         Assert.Equal(typeof(PendingRemediationRequest), remediation.GetParameters()[2].ParameterType);
         Assert.Equal(typeof(Task<PendingWorkflowRequest>), remediation.ReturnType);
         Assert.Equal(typeof(PendingApprovalRequest), approval.GetParameters()[2].ParameterType);
-        Assert.Equal(typeof(Task<ApprovalResponse>), approval.ReturnType);
+        Assert.Equal(typeof(Task<PersistedHumanResponse>), approval.ReturnType);
     }
 
     [Fact]
@@ -67,9 +68,9 @@ public sealed class CheckpointContractTests
             host.CreateWorkflow(),
             SessionId,
             started,
-            new ApprovalResponse(Approved: true));
+            Response(started));
 
-        Assert.True(resumed.Approved);
+        Assert.Equal(HumanDecision.Approve, resumed.Response.Decision);
     }
 
     [Fact]
@@ -98,7 +99,7 @@ public sealed class CheckpointContractTests
                 host.CreateWorkflow(),
                 SessionId,
                 mismatch,
-                new ApprovalResponse(Approved: true)));
+                Response(started)));
 
         Assert.Equal(ContinuationFailureKind.Mismatched, exception.Kind);
 
@@ -106,8 +107,8 @@ public sealed class CheckpointContractTests
             host.CreateWorkflow(),
             SessionId,
             started,
-            new ApprovalResponse(Approved: true));
-        Assert.True(resumed.Approved);
+            Response(started));
+        Assert.Equal(HumanDecision.Approve, resumed.Response.Decision);
     }
 
     [Fact]
@@ -123,7 +124,7 @@ public sealed class CheckpointContractTests
                 host.CreateWorkflow(),
                 "missing-session",
                 new PendingApprovalRequest("missing-request"),
-                new ApprovalResponse(Approved: true)));
+                Response(null)));
 
         Assert.Equal(ContinuationFailureKind.Missing, exception.Kind);
     }
@@ -157,7 +158,7 @@ public sealed class CheckpointContractTests
                 host.CreateWorkflow(),
                 SessionId,
                 started,
-                new ApprovalResponse(Approved: true)));
+                Response(started)));
 
         Assert.Equal(ContinuationFailureKind.Corrupt, exception.Kind);
     }
@@ -191,7 +192,7 @@ public sealed class CheckpointContractTests
                 incompatibleWorkflow,
                 SessionId,
                 started,
-                new ApprovalResponse(Approved: true)));
+                Response(started)));
 
         Assert.Equal(ContinuationFailureKind.Incompatible, exception.Kind);
     }
@@ -213,5 +214,17 @@ public sealed class CheckpointContractTests
                 Info.Delete(recursive: true);
             }
         }
+    }
+
+    private static ApprovalResponse Response(PendingApprovalRequest? pending)
+    {
+        var respondedAt = pending?.Approval?.Request.CreatedAt
+            ?? new UtcInstant(DateTimeOffset.UtcNow);
+        return new ApprovalResponse(new HumanResponse(
+            Guid.NewGuid(),
+            HumanDecision.Approve,
+            "release-manager",
+            "Reviewed.",
+            respondedAt));
     }
 }

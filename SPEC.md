@@ -2,7 +2,7 @@
 
 **Status:** Approved input for implementation planning  
 **Document role:** Sole authoritative project specification  
-**Last updated:** 2026-08-16
+**Last updated:** 2026-08-18
 
 ## 1. Authority and change control
 
@@ -32,7 +32,7 @@ The MVP must visibly demonstrate:
 - selective re-execution of affected checks;
 - safe reuse of successful and still-current results;
 - checkpoint-based recovery after application restart;
-- rejection of stale human decisions;
+- correlated continuation of typed external requests;
 - deterministic readiness policies and routing.
 
 The target is one understandable workflow, not a miniature release-management platform.
@@ -68,10 +68,10 @@ The MVP does not require production-grade identity or authorization. Actor names
 6. The coordinator supplies new versions of affected branch evidence.
 7. A new evaluation round executes only branches that are unsuccessful, use an evidence record that is no longer current, are expired, or are explicitly selected.
 8. Successful branch results whose evidence identity and deadline still match are reused without recomputation.
-9. When all three branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, then pauses for a human decision.
-10. Before accepting approval or rejection, the workflow revalidates the snapshot and all evidence freshness conditions.
-11. A current approval or rejection is persisted as a terminal decision.
-12. A stale response is rejected and selective evaluation resumes; the planner executes only branches whose reuse conditions no longer hold.
+9. When all three branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, locks evidence changes for that revision, and pauses for a human decision.
+10. The application restores and verifies the active typed MAF approval request before sending the human response into the workflow.
+11. A response delivered through that request approves or rejects the immutable snapshot and is persisted once as a terminal decision.
+12. Mismatched, missing, corrupt, or incompatible continuation state is rejected before workflow resumption and creates no human-decision business record.
 13. A workflow waiting for remediation or approval can be restored after the application is stopped and restarted.
 
 The UI and timeline must make every evaluation round understandable, especially which checks were **Executed** and which were **Reused**.
@@ -166,7 +166,7 @@ A reused branch must:
 - emit a result for the new round linked to the source result and source round;
 - explain why reuse was safe.
 
-Each branch has zero or one current immutable/versioned evidence record. Initial submission may omit a branch record to exercise `MissingEvidence`. Remediation may create or replace current evidence for one or more branches; doing so affects only those matching branches. A newly current record always counts as changed evidence even when its facts equal an older record.
+Each branch has zero or one current immutable/versioned evidence record. Initial submission may omit a branch record to exercise `MissingEvidence`. A response to the active remediation request may create or replace current evidence for one or more branches; doing so affects only those matching branches. A newly current record always counts as changed evidence even when its facts equal an older record. Evidence replacement is rejected in every other phase, including while approval is pending.
 
 Release metadata does not participate in change detection because it is immutable within the revision. Explicit branch selection and reaching a validity deadline affect the planner decision directly without changing evidence.
 
@@ -182,7 +182,7 @@ Change evidence contains the approval state and approved deployment window. Chan
 
 Approval or window corrections create a new immutable Change evidence version. The current evidence identity and approved-window deadline participate in selective reuse like the equivalent inputs for the other readiness branches.
 
-## 10. Human decision integrity
+## 10. Human decision
 
 When all three branches pass, persist an immutable `DecisionSnapshot` containing:
 
@@ -191,20 +191,15 @@ When all three branches pass, persist an immutable `DecisionSnapshot` containing
 - the earliest validity bound;
 - the deterministic decision brief as immutable snapshot content.
 
-Approval or rejection must reference the active human request and latest fully passing snapshot.
+The approval `RequestPort` exposes the immutable snapshot and brief. While that request is active, the release revision accepts no evidence replacement, remediation submission, or explicit rerun. This portfolio constraint makes the snapshot a closed decision package.
 
-Before accepting a response, deterministically revalidate:
+MAF continuation state is the authority for response correlation. Before resuming, the application rebuilds the identical graph, restores the pending request, and verifies its request ID and response type. A missing, mismatched, corrupt, or incompatible request is rejected before any response enters the workflow and produces no human-response business record.
 
-- current process phase and active request identity;
-- snapshot identity and concurrency token;
-- current evidence identity for every branch;
-- every result validity deadline.
+The response contains the manager's `Approve` or `Reject` decision and audit fields. It does not submit a snapshot identity or a separate domain concurrency token; the restored typed request already identifies the snapshot being answered. An exact replay is idempotent, while reuse of a response identity with different content is a technical conflict.
 
-The decision brief is not regenerated or hashed when a response arrives. It is immutable content owned by the correlated snapshot; snapshot identity and the active-request concurrency token protect which brief the manager answered.
+The decision brief is not regenerated or hashed when a response arrives. The handler does not compare current evidence IDs or revalidate result deadlines. A correctly resumed approval or rejection is persisted once and is terminal for that release revision.
 
-A stale response is recorded as declined, with a bounded reason such as request changed, evidence changed, or result expired. The workflow returns to selective evaluation, where only branches whose reuse conditions no longer hold execute. The old response must never be applied automatically after reevaluation.
-
-A current approval or rejection is persisted once and is terminal for that release revision.
+Human decision never routes back to the planner. Selective reevaluation is demonstrated only by the remediation path.
 
 ## 11. Retry and failure behavior
 
@@ -251,10 +246,8 @@ flowchart TD
     R -->|response| P
     A -->|all pass| B[Build decision snapshot and brief]
     B --> H[Approval external request]
-    H --> F[Freshness revalidation]
-    F -->|stale| P
-    F -->|approve| OK([Approved])
-    F -->|reject| NO([Rejected])
+    H -->|approve| OK([Approved])
+    H -->|reject| NO([Rejected])
 ```
 
 The planner emits exactly three `BranchWorkItem`s each round, one per readiness check, with disposition `Execute` or `Reuse`. Every branch emits exactly one `BranchResult`, allowing a deterministic fixed three-source fan-in while still ensuring reused checks perform no real work.
@@ -304,7 +297,7 @@ The plan and implementation must preserve these concepts without turning them in
 - complete `EvaluationRound` containing one result per check;
 - `RemediationRequest` and `RemediationSubmission`;
 - immutable `DecisionSnapshot`;
-- correlated `HumanResponse` and validation result;
+- terminal `HumanResponse` delivered through the correlated MAF approval request;
 - workflow correlation record;
 - append-only display timeline.
 
@@ -317,7 +310,7 @@ Use Razor Pages and manual refresh. The MVP UI contains only:
 - **Submit release:** immutable release metadata, deployment window, and compact simulated evidence inputs or demo fixtures;
 - **Release/workflow detail:** process phase, three current results, evidence and findings, evaluation-round history, `Executed`/`Reused` reasons and source links, deterministic brief, active wait, and chronological timeline;
 - **Remediation interaction:** active problems, new evidence versions, explicit branch selections for rerun, and request correlation token; release metadata is display-only;
-- **Decision interaction:** immutable snapshot/brief, Approve/Reject controls, actor, comment, request/snapshot identity, and stale-response feedback.
+- **Decision interaction:** immutable snapshot/brief, active MAF request identity, Approve/Reject controls, actor, comment, and safe continuation-error feedback.
 
 Do not add SPA state, SignalR, a design system, complex authentication/authorization, notifications, analytics, or deployment execution.
 
@@ -333,7 +326,7 @@ Use data-driven tests for:
 - version, deployment-window, security-exception, maintenance-overlap, and freshness rules;
 - retry classification and limits;
 - selective reuse across evidence-identity, time, policy, and explicit-selection changes;
-- snapshot freshness and stale-response handling.
+- immutable decision-snapshot construction and terminal response idempotency.
 
 ### Workflow tests
 
@@ -343,8 +336,8 @@ Use a small set of real-graph scenarios covering:
 2. multiple checks block, remediation replaces their evidence records, only affected checks execute, and other checks reuse without provider or policy calls;
 3. missing evidence or exhausted known transient failure aggregates, waits only after fan-in, and resumes;
 4. the process restarts while waiting, restores checkpoint/domain correlation, re-emits the request, and resumes once;
-5. evidence expires while awaiting approval, the response is declined as stale, and only affected checks rerun;
-6. a current human rejection terminates `Rejected`.
+5. a restored approval request accepts one correlated approval and terminates `Approved` without routing back to the planner;
+6. a restored approval request accepts one correlated rejection and terminates `Rejected` without routing back to the planner.
 
 ### UI verification
 
@@ -441,8 +434,8 @@ The MVP is complete when all of the following are demonstrably true:
 7. A waiting workflow survives application stop/restart and resumes the same pending request without duplicate domain records.
 8. Deterministic C# decides Change readiness from approval and approved-window containment.
 9. A fully passing round produces an immutable snapshot and deterministic decision brief.
-10. A current human approval or rejection is terminal.
-11. A stale human response is rejected and routes only affected checks back to selective evaluation.
+10. A response resumed through the active typed MAF approval request terminates as `Approved` or `Rejected` without returning to evaluation.
+11. Missing, mismatched, corrupt, or incompatible approval continuation state is rejected before workflow resumption and creates no human-response business record.
 12. The targeted deterministic, workflow, restart, and UI checks pass.
 13. The implementation remains one bounded application and contains none of the prohibited platform or multi-agent expansion.
 
@@ -455,6 +448,7 @@ The MVP is complete when all of the following are demonstrably true:
 - `FileSystemJsonCheckpointStore` constrains the MVP to one process, which is intentional.
 - Simulated local evidence is authoritative for the MVP.
 - Actor names are entered rather than authenticated.
+- Evidence is intentionally locked while approval is pending, and human decisions approve or reject the immutable point-in-time snapshot without freshness revalidation. Production-grade continuously editable evidence is outside this portfolio MVP.
 - Release metadata is intentionally immutable within a revision. Correcting it requires a separate revision; active-revision supersession, withdrawal, cancellation, and migration are deliberately not implemented.
 - Safe reuse depends on routing every evidence replacement through the bounded application data service so that the new immutable version, supersession link, and current-evidence selection change atomically.
 

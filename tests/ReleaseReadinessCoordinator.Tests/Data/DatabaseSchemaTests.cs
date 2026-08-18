@@ -81,7 +81,18 @@ public sealed class DatabaseSchemaTests
             context,
             nameof(HumanResponseRow.ReleaseId),
             nameof(HumanResponseRow.Revision));
-        Assert.Equal("ValidationState = 1", terminalResponseIndex.GetFilter());
+        Assert.Null(terminalResponseIndex.GetFilter());
+        AssertUniqueIndex<HumanResponseRow>(context, nameof(HumanResponseRow.ActiveRequestId));
+        var responseType = context.Model.FindEntityType(typeof(HumanResponseRow))!;
+        var requestForeignKey = Assert.Single(
+            responseType.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(WorkflowRequestRow));
+        Assert.Equal(
+            [nameof(HumanResponseRow.ActiveRequestId)],
+            requestForeignKey.Properties.Select(property => property.Name));
+        Assert.DoesNotContain(
+            responseType.GetForeignKeys().SelectMany(foreignKey => foreignKey.Properties),
+            property => property.Name is "RequestId" or "SnapshotId");
 
         var currentEvidence = context.Model.FindEntityType(typeof(CurrentEvidenceRow))!;
         Assert.Equal(
@@ -96,10 +107,9 @@ public sealed class DatabaseSchemaTests
             context.Model.FindEntityType(typeof(WorkflowRequestRow))!
                 .FindProperty(nameof(WorkflowRequestRow.ConcurrencyToken))!
                 .IsConcurrencyToken);
-        Assert.True(
+        Assert.Null(
             context.Model.FindEntityType(typeof(DecisionSnapshotRow))!
-                .FindProperty(nameof(DecisionSnapshotRow.ConcurrencyToken))!
-                .IsConcurrencyToken);
+                .FindProperty("ConcurrencyToken"));
         Assert.Equal(
             PropertySaveBehavior.Throw,
             context.Model.FindEntityType(typeof(EvidenceRecordRow))!

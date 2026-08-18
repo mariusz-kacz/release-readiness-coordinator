@@ -12,9 +12,14 @@ public enum ReadinessBranch
     Change = 3,
 }
 
-public sealed record ApprovalRequest(int RoundNumber);
+public sealed record ApprovalRequest(
+    DecisionSnapshot Snapshot,
+    HumanDecisionRequest Request)
+{
+    public int RoundNumber => Snapshot.RoundNumber;
+}
 
-public sealed record ApprovalResponse(bool Approved);
+public sealed record ApprovalResponse(HumanResponse Response);
 
 internal sealed record RoundPlanningRequest
 {
@@ -163,3 +168,5 @@ internal sealed record CompletedBranchWork(
     ReadinessBranch Branch,
     string ExecutorId,
     DomainBranchResult Result);
+
+internal sealed record BuildDecisionSnapshot(EvaluationRound Round);

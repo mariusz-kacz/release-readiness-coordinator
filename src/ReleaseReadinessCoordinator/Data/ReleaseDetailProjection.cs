@@ -12,11 +12,11 @@ public sealed record ReleaseDetailProjection(
     ImmutableArray<RemediationSubmission> RemediationSubmissions,
     ImmutableArray<DecisionSnapshot> DecisionSnapshots,
     ImmutableArray<HumanDecisionRequest> HumanDecisionRequests,
-    ImmutableArray<PersistedHumanResponse> HumanResponses,
+    PersistedHumanResponse? TerminalResponse,
     WorkflowCorrelationRecord? WorkflowCorrelation,
     ImmutableArray<TimelineEntry> Timeline);
 
 public sealed record PersistedHumanResponse(
     ReleaseRevisionKey ReleaseRevision,
-    HumanResponse Response,
-    HumanResponseValidation Validation);
+    Guid ActiveRequestId,
+    HumanResponse Response);

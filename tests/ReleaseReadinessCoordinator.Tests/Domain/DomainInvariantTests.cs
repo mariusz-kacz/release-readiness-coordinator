@@ -180,39 +180,12 @@ public sealed class DomainInvariantTests
     }
 
     [Fact]
-    public void Human_decision_request_accepts_only_its_correlated_snapshot_response()
+    public void Human_response_requires_actor_and_comment()
     {
-        var request = Request("snapshot-v1");
-        var response = new HumanResponse(
-            Guid.NewGuid(), request.Id, Guid.NewGuid(), "snapshot-v1",
-            HumanDecision.Approve, "release-manager", Utc(2026, 8, 14, 10));
-
-        Assert.Throws<InvalidOperationException>(() => request.EnsureCorrelated(response));
-    }
-
-    [Fact]
-    public void Human_decision_request_rejects_a_stale_snapshot_concurrency_token()
-    {
-        var request = Request("snapshot-v2");
-        var response = new HumanResponse(
-            Guid.NewGuid(), request.Id, request.SnapshotId, "snapshot-v1",
-            HumanDecision.Approve, "release-manager", Utc(2026, 8, 14, 10));
-
-        Assert.Throws<InvalidOperationException>(() => request.EnsureCorrelated(response));
-    }
-
-    [Fact]
-    public void Declined_response_validation_is_correlated_and_reason_coded()
-    {
-        var responseId = Guid.NewGuid();
-        var validatedAt = Utc(2026, 8, 14, 10);
-
-        var validation = HumanResponseValidation.Declined(
-            responseId, validatedAt, [HumanResponseDeclineReason.ResultExpired]);
-
-        Assert.Equal(responseId, validation.ResponseId);
-        Assert.Equal(validatedAt, validation.ValidatedAt);
-        Assert.Equal(HumanResponseDeclineReason.ResultExpired, Assert.Single(validation.DeclineReasons));
+        Assert.Throws<ArgumentException>(() => new HumanResponse(
+            Guid.NewGuid(), HumanDecision.Approve, " ", "Reviewed.", Utc(2026, 8, 14, 10)));
+        Assert.Throws<ArgumentException>(() => new HumanResponse(
+            Guid.NewGuid(), HumanDecision.Approve, "release-manager", " ", Utc(2026, 8, 14, 10)));
     }
 
     [Fact]
@@ -236,8 +209,8 @@ public sealed class DomainInvariantTests
         new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 10)),
         SubmittedAt);
 
-    private static HumanDecisionRequest Request(string concurrencyToken) => new(
-        Guid.NewGuid(), RevisionKey, Guid.NewGuid(), concurrencyToken, Utc(2026, 8, 14, 9));
+    private static HumanDecisionRequest Request() => new(
+        Guid.NewGuid(), RevisionKey, Guid.NewGuid(), Utc(2026, 8, 14, 9));
 
     private static BranchResult[] CompleteResults() =>
     [
