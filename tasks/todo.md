@@ -535,18 +535,22 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Acceptance criteria:**
 
-- [ ] `PersistedHumanResponse.ApprovalRequestId` unambiguously identifies the durable `HumanDecisionRequest.Id` that was answered.
-- [ ] Data-service parameters, persistence rows, constraints, and error messages consistently use approval-request terminology without changing cardinality or response semantics.
-- [ ] No schema/data compatibility change is made silently; if renaming the SQLite column requires migration or existing-data handling, implementation stops for an explicit decision.
+- [x] `PersistedHumanResponse.ApprovalRequestId` unambiguously identifies the durable `HumanDecisionRequest.Id` that was answered.
+- [x] Data-service parameters, persistence rows, constraints, and error messages consistently use approval-request terminology without changing cardinality or response semantics.
+- [x] No schema/data compatibility change is made silently; if renaming the SQLite column requires migration or existing-data handling, implementation stops for an explicit decision.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~ApplicationDataServiceTests|FullyQualifiedName~DatabaseSchema|FullyQualifiedName~DecisionIntegrity"`
-- [ ] `dotnet test --no-build`
-- [ ] `dotnet format --verify-no-changes`
-- [ ] `dotnet build --no-restore`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~ApplicationDataServiceTests|FullyQualifiedName~DatabaseSchema|FullyQualifiedName~DecisionIntegrity"`
+- [x] `dotnet test --no-build`
+- [x] `dotnet format --verify-no-changes`
+- [x] `dotnet build --no-restore`
 
 **Dependencies:** Task 16B
+
+**Schema decision:** Pre-release SQLite databases are disposable. For this task's column rename,
+delete `src/ReleaseReadinessCoordinator/app-data/release-readiness.db` and restart the application;
+no migration or existing-data preservation is provided.
 
 **Files likely touched:**
 
@@ -564,7 +568,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [x] The all-pass, remediation/selective-reuse, terminal approval, and terminal rejection paths run on the simplified real graph.
 - [x] Round/business history is complete, idempotent, and explainable.
 - [x] No branch-local wait, rerun-all shortcut, automatic approval, or human-decision edge back to the planner exists.
-- [ ] Identity names distinguish entity IDs, cross-entity references, and MAF continuation IDs without relying on comments.
+- [x] Identity names distinguish entity IDs, cross-entity references, and MAF continuation IDs without relying on comments.
 
 ## Task 17: Add restart recovery, synchronization, and reconciliation
 

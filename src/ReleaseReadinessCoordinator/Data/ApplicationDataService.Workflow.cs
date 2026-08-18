@@ -265,16 +265,18 @@ public sealed partial class ApplicationDataService
 
     public Task<PersistedHumanResponse> SaveHumanResponseAsync(
         ReleaseRevisionKey releaseRevision,
-        Guid activeRequestId,
+        Guid approvalRequestId,
         HumanResponse response,
         TimelineEntry timelineEntry,
         string operationKey,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(releaseRevision);
-        if (activeRequestId == Guid.Empty)
+        if (approvalRequestId == Guid.Empty)
         {
-            throw new ArgumentException("The active request ID cannot be empty.", nameof(activeRequestId));
+            throw new ArgumentException(
+                "The approval request ID cannot be empty.",
+                nameof(approvalRequestId));
         }
 
         ArgumentNullException.ThrowIfNull(response);
@@ -293,7 +295,7 @@ public sealed partial class ApplicationDataService
                 }
 
                 var persisted = ToDomain(row);
-                if (row.ActiveRequestId != activeRequestId
+                if (row.ApprovalRequestId != approvalRequestId
                     || persisted.Response != response)
                 {
                     throw Conflict(
@@ -310,7 +312,7 @@ public sealed partial class ApplicationDataService
                     ProcessPhase.WaitingForApproval,
                     token);
                 var requestRow = await _dbContext.WorkflowRequests.SingleAsync(
-                    value => value.Id == activeRequestId
+                    value => value.Id == approvalRequestId
                         && value.ReleaseId == releaseRevision.ReleaseId
                         && value.Revision == releaseRevision.Revision
                         && value.Kind == WorkflowRequestKind.Approval
@@ -319,7 +321,7 @@ public sealed partial class ApplicationDataService
 
                 _dbContext.HumanResponses.Add(ToRow(
                     releaseRevision,
-                    activeRequestId,
+                    approvalRequestId,
                     response,
                     operationKey));
                 Close(requestRow, response.RespondedAt);
@@ -329,7 +331,7 @@ public sealed partial class ApplicationDataService
                 Transition(release, phase, response.RespondedAt);
 
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, TimelineOperationKey(operationKey)));
-                return new PersistedHumanResponse(releaseRevision, activeRequestId, response);
+                return new PersistedHumanResponse(releaseRevision, approvalRequestId, response);
             },
             cancellationToken);
     }
@@ -665,14 +667,14 @@ public sealed partial class ApplicationDataService
 
     private static HumanResponseRow ToRow(
         ReleaseRevisionKey releaseRevision,
-        Guid activeRequestId,
+        Guid approvalRequestId,
         HumanResponse response,
         string operationKey) => new()
         {
             Id = response.Id,
             ReleaseId = releaseRevision.ReleaseId,
             Revision = releaseRevision.Revision,
-            ActiveRequestId = activeRequestId,
+            ApprovalRequestId = approvalRequestId,
             Decision = response.Decision,
             Responder = response.Responder,
             Comment = response.Comment,
@@ -690,7 +692,7 @@ public sealed partial class ApplicationDataService
             new UtcInstant(row.RespondedAtUtc));
         return new PersistedHumanResponse(
             new ReleaseRevisionKey(row.ReleaseId, row.Revision),
-            row.ActiveRequestId,
+            row.ApprovalRequestId,
             response);
     }
 

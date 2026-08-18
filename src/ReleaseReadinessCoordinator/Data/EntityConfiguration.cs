@@ -238,7 +238,7 @@ internal static class EntityConfiguration
         builder.HasKey(row => row.Id);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.Decision).HasConversion<int>();
-        builder.HasIndex(row => row.ActiveRequestId).IsUnique();
+        builder.HasIndex(row => row.ApprovalRequestId).IsUnique();
         builder.HasIndex(row => new { row.ReleaseId, row.Revision })
             .IsUnique()
             .HasDatabaseName("UX_HumanResponses_Terminal_Release");
@@ -248,7 +248,7 @@ internal static class EntityConfiguration
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<WorkflowRequestRow>()
             .WithMany()
-            .HasForeignKey(row => row.ActiveRequestId)
+            .HasForeignKey(row => row.ApprovalRequestId)
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureOperationKey(builder, "UX_HumanResponses_OperationKey");
         MakeAllPropertiesImmutable(builder);

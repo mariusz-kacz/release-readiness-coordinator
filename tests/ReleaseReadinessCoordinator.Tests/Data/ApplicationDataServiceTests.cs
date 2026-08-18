@@ -331,6 +331,7 @@ public sealed class ApplicationDataServiceTests
         Assert.Equal(ProcessPhase.Approved, detail.Release.Phase);
         Assert.Single(detail.DecisionSnapshots);
         Assert.Single(detail.HumanDecisionRequests);
+        Assert.Equal(request.Id, detail.TerminalResponse!.ApprovalRequestId);
         Assert.Equal(response, detail.TerminalResponse!.Response);
         Assert.Equal(4, detail.Timeline.Length);
         Assert.Equal(1, await context.DecisionSnapshots.CountAsync());

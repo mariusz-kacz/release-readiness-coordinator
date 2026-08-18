@@ -18,5 +18,5 @@ public sealed record ReleaseDetailProjection(
 
 public sealed record PersistedHumanResponse(
     ReleaseRevisionKey ReleaseRevision,
-    Guid ActiveRequestId,
+    Guid ApprovalRequestId,
     HumanResponse Response);

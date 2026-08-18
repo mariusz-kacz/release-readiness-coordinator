@@ -51,7 +51,7 @@ public interface IApplicationDataService
 
     Task<PersistedHumanResponse> SaveHumanResponseAsync(
         ReleaseRevisionKey releaseRevision,
-        Guid activeRequestId,
+        Guid approvalRequestId,
         HumanResponse response,
         TimelineEntry timelineEntry,
         string operationKey,

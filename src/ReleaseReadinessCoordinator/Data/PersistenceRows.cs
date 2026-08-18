@@ -126,7 +126,7 @@ internal sealed class HumanResponseRow : IOperationRow
     public Guid Id { get; set; }
     public string ReleaseId { get; set; } = null!;
     public int Revision { get; set; }
-    public Guid ActiveRequestId { get; set; }
+    public Guid ApprovalRequestId { get; set; }
     public HumanDecision Decision { get; set; }
     public string Responder { get; set; } = null!;
     public string Comment { get; set; } = null!;

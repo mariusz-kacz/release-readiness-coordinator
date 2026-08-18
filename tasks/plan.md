@@ -127,7 +127,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] Task 16: Build immutable snapshots and terminal MAF human decisions
 - [x] Task 16A: Allocate round and result identities once
 - [x] Task 16B: Separate workflow waits from business requests
-- [ ] Task 16C: Clarify persisted approval-response references
+- [x] Task 16C: Clarify persisted approval-response references
 
 ### Checkpoint D: Core End-to-End Workflow
 
@@ -135,7 +135,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] Multiple current problems create one wait after complete fan-in
 - [x] Passing results form one immutable snapshot and deterministic brief
 - [x] Restored approval requests terminate as Approved/Rejected, invalid continuation has no business effect, and human decision has no edge back to the planner
-- [ ] Entity-owned IDs remain conventional while every cross-entity and workflow-engine reference has an unambiguous name
+- [x] Entity-owned IDs remain conventional while every cross-entity and workflow-engine reference has an unambiguous name
 
 ### Phase 5: Recovery and Minimal Razor UI
 

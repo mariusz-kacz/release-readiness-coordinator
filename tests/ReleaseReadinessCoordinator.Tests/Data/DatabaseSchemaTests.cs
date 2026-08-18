@@ -82,13 +82,13 @@ public sealed class DatabaseSchemaTests
             nameof(HumanResponseRow.ReleaseId),
             nameof(HumanResponseRow.Revision));
         Assert.Null(terminalResponseIndex.GetFilter());
-        AssertUniqueIndex<HumanResponseRow>(context, nameof(HumanResponseRow.ActiveRequestId));
+        AssertUniqueIndex<HumanResponseRow>(context, nameof(HumanResponseRow.ApprovalRequestId));
         var responseType = context.Model.FindEntityType(typeof(HumanResponseRow))!;
         var requestForeignKey = Assert.Single(
             responseType.GetForeignKeys(),
             foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(WorkflowRequestRow));
         Assert.Equal(
-            [nameof(HumanResponseRow.ActiveRequestId)],
+            [nameof(HumanResponseRow.ApprovalRequestId)],
             requestForeignKey.Properties.Select(property => property.Name));
         Assert.DoesNotContain(
             responseType.GetForeignKeys().SelectMany(foreignKey => foreignKey.Properties),
@@ -178,6 +178,12 @@ public sealed class DatabaseSchemaTests
                 Assert.Equal(
                     ["DecisionSnapshotId", "Check", "BranchResultId", "EvidenceId"],
                     await ReadColumnNames(verification, "DecisionSnapshotSources"));
+                Assert.Equal(
+                    [
+                        "Id", "ReleaseId", "Revision", "ApprovalRequestId", "Decision",
+                        "Responder", "Comment", "RespondedAtUtc", "OperationKey",
+                    ],
+                    await ReadColumnNames(verification, "HumanResponses"));
             }
         }
         finally
