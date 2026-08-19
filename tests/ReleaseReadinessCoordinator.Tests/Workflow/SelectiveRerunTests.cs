@@ -198,18 +198,23 @@ public sealed class SelectiveRerunReuseTests
     {
         var evidence = Evidence();
         var executedResultId = Guid.NewGuid();
-        var executed = await new TestReadinessBranchExecutor(
-            new CountingProvider(evidence),
-            new CountingPolicy()).ExecuteAsync(
-                executedResultId,
-                Submission(),
-                new BranchWorkItem(
-                    Id,
-                    roundNumber: 2,
-                    ReadinessCheck.Test,
-                    WorkDisposition.Execute,
-                    PlanningReason.ExplicitlySelected,
-                    "Executed because Test was explicitly selected for rerun."));
+        var provider = new CountingProvider(evidence);
+        var policy = new CountingPolicy();
+        var executed = await BranchExecution.ExecuteAsync(
+            executedResultId,
+            Submission(),
+            new BranchWorkItem(
+                Id,
+                roundNumber: 2,
+                ReadinessCheck.Test,
+                WorkDisposition.Execute,
+                PlanningReason.ExplicitlySelected,
+                "Executed because Test was explicitly selected for rerun."),
+            ReadinessCheck.Test,
+            EvidenceKind.Test,
+            provider,
+            policy.Evaluate,
+            CancellationToken.None);
         var source = SourceResult(evidence.Id);
         var reusedResultId = Guid.NewGuid();
         var reused = Reuse().Create(
@@ -285,10 +290,15 @@ public sealed class SelectiveRerunReuseTests
             WorkDisposition.Execute,
             PlanningReason.ExplicitlySelected,
             "Executed because Test was explicitly selected for rerun.");
-        _ = await new TestReadinessBranchExecutor(provider, policy).ExecuteAsync(
+        _ = await BranchExecution.ExecuteAsync(
             Guid.NewGuid(),
             Submission(),
-            executeWork);
+            executeWork,
+            ReadinessCheck.Test,
+            EvidenceKind.Test,
+            provider,
+            policy.Evaluate,
+            CancellationToken.None);
 
         Assert.Equal(1, provider.CallCount);
         Assert.Equal(1, policy.CallCount);

@@ -27,7 +27,7 @@ public sealed class DecisionPageTests
     {
         var active = ActiveState();
         await using var page = await RenderedPage.StartAsync(
-            new StubDecisionInteractionService(DecisionLoadResult.Active(active)));
+            new StubDecisionInteractionService(active));
 
         var response = await page.Client.GetAsync("/Releases/release-decision/Decision");
         var html = await response.Content.ReadAsStringAsync();
@@ -62,23 +62,22 @@ public sealed class DecisionPageTests
     {
         await using var harness = await WorkflowHarness.CreateAsync();
 
-        var load = await harness.Interactions.LoadAsync(harness.ReleaseId);
+        var active = await harness.Interactions.GetActiveAsync(harness.ReleaseId);
 
-        Assert.Equal(DecisionLoadOutcome.Active, load.Outcome);
-        Assert.NotNull(load.Interaction);
-        Assert.Equal(harness.Pending.WorkflowRequestId, load.Interaction.WorkflowRequestId);
+        Assert.NotNull(active);
+        Assert.Equal(harness.Pending.WorkflowRequestId, active.WorkflowRequestId);
         Assert.Equal(
             harness.Pending.Approval!.Request.Id,
-            load.Interaction.Approval.Request.Id);
+            active.Approval.Request.Id);
         Assert.Equal(
             harness.Pending.Approval.Snapshot.Id,
-            load.Interaction.Approval.Snapshot.Id);
+            active.Approval.Snapshot.Id);
         Assert.Equal(
             harness.Pending.Approval.Snapshot.DecisionBrief,
-            load.Interaction.Approval.Snapshot.DecisionBrief);
+            active.Approval.Snapshot.DecisionBrief);
         Assert.Equal(
             harness.Pending.Approval.Snapshot.Sources.Select(source => source.Id),
-            load.Interaction.Approval.Snapshot.Sources.Select(source => source.Id));
+            active.Approval.Snapshot.Sources.Select(source => source.Id));
     }
 
     [Theory]
@@ -89,25 +88,29 @@ public sealed class DecisionPageTests
         ProcessPhase expectedPhase)
     {
         await using var harness = await WorkflowHarness.CreateAsync();
-        var submission = new DecisionSubmission(
-            Guid.NewGuid(),
-            decision,
-            "release-manager",
-            "Reviewed the immutable checkpoint package.");
+        var responseId = Guid.NewGuid();
+        const string Responder = "release-manager";
+        const string Comment = "Reviewed the immutable checkpoint package.";
 
         var first = await harness.Interactions.SubmitAsync(
             harness.ReleaseId,
-            submission);
+            responseId,
+            decision,
+            Responder,
+            Comment);
         var replay = await harness.Interactions.SubmitAsync(
             harness.ReleaseId,
-            submission);
+            responseId,
+            decision,
+            Responder,
+            Comment);
 
-        Assert.Equal(DecisionSubmitOutcome.Succeeded, first);
-        Assert.Equal(DecisionSubmitOutcome.ExactReplay, replay);
+        Assert.True(first);
+        Assert.True(replay);
         var detail = await harness.ReadAsync();
         Assert.NotNull(detail);
         Assert.Equal(expectedPhase, detail.Release.Phase);
-        Assert.Equal(submission.ResponseId, detail.TerminalResponse!.Response.Id);
+        Assert.Equal(responseId, detail.TerminalResponse!.Response.Id);
         Assert.Single(
             detail.Timeline,
             entry => entry.Kind is TimelineEntryKind.HumanResponseAccepted);
@@ -120,8 +123,7 @@ public sealed class DecisionPageTests
         HumanDecision decision)
     {
         var active = ActiveState();
-        var service = new StubDecisionInteractionService(
-            DecisionLoadResult.Active(active));
+        var service = new StubDecisionInteractionService(active);
         var page = CreatePage(service);
         var responseId = Guid.NewGuid();
         page.Input = new DecisionModel.InputModel
@@ -154,8 +156,7 @@ public sealed class DecisionPageTests
     public async Task Whitespace_actor_and_comment_rerender_without_submitting()
     {
         var active = ActiveState();
-        var service = new StubDecisionInteractionService(
-            DecisionLoadResult.Active(active));
+        var service = new StubDecisionInteractionService(active);
         var page = CreatePage(service);
         page.Input = new DecisionModel.InputModel
         {
@@ -178,8 +179,7 @@ public sealed class DecisionPageTests
     [Fact]
     public async Task Empty_response_id_and_undefined_decision_rerender_without_submitting()
     {
-        var service = new StubDecisionInteractionService(
-            DecisionLoadResult.Active(ActiveState()));
+        var service = new StubDecisionInteractionService(ActiveState());
         var page = CreatePage(service);
         page.Input = new DecisionModel.InputModel
         {
@@ -198,17 +198,12 @@ public sealed class DecisionPageTests
         Assert.Empty(service.Submissions);
     }
 
-    [Theory]
-    [InlineData(DecisionSubmitOutcome.NoLongerActive, "no longer active")]
-    [InlineData(DecisionSubmitOutcome.ResponseConflict, "no longer matches")]
-    [InlineData(DecisionSubmitOutcome.TechnicalFailure, "could not continue safely")]
-    public async Task Unsafe_submission_outcomes_redirect_with_safe_feedback(
-        DecisionSubmitOutcome outcome,
-        string expectedFeedback)
+    [Fact]
+    public async Task Unmatched_submission_redirects_with_safe_feedback()
     {
         var service = new StubDecisionInteractionService(
-            DecisionLoadResult.Active(ActiveState()),
-            outcome);
+            ActiveState(),
+            submitResult: false);
         var page = CreatePage(service);
         page.Input = new DecisionModel.InputModel
         {
@@ -224,17 +219,44 @@ public sealed class DecisionPageTests
 
         Assert.IsType<RedirectToPageResult>(result);
         Assert.Contains(
-            expectedFeedback,
+            "does not match",
             Assert.IsType<string>(page.TempData[DecisionModel.FeedbackKey]),
             StringComparison.OrdinalIgnoreCase);
         Assert.Single(service.Submissions);
     }
 
     [Fact]
+    public async Task Technical_submission_failure_redirects_with_safe_feedback()
+    {
+        var service = new StubDecisionInteractionService(
+            ActiveState(),
+            failSubmit: true);
+        var page = CreatePage(service);
+        page.Input = new DecisionModel.InputModel
+        {
+            ResponseId = Guid.NewGuid(),
+            Decision = HumanDecision.Approve,
+            Responder = "release-manager",
+            Comment = "Reviewed.",
+        };
+
+        var result = await page.OnPostAsync(
+            "release-decision",
+            CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Contains(
+            "could not continue safely",
+            Assert.IsType<string>(page.TempData[DecisionModel.FeedbackKey]),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Unavailable_continuation_redirects_with_safe_feedback()
     {
         var page = CreatePage(new StubDecisionInteractionService(
-            DecisionLoadResult.From(DecisionLoadOutcome.TechnicalFailure)));
+            active: null,
+            failLoad: true));
 
         var result = await page.OnGetAsync(
             "release-decision",
@@ -252,28 +274,49 @@ public sealed class DecisionPageTests
     {
         await using var harness = await WorkflowHarness.CreateAsync();
         var responseId = Guid.NewGuid();
-        var first = new DecisionSubmission(
+        Assert.True(await harness.Interactions.SubmitAsync(
+            harness.ReleaseId,
             responseId,
             HumanDecision.Approve,
             "release-manager",
-            "Reviewed the package.");
-        var conflicting = new DecisionSubmission(
+            "Reviewed the package."));
+        Assert.False(await harness.Interactions.SubmitAsync(
+            harness.ReleaseId,
             responseId,
             HumanDecision.Reject,
             "release-manager",
-            "Changed decision.");
-
-        Assert.Equal(
-            DecisionSubmitOutcome.Succeeded,
-            await harness.Interactions.SubmitAsync(harness.ReleaseId, first));
-        Assert.Equal(
-            DecisionSubmitOutcome.ResponseConflict,
-            await harness.Interactions.SubmitAsync(harness.ReleaseId, conflicting));
+            "Changed decision."));
 
         var detail = await harness.ReadAsync();
         Assert.NotNull(detail);
         Assert.Equal(ProcessPhase.Approved, detail.Release.Phase);
-        Assert.Equal(first.ResponseId, detail.TerminalResponse!.Response.Id);
+        Assert.Equal(responseId, detail.TerminalResponse!.Response.Id);
+        Assert.Single(
+            detail.Timeline,
+            entry => entry.Kind is TimelineEntryKind.HumanResponseAccepted);
+    }
+
+    [Fact]
+    public async Task Different_response_after_terminal_decision_is_not_applied()
+    {
+        await using var harness = await WorkflowHarness.CreateAsync();
+
+        Assert.True(await harness.Interactions.SubmitAsync(
+            harness.ReleaseId,
+            Guid.NewGuid(),
+            HumanDecision.Approve,
+            "release-manager",
+            "Reviewed the package."));
+        Assert.False(await harness.Interactions.SubmitAsync(
+            harness.ReleaseId,
+            Guid.NewGuid(),
+            HumanDecision.Reject,
+            "another-manager",
+            "A different response."));
+
+        var detail = await harness.ReadAsync();
+        Assert.NotNull(detail);
+        Assert.Equal(ProcessPhase.Approved, detail.Release.Phase);
         Assert.Single(
             detail.Timeline,
             entry => entry.Kind is TimelineEntryKind.HumanResponseAccepted);
@@ -295,15 +338,13 @@ public sealed class DecisionPageTests
             harness.RemoveCheckpointAndRestart();
         }
 
-        var outcome = await harness.Interactions.SubmitAsync(
-            harness.ReleaseId,
-            new DecisionSubmission(
+        await Assert.ThrowsAsync<WorkflowInteractionException>(() =>
+            harness.Interactions.SubmitAsync(
+                harness.ReleaseId,
                 Guid.NewGuid(),
                 HumanDecision.Approve,
                 "release-manager",
                 "Reviewed the package."));
-
-        Assert.Equal(DecisionSubmitOutcome.TechnicalFailure, outcome);
         var detail = await harness.ReadAsync();
         Assert.NotNull(detail);
         Assert.Null(detail.TerminalResponse);
@@ -364,26 +405,53 @@ public sealed class DecisionPageTests
     }
 
     private sealed class StubDecisionInteractionService(
-        DecisionLoadResult loadResult,
-        DecisionSubmitOutcome submitOutcome = DecisionSubmitOutcome.Succeeded)
+        ActiveDecisionInteraction? active,
+        bool submitResult = true,
+        bool failLoad = false,
+        bool failSubmit = false)
         : IDecisionInteractionService
     {
-        public List<DecisionSubmission> Submissions { get; } = [];
+        public List<SubmittedDecision> Submissions { get; } = [];
 
-        public Task<DecisionLoadResult> LoadAsync(
+        public Task<ActiveDecisionInteraction?> GetActiveAsync(
             ReleaseId releaseId,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(loadResult);
-
-        public Task<DecisionSubmitOutcome> SubmitAsync(
-            ReleaseId releaseId,
-            DecisionSubmission submission,
             CancellationToken cancellationToken = default)
         {
-            Submissions.Add(submission);
-            return Task.FromResult(submitOutcome);
+            if (failLoad)
+            {
+                throw new WorkflowInteractionException(new InvalidOperationException());
+            }
+
+            return Task.FromResult(active);
+        }
+
+        public Task<bool> SubmitAsync(
+            ReleaseId releaseId,
+            Guid responseId,
+            HumanDecision decision,
+            string responder,
+            string comment,
+            CancellationToken cancellationToken = default)
+        {
+            Submissions.Add(new SubmittedDecision(
+                responseId,
+                decision,
+                responder,
+                comment));
+            if (failSubmit)
+            {
+                throw new WorkflowInteractionException(new InvalidOperationException());
+            }
+
+            return Task.FromResult(submitResult);
         }
     }
+
+    private sealed record SubmittedDecision(
+        Guid ResponseId,
+        HumanDecision Decision,
+        string Responder,
+        string Comment);
 
     private sealed class WorkflowHarness : IAsyncDisposable
     {
@@ -427,10 +495,12 @@ public sealed class DecisionPageTests
                 host.DataService,
                 checkpoints,
                 timeProvider);
-            var pending = Assert.IsType<PendingApprovalWait>(await workflow.StartAsync(
+            await workflow.StartAsync(
                 host.Submission,
                 host.Input,
-                $"decision-page-{Guid.NewGuid():N}"));
+                $"decision-page-{Guid.NewGuid():N}");
+            var pending = Assert.IsType<PendingApprovalWait>(
+                await workflow.RestoreAsync(host.Submission.ReleaseId));
             var interactions = new DecisionInteractionService(
                 host.DataService,
                 workflow,

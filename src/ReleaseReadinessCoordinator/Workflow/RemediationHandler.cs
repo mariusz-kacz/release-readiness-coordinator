@@ -4,48 +4,11 @@ using ReleaseReadinessCoordinator.Domain;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
-public sealed record ActiveRemediationInteraction
-{
-    public ActiveRemediationInteraction(
-        Release release,
-        RemediationRequest request,
-        IReadOnlyDictionary<EvidenceKind, EvidenceRecord> currentEvidence,
-        string correlationToken)
-    {
-        ArgumentNullException.ThrowIfNull(release);
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(currentEvidence);
-        if (release.Phase is not ProcessPhase.WaitingForRemediation
-            || request.ReleaseId != release.Submission.ReleaseId
-            || currentEvidence.Values.Any(item => item.ReleaseId != release.Submission.ReleaseId))
-        {
-            throw new ArgumentException(
-                "An active remediation interaction must describe one waiting release.");
-        }
-
-        Release = release;
-        Request = request;
-        CurrentEvidence = currentEvidence.ToImmutableDictionary();
-        CorrelationToken = DomainGuard.Required(correlationToken, nameof(correlationToken));
-    }
-
-    public Release Release { get; }
-
-    public RemediationRequest Request { get; }
-
-    public ImmutableDictionary<EvidenceKind, EvidenceRecord> CurrentEvidence { get; }
-
-    public string CorrelationToken { get; }
-}
-
-public enum RemediationSubmitOutcome
-{
-    Succeeded = 1,
-    ReleaseNotFound = 2,
-    NoLongerActive = 3,
-    CorrelationMismatch = 4,
-    TechnicalFailure = 5,
-}
+public sealed record ActiveRemediationInteraction(
+    Release Release,
+    RemediationRequest Request,
+    ImmutableDictionary<EvidenceKind, EvidenceRecord> CurrentEvidence,
+    string CorrelationToken);
 
 public interface IRemediationInteractionService
 {
@@ -53,7 +16,7 @@ public interface IRemediationInteractionService
         ReleaseId releaseId,
         CancellationToken cancellationToken = default);
 
-    Task<RemediationSubmitOutcome> SubmitAsync(
+    Task<bool> SubmitAsync(
         ReleaseId releaseId,
         string correlationToken,
         IReadOnlyCollection<EvidenceRecord> evidenceReplacements,
@@ -75,7 +38,7 @@ internal sealed class RemediationInteractionService(
         return detail is null ? null : ToActive(detail);
     }
 
-    public async Task<RemediationSubmitOutcome> SubmitAsync(
+    public async Task<bool> SubmitAsync(
         ReleaseId releaseId,
         string correlationToken,
         IReadOnlyCollection<EvidenceRecord> evidenceReplacements,
@@ -97,18 +60,18 @@ internal sealed class RemediationInteractionService(
         var detail = await dataService.GetReleaseDetailAsync(releaseId, cancellationToken);
         if (detail is null)
         {
-            return RemediationSubmitOutcome.ReleaseNotFound;
+            return false;
         }
 
         var active = ToActive(detail);
         if (active is null)
         {
-            return RemediationSubmitOutcome.NoLongerActive;
+            return false;
         }
 
         if (!string.Equals(active.CorrelationToken, correlationToken, StringComparison.Ordinal))
         {
-            return RemediationSubmitOutcome.CorrelationMismatch;
+            return false;
         }
 
         var submission = new RemediationSubmission(
@@ -123,43 +86,34 @@ internal sealed class RemediationInteractionService(
                 releaseId,
                 new RemediationWorkflowResponse(submission, evidenceReplacements),
                 cancellationToken);
-            return RemediationSubmitOutcome.Succeeded;
+            return true;
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (Exception exception) when (exception is WorkflowContinuationException
-            or ApplicationDataConflictException
-            or InvalidOperationException)
+        catch (Exception exception) when (exception is InvalidOperationException)
         {
-            return RemediationSubmitOutcome.TechnicalFailure;
+            throw new WorkflowInteractionException(exception);
         }
     }
 
     private static ActiveRemediationInteraction? ToActive(ReleaseDetailProjection detail)
     {
-        if (detail.Release.Phase is not ProcessPhase.WaitingForRemediation
-            || detail.WorkflowCorrelation is not
+        if (WorkflowWaitResolver.Resolve(detail) is not PendingRemediationWait
             {
-                PendingRequestKind: WorkflowRequestKind.Remediation,
-            } correlation)
+                RemediationRequestId: { } requestId,
+            } pendingWait)
         {
             return null;
         }
 
-        var answeredRequestIds = detail.RemediationSubmissions
-            .Select(submission => submission.RequestId)
-            .ToHashSet();
-        var activeRequest = detail.RemediationRequests.SingleOrDefault(
-            request => !answeredRequestIds.Contains(request.Id));
-        return activeRequest is null
-            ? null
-            : new ActiveRemediationInteraction(
-                detail.Release,
-                activeRequest,
-                detail.CurrentEvidence,
-                correlation.PendingWorkflowRequestId);
+        var activeRequest = detail.RemediationRequests.Single(request => request.Id == requestId);
+        return new ActiveRemediationInteraction(
+            detail.Release,
+            activeRequest,
+            detail.CurrentEvidence,
+            pendingWait.WorkflowRequestId);
     }
 }
 

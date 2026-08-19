@@ -128,58 +128,7 @@ public sealed class ApplicationDataServiceTests
     }
 
     [Fact]
-    public async Task Evidence_replacement_is_atomic_and_projection_preserves_metadata_and_history()
-    {
-        await using var database = await TemporaryDatabase.CreateAsync();
-        var submission = CreateSubmission("release-evidence");
-        var original = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 1, null, 0.96m);
-
-        await using var context = database.CreateContext();
-        var service = new ApplicationDataService(context);
-        await service.SubmitReleaseAsync(
-            submission,
-            [original],
-            CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
-            "submit:evidence");
-
-        var replacement = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 2, original.Id, 0.99m);
-        var persisted = await service.ReplaceEvidenceAsync(
-            replacement,
-            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.RemediationSubmitted, "Test evidence replaced."),
-            "evidence:test:2");
-        var replayed = await service.ReplaceEvidenceAsync(
-            replacement,
-            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.RemediationSubmitted, "Test evidence replaced."),
-            "evidence:test:2");
-
-        Assert.Equal(replacement, persisted);
-        Assert.Equal(replacement, replayed);
-
-        var detail = await service.GetReleaseDetailAsync(submission.ReleaseId);
-        Assert.NotNull(detail);
-        Assert.Equal(submission.ReleaseId, detail.Release.Submission.ReleaseId);
-        Assert.Equal(submission.ServiceName, detail.Release.Submission.ServiceName);
-        Assert.Equal(submission.ReleaseVersion, detail.Release.Submission.ReleaseVersion);
-        Assert.Equal(submission.RequestedDeploymentWindow, detail.Release.Submission.RequestedDeploymentWindow);
-        Assert.Equal(submission.SubmittedAt, detail.Release.Submission.SubmittedAt);
-        Assert.Equal(2, detail.EvidenceHistory.Length);
-        var current = Assert.IsType<TestEvidenceRecord>(detail.CurrentEvidence[EvidenceKind.Test]);
-        Assert.Equal(replacement.Id, current.Id);
-        Assert.Equal(replacement.Version, current.Version);
-        Assert.Equal(replacement.SupersedesEvidenceId, current.SupersedesEvidenceId);
-        Assert.Equal(replacement.PassRate, current.PassRate);
-        Assert.Equal([1, 2], detail.EvidenceHistory.Select(item => item.Version));
-        Assert.Equal(2, detail.Timeline.Length);
-
-        await using var verification = database.CreateContext();
-        Assert.Equal(2, await verification.EvidenceRecords.CountAsync());
-        Assert.Equal(1, await verification.CurrentEvidence.CountAsync());
-        Assert.Equal(replacement.Id, (await verification.CurrentEvidence.SingleAsync()).EvidenceId);
-        Assert.Equal(2, await verification.TimelineEntries.CountAsync());
-    }
-
-    [Fact]
-    public async Task Terminal_release_rejects_new_evidence_without_partial_history()
+    public async Task Terminal_release_rejects_remediation_without_partial_history()
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-terminal");
@@ -204,11 +153,19 @@ public sealed class ApplicationDataServiceTests
         var dataService = new ApplicationDataService(context);
         var replacement = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 2, original.Id, 0.99m);
 
+        var remediation = new RemediationSubmission(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Utc(2026, 8, 16, 11),
+            new Dictionary<EvidenceKind, Guid> { [EvidenceKind.Test] = replacement.Id },
+            []);
         var conflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(() =>
-            dataService.ReplaceEvidenceAsync(
-                replacement,
+            dataService.SaveRemediationSubmissionAsync(
+                submission.ReleaseId,
+                remediation,
+                [replacement],
                 CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.RemediationSubmitted, "Should not persist."),
-                "evidence:terminal"));
+                "remediation:terminal"));
 
         Assert.Equal(ApplicationDataConflictKind.TerminalRelease, conflict.Kind);
         Assert.Equal(1, await context.EvidenceRecords.CountAsync());
@@ -273,11 +230,7 @@ public sealed class ApplicationDataServiceTests
         await service.SaveWorkflowCorrelationAsync(correlation, "history:correlation");
         await service.SaveWorkflowCorrelationAsync(correlation, "history:correlation");
 
-        var extraTimeline = CreateTimeline(submission.ReleaseId, 5, TimelineEntryKind.EvaluationStarted, "Evaluation restarted.");
-        await service.AppendTimelineEntryAsync(extraTimeline, "history:timeline:5");
-        await service.AppendTimelineEntryAsync(extraTimeline, "history:timeline:5");
-
-        var failureTimeline = CreateTimeline(submission.ReleaseId, 6, TimelineEntryKind.WorkflowFailed, "Workflow failed.");
+        var failureTimeline = CreateTimeline(submission.ReleaseId, 5, TimelineEntryKind.WorkflowFailed, "Workflow failed.");
         await service.MarkWorkflowFailedAsync(submission.ReleaseId, Utc(2026, 8, 16, 12), failureTimeline, "history:failure");
         await service.MarkWorkflowFailedAsync(submission.ReleaseId, Utc(2026, 8, 16, 12), failureTimeline, "history:failure");
 
@@ -289,7 +242,7 @@ public sealed class ApplicationDataServiceTests
         Assert.Single(detail.RemediationSubmissions);
         Assert.Equal(replacement.Id, detail.CurrentEvidence[EvidenceKind.Test].Id);
         Assert.Equal(correlation.WorkflowSessionId, detail.WorkflowCorrelation?.WorkflowSessionId);
-        Assert.Equal(6, detail.Timeline.Length);
+        Assert.Equal(5, detail.Timeline.Length);
 
         Assert.Equal(1, await context.EvaluationRounds.CountAsync());
         Assert.Equal(3, await context.BranchResults.CountAsync());

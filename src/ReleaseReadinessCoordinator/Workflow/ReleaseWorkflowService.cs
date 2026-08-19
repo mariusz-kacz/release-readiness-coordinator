@@ -21,18 +21,16 @@ internal sealed class ReleaseWorkflowService
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
-    public async Task<PendingWorkflowWait> StartAsync(
+    public async Task StartAsync(
         ReleaseSubmission submission,
         EvaluationRoundStart input,
         string sessionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(submission);
-        return await _checkpointCoordinator.ExecuteExclusivelyAsync(
-            token => ExecuteWithFailureAsync(
-                submission.ReleaseId,
-                () => StartCoreAsync(submission, input, sessionId, token),
-                token),
+        await ExecuteTurnAsync(
+            submission.ReleaseId,
+            token => StartCoreAsync(submission, input, sessionId, token),
             cancellationToken);
     }
 
@@ -59,11 +57,9 @@ internal sealed class ReleaseWorkflowService
         ReleaseId releaseId,
         CancellationToken cancellationToken = default)
     {
-        return await _checkpointCoordinator.ExecuteExclusivelyAsync(
-            token => ExecuteWithFailureAsync(
-                releaseId,
-                () => RestoreCoreAsync(releaseId, token),
-                token),
+        return await ExecuteTurnAsync(
+            releaseId,
+            token => RestoreCoreAsync(releaseId, token),
             cancellationToken);
     }
 
@@ -72,7 +68,7 @@ internal sealed class ReleaseWorkflowService
         CancellationToken cancellationToken)
     {
         var detail = await GetDetailAsync(releaseId, cancellationToken);
-        var expectedWait = GetExpectedWait(detail);
+        var expectedWait = WorkflowWaitResolver.Require(detail);
         var restoredWait = await _checkpointCoordinator.RestoreAsync(
             CreateWorkflow(detail.Release.Submission),
             detail.WorkflowCorrelation!.WorkflowSessionId,
@@ -81,17 +77,15 @@ internal sealed class ReleaseWorkflowService
         return restoredWait is PendingApprovalWait ? restoredWait : expectedWait;
     }
 
-    public async Task<PendingWorkflowWait> ResumeRemediationAsync(
+    public async Task ResumeRemediationAsync(
         ReleaseId releaseId,
         RemediationWorkflowResponse response,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(response);
-        return await _checkpointCoordinator.ExecuteExclusivelyAsync(
-            token => ExecuteWithFailureAsync(
-                releaseId,
-                () => ResumeRemediationCoreAsync(releaseId, response, token),
-                token),
+        await ExecuteTurnAsync(
+            releaseId,
+            token => ResumeRemediationCoreAsync(releaseId, response, token),
             cancellationToken);
     }
 
@@ -106,7 +100,7 @@ internal sealed class ReleaseWorkflowService
             return await RestoreCoreAsync(releaseId, cancellationToken);
         }
 
-        var expectedWait = GetExpectedWait(detail) as PendingRemediationWait
+        var expectedWait = WorkflowWaitResolver.Require(detail) as PendingRemediationWait
             ?? throw new InvalidOperationException("The release is not waiting for remediation.");
         var nextWait = await _checkpointCoordinator.ResumeRemediationAsync(
             CreateWorkflow(detail.Release.Submission),
@@ -122,17 +116,15 @@ internal sealed class ReleaseWorkflowService
         return nextWait;
     }
 
-    public async Task<PersistedHumanResponse> ResumeApprovalAsync(
+    public async Task ResumeApprovalAsync(
         ReleaseId releaseId,
         ApprovalResponse response,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(response);
-        return await _checkpointCoordinator.ExecuteExclusivelyAsync(
-            token => ExecuteWithFailureAsync(
-                releaseId,
-                () => ResumeApprovalCoreAsync(releaseId, response, token),
-                token),
+        await ExecuteTurnAsync(
+            releaseId,
+            token => ResumeApprovalCoreAsync(releaseId, response, token),
             cancellationToken);
     }
 
@@ -148,7 +140,7 @@ internal sealed class ReleaseWorkflowService
             return replay;
         }
 
-        var expectedWait = GetExpectedWait(detail) as PendingApprovalWait
+        var expectedWait = WorkflowWaitResolver.Require(detail) as PendingApprovalWait
             ?? throw new InvalidOperationException("The release is not waiting for approval.");
         try
         {
@@ -171,6 +163,17 @@ internal sealed class ReleaseWorkflowService
             throw;
         }
     }
+
+    private Task<T> ExecuteTurnAsync<T>(
+        ReleaseId releaseId,
+        Func<CancellationToken, Task<T>> operation,
+        CancellationToken cancellationToken) =>
+        _checkpointCoordinator.ExecuteExclusivelyAsync(
+            token => ExecuteWithFailureAsync(
+                releaseId,
+                () => operation(token),
+                token),
+            cancellationToken);
 
     private async Task<T> ExecuteWithFailureAsync<T>(
         ReleaseId releaseId,
@@ -227,28 +230,6 @@ internal sealed class ReleaseWorkflowService
         return await _dataService.GetReleaseDetailAsync(releaseId, cancellationToken)
             ?? throw new InvalidOperationException(
                 $"Release '{releaseId}' does not exist.");
-    }
-
-    private static PendingWorkflowWait GetExpectedWait(ReleaseDetailProjection detail)
-    {
-        ArgumentNullException.ThrowIfNull(detail);
-        var correlation = detail.WorkflowCorrelation
-            ?? throw new InvalidOperationException(
-                $"Release '{detail.Release.Submission.ReleaseId}' has no workflow correlation.");
-
-        return correlation.PendingRequestKind switch
-        {
-            WorkflowRequestKind.Remediation when detail.Release.Phase is ProcessPhase.WaitingForRemediation =>
-                new PendingRemediationWait(
-                    correlation.PendingWorkflowRequestId,
-                    ActiveRemediationRequest(detail).Id),
-            WorkflowRequestKind.Approval when detail.Release.Phase is ProcessPhase.WaitingForApproval =>
-                new PendingApprovalWait(
-                    correlation.PendingWorkflowRequestId,
-                    ActiveApproval(detail)),
-            _ => throw new InvalidOperationException(
-                $"Release phase '{detail.Release.Phase}' does not match correlated request kind '{correlation.PendingRequestKind}'."),
-        };
     }
 
     private async Task SavePendingWaitAsync(
@@ -383,18 +364,4 @@ internal sealed class ReleaseWorkflowService
         return true;
     }
 
-    private static RemediationRequest ActiveRemediationRequest(ReleaseDetailProjection detail)
-    {
-        var answeredRequestIds = detail.RemediationSubmissions
-            .Select(submission => submission.RequestId)
-            .ToHashSet();
-        return detail.RemediationRequests.Single(request => !answeredRequestIds.Contains(request.Id));
-    }
-
-    private static ApprovalRequest ActiveApproval(ReleaseDetailProjection detail)
-    {
-        var request = detail.HumanDecisionRequests.Single();
-        var snapshot = detail.DecisionSnapshots.Single(value => value.Id == request.SnapshotId);
-        return new ApprovalRequest(snapshot, request);
-    }
 }

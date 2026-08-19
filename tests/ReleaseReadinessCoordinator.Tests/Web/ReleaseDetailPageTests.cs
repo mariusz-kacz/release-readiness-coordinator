@@ -390,7 +390,6 @@ public sealed class ReleaseDetailPageTests
 
         public Task<EvidenceRecord?> GetCurrentEvidenceAsync(ReleaseId releaseId, EvidenceKind kind, CancellationToken cancellationToken = default) => throw Unused();
         public Task<Release> SubmitReleaseAsync(ReleaseSubmission submission, IReadOnlyCollection<EvidenceRecord> initialEvidence, TimelineEntry timelineEntry, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
-        public Task<EvidenceRecord> ReplaceEvidenceAsync(EvidenceRecord evidence, TimelineEntry timelineEntry, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
         public Task<EvaluationRound> SaveEvaluationRoundAsync(EvaluationRound round, TimelineEntry timelineEntry, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
         public Task<RemediationRequest> OpenRemediationRequestAsync(RemediationRequest request, TimelineEntry timelineEntry, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
         public Task<RemediationSubmission> SaveRemediationSubmissionAsync(ReleaseId releaseId, RemediationSubmission submission, IReadOnlyCollection<EvidenceRecord> evidenceReplacements, TimelineEntry timelineEntry, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
@@ -398,7 +397,6 @@ public sealed class ReleaseDetailPageTests
         public Task<PersistedHumanResponse> SaveHumanResponseAsync(ReleaseId releaseId, Guid approvalRequestId, HumanResponse response, TimelineEntry timelineEntry, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
         public Task<WorkflowCorrelationRecord> SaveWorkflowCorrelationAsync(WorkflowCorrelationRecord correlation, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
         public Task<Release> MarkWorkflowFailedAsync(ReleaseId releaseId, UtcInstant failedAt, TimelineEntry timelineEntry, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
-        public Task<TimelineEntry> AppendTimelineEntryAsync(TimelineEntry timelineEntry, string operationKey, CancellationToken cancellationToken = default) => throw Unused();
 
         private static InvalidOperationException Unused() =>
             new("This detail-page test only reads the release-detail projection.");

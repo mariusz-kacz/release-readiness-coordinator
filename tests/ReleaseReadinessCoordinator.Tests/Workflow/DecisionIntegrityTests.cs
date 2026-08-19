@@ -161,15 +161,13 @@ public sealed class DecisionIntegrityResponseTests
         await using var fixture = await DecisionFixture.CreateAsync("closed-snapshot");
         var originalBrief = fixture.Snapshot.DecisionBrief;
 
-        var evidenceConflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(
-            fixture.ReplaceTestEvidenceAsync);
         var remediationConflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(
-            fixture.SubmitRemediationAsync);
+            fixture.SubmitRemediationWithEvidenceAsync);
         var rerunConflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(
             fixture.SaveRerunAsync);
 
         Assert.All(
-            [evidenceConflict, remediationConflict, rerunConflict],
+            [remediationConflict, rerunConflict],
             conflict => Assert.Equal(ApplicationDataConflictKind.InvalidState, conflict.Kind));
 
         fixture.Clock.SetUtcNow(
@@ -352,31 +350,26 @@ internal sealed class DecisionFixture : IAsyncDisposable
         "Reviewed the immutable decision brief.",
         new UtcInstant(Clock.GetUtcNow()));
 
-    public async Task ReplaceTestEvidenceAsync()
+    public async Task<RemediationSubmission> SubmitRemediationWithEvidenceAsync()
     {
         var current = (TestEvidenceRecord)(await DataService.GetCurrentEvidenceAsync(
             Submission.ReleaseId,
             EvidenceKind.Test))!;
-        await DataService.ReplaceEvidenceAsync(
-            new TestEvidenceRecord(
-                Guid.NewGuid(), Submission.ReleaseId, 2, Utc(2026, 8, 17, 10, 6), current.Id,
-                Submission.ReleaseVersion, Utc(2026, 8, 17, 10), 0.99m, []),
-            Timeline(Submission.ReleaseId, 4, TimelineEntryKind.RemediationSubmitted, "Evidence replaced."),
-            $"fixture:{Submission.ReleaseId.Value}:replace-test");
-    }
-
-    public Task<RemediationSubmission> SubmitRemediationAsync() =>
-        DataService.SaveRemediationSubmissionAsync(
+        var replacement = new TestEvidenceRecord(
+            Guid.NewGuid(), Submission.ReleaseId, 2, Utc(2026, 8, 17, 10, 6), current.Id,
+            Submission.ReleaseVersion, Utc(2026, 8, 17, 10), 0.99m, []);
+        return await DataService.SaveRemediationSubmissionAsync(
             Submission.ReleaseId,
             new RemediationSubmission(
                 Guid.NewGuid(),
                 Request.Id,
                 new UtcInstant(Clock.GetUtcNow()),
-                new Dictionary<EvidenceKind, Guid>(),
+                new Dictionary<EvidenceKind, Guid> { [EvidenceKind.Test] = replacement.Id },
                 [ReadinessCheck.Test]),
-            [],
+            [replacement],
             Timeline(Submission.ReleaseId, 4, TimelineEntryKind.RemediationSubmitted, "Remediation submitted."),
             $"fixture:{Submission.ReleaseId.Value}:remediation");
+    }
 
     public Task<EvaluationRound> SaveRerunAsync()
     {

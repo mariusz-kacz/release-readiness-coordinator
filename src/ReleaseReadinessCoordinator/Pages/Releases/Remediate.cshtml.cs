@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Workflow;
+using static ReleaseReadinessCoordinator.Pages.Releases.EvidenceFormParsing;
 
 namespace ReleaseReadinessCoordinator.Pages.Releases;
 
@@ -75,29 +76,26 @@ public sealed class RemediateModel(
             return Page();
         }
 
-        var outcome = await interactionService.SubmitAsync(
-            id,
-            Input.CorrelationToken,
-            evidence,
-            Input.SelectedChecks(),
-            cancellationToken);
-        return outcome switch
+        try
         {
-            RemediationSubmitOutcome.Succeeded => RedirectWithFeedback(
+            var submitted = await interactionService.SubmitAsync(
                 id,
-                "Remediation submitted. The workflow continued with a new evaluation round."),
-            RemediationSubmitOutcome.CorrelationMismatch => RedirectWithFeedback(
+                Input.CorrelationToken,
+                evidence,
+                Input.SelectedChecks(),
+                cancellationToken);
+            return RedirectWithFeedback(
                 id,
-                "This remediation form no longer matches the active workflow request. No changes were applied."),
-            RemediationSubmitOutcome.NoLongerActive => RedirectWithFeedback(
+                submitted
+                    ? "Remediation submitted. The workflow continued with a new evaluation round."
+                    : "This remediation request is no longer active or does not match this form. No changes were applied.");
+        }
+        catch (WorkflowInteractionException)
+        {
+            return RedirectWithFeedback(
                 id,
-                "This remediation request is no longer active. No changes were applied."),
-            RemediationSubmitOutcome.TechnicalFailure => RedirectWithFeedback(
-                id,
-                "The workflow could not continue safely. Review the current release status before trying again."),
-            RemediationSubmitOutcome.ReleaseNotFound => NotFound(),
-            _ => throw new InvalidOperationException("Unknown remediation submission outcome."),
-        };
+                "The workflow could not continue safely. Review the current release status before trying again.");
+        }
     }
 
     public sealed record InputModel
@@ -222,72 +220,6 @@ public sealed class RemediateModel(
         private static int NextVersion(EvidenceRecord? current) =>
             current is null ? 1 : checked(current.Version + 1);
 
-        private static UtcInstant? Instant(DateTimeOffset? value) =>
-            value.HasValue
-                ? new UtcInstant(value.Value.ToUniversalTime())
-                : null;
-
-        private static UtcInterval? OptionalInterval(
-            DateTimeOffset? start,
-            DateTimeOffset? end,
-            string fieldName)
-        {
-            if (!start.HasValue && !end.HasValue)
-            {
-                return null;
-            }
-
-            if (!start.HasValue || !end.HasValue)
-            {
-                throw new FormatException($"The {fieldName} requires both a start and an end.");
-            }
-
-            return new UtcInterval(
-                new UtcInstant(start.Value.ToUniversalTime()),
-                new UtcInstant(end.Value.ToUniversalTime()));
-        }
-
-        private static string[] ParseList(string? text) =>
-            string.IsNullOrWhiteSpace(text)
-                ? []
-                : text.Split(
-                    [',', '\r', '\n'],
-                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        private static IReadOnlyDictionary<string, (string Scope, UtcInstant ExpiresAt)>
-            ParseExceptions(string? text)
-        {
-            var exceptions = new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>(
-                StringComparer.Ordinal);
-            foreach (var line in Lines(text))
-            {
-                var fields = line.Split('|', StringSplitOptions.TrimEntries);
-                if (fields.Length != 3
-                    || fields.Take(2).Any(string.IsNullOrWhiteSpace)
-                    || !DateTimeOffset.TryParse(fields[2], out var expiry))
-                {
-                    throw new FormatException(
-                        "Each security exception line must use finding-id|scope|expiry-with-offset.");
-                }
-
-                if (!exceptions.TryAdd(
-                    fields[0],
-                    (fields[1], new UtcInstant(expiry.ToUniversalTime()))))
-                {
-                    throw new FormatException(
-                        $"Security exceptions contain duplicate finding '{fields[0]}'.");
-                }
-            }
-
-            return exceptions;
-        }
-
-        private static IEnumerable<string> Lines(string? text) =>
-            string.IsNullOrWhiteSpace(text)
-                ? []
-                : text.Split(
-                    ['\r', '\n'],
-                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private IActionResult RedirectWithFeedback(ReleaseId releaseId, string feedback)

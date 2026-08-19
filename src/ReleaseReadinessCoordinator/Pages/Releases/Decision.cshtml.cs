@@ -25,15 +25,14 @@ public sealed class DecisionModel(IDecisionInteractionService interactionService
             return NotFound();
         }
 
-        var load = await interactionService.LoadAsync(id, cancellationToken);
-        if (load.Outcome is DecisionLoadOutcome.Active)
+        var failure = await LoadStateAsync(id, cancellationToken);
+        if (failure is not null)
         {
-            State = load.Interaction!;
-            Input.ResponseId = Guid.NewGuid();
-            return Page();
+            return failure;
         }
 
-        return LoadFailure(id, load.Outcome);
+        Input.ResponseId = Guid.NewGuid();
+        return Page();
     }
 
     public async Task<IActionResult> OnPostAsync(
@@ -66,45 +65,36 @@ public sealed class DecisionModel(IDecisionInteractionService interactionService
         RequireText(Input.Comment, nameof(Input.Comment), "Comment is required.");
         if (!ModelState.IsValid)
         {
-            var load = await interactionService.LoadAsync(id, cancellationToken);
-            if (load.Outcome is DecisionLoadOutcome.Active)
+            var failure = await LoadStateAsync(id, cancellationToken);
+            if (failure is not null)
             {
-                State = load.Interaction!;
-                return Page();
+                return failure;
             }
 
-            return LoadFailure(id, load.Outcome);
+            return Page();
         }
 
-        var submission = new DecisionSubmission(
-            Input.ResponseId!.Value,
-            Input.Decision!.Value,
-            Input.Responder!,
-            Input.Comment!);
-        var outcome = await interactionService.SubmitAsync(
-            id,
-            submission,
-            cancellationToken);
-        return outcome switch
+        try
         {
-            DecisionSubmitOutcome.Succeeded => RedirectWithFeedback(
+            var submitted = await interactionService.SubmitAsync(
                 id,
-                "Decision recorded. The release is now terminal."),
-            DecisionSubmitOutcome.ExactReplay => RedirectWithFeedback(
+                Input.ResponseId!.Value,
+                Input.Decision!.Value,
+                Input.Responder!,
+                Input.Comment!,
+                cancellationToken);
+            return RedirectWithFeedback(
                 id,
-                "This decision was already recorded. The release remains terminal."),
-            DecisionSubmitOutcome.NoLongerActive => RedirectWithFeedback(
+                submitted
+                    ? "Decision recorded. The release is now terminal."
+                    : "This approval request is no longer active or does not match this response. No decision was applied.");
+        }
+        catch (WorkflowInteractionException)
+        {
+            return RedirectWithFeedback(
                 id,
-                "This approval request is no longer active. No decision was applied."),
-            DecisionSubmitOutcome.ResponseConflict => RedirectWithFeedback(
-                id,
-                "This decision response no longer matches the recorded response. No decision was applied."),
-            DecisionSubmitOutcome.TechnicalFailure => RedirectWithFeedback(
-                id,
-                "The workflow could not continue safely. Review the current release status before trying again."),
-            DecisionSubmitOutcome.ReleaseNotFound => NotFound(),
-            _ => throw new InvalidOperationException("Unknown decision submission outcome."),
-        };
+                "The workflow could not continue safely. Review the current release status before trying again.");
+        }
     }
 
     public sealed record InputModel
@@ -124,15 +114,28 @@ public sealed class DecisionModel(IDecisionInteractionService interactionService
         public string? Comment { get; set; }
     }
 
-    private IActionResult LoadFailure(ReleaseId releaseId, DecisionLoadOutcome outcome) =>
-        outcome switch
+    private async Task<IActionResult?> LoadStateAsync(
+        ReleaseId releaseId,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            DecisionLoadOutcome.ReleaseNotFound or DecisionLoadOutcome.NoLongerActive => NotFound(),
-            DecisionLoadOutcome.TechnicalFailure => RedirectWithFeedback(
+            var state = await interactionService.GetActiveAsync(releaseId, cancellationToken);
+            if (state is null)
+            {
+                return NotFound();
+            }
+
+            State = state;
+            return null;
+        }
+        catch (WorkflowInteractionException)
+        {
+            return RedirectWithFeedback(
                 releaseId,
-                "The approval request could not be restored safely. No decision was applied."),
-            _ => throw new InvalidOperationException("Unknown decision load outcome."),
-        };
+                "The approval request could not be restored safely. No decision was applied.");
+        }
+    }
 
     private IActionResult RedirectWithFeedback(ReleaseId releaseId, string feedback)
     {

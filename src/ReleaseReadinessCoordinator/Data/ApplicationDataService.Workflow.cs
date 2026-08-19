@@ -410,34 +410,6 @@ public sealed partial class ApplicationDataService
             cancellationToken);
     }
 
-    public Task<TimelineEntry> AppendTimelineEntryAsync(
-        TimelineEntry timelineEntry,
-        string operationKey,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(timelineEntry);
-        operationKey = RequireOperationKey(operationKey);
-        return ExecuteReplaySafeAsync(
-            async token =>
-            {
-                var row = await _dbContext.TimelineEntries.AsNoTracking()
-                    .SingleOrDefaultAsync(value => value.OperationKey == operationKey, token);
-                if (row is null)
-                {
-                    return null;
-                }
-
-                return ToDomain(row);
-            },
-            async token =>
-            {
-                await RequireMutableRelease(timelineEntry.ReleaseId, token);
-                _dbContext.TimelineEntries.Add(ToRow(timelineEntry, operationKey));
-                return timelineEntry;
-            },
-            cancellationToken);
-    }
-
     private static void EnsureSameRecord(Guid persistedId, Guid expectedId, string operationKey)
     {
         if (persistedId != expectedId)

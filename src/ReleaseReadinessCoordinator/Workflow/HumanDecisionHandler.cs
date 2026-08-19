@@ -3,113 +3,25 @@ using ReleaseReadinessCoordinator.Domain;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
-public sealed record ActiveDecisionInteraction
-{
-    public ActiveDecisionInteraction(
-        ApprovalRequest approval,
-        string workflowRequestId)
-    {
-        ArgumentNullException.ThrowIfNull(approval);
-        if (approval.Snapshot.ReleaseId != approval.Request.ReleaseId
-            || approval.Snapshot.Id != approval.Request.SnapshotId)
-        {
-            throw new ArgumentException(
-                "An active decision interaction must contain one consistent approval request.",
-                nameof(approval));
-        }
+internal sealed class WorkflowInteractionException(Exception innerException)
+    : InvalidOperationException("The workflow interaction could not be completed safely.", innerException);
 
-        Approval = approval;
-        WorkflowRequestId = DomainGuard.Required(
-            workflowRequestId,
-            nameof(workflowRequestId));
-    }
-
-    public ApprovalRequest Approval { get; }
-
-    public string WorkflowRequestId { get; }
-}
-
-public enum DecisionLoadOutcome
-{
-    Active = 1,
-    ReleaseNotFound = 2,
-    NoLongerActive = 3,
-    TechnicalFailure = 4,
-}
-
-public sealed record DecisionLoadResult
-{
-    private DecisionLoadResult(
-        DecisionLoadOutcome outcome,
-        ActiveDecisionInteraction? interaction)
-    {
-        Outcome = DomainGuard.Defined(outcome, nameof(outcome));
-        Interaction = interaction;
-        if ((outcome is DecisionLoadOutcome.Active) != (interaction is not null))
-        {
-            throw new ArgumentException(
-                "Only an active decision load result can contain an interaction.");
-        }
-    }
-
-    public DecisionLoadOutcome Outcome { get; }
-
-    public ActiveDecisionInteraction? Interaction { get; }
-
-    public static DecisionLoadResult Active(ActiveDecisionInteraction interaction) =>
-        new(DecisionLoadOutcome.Active, interaction);
-
-    public static DecisionLoadResult From(DecisionLoadOutcome outcome) =>
-        new(outcome, null);
-}
-
-public sealed record DecisionSubmission
-{
-    public DecisionSubmission(
-        Guid responseId,
-        HumanDecision decision,
-        string responder,
-        string comment)
-    {
-        if (responseId == Guid.Empty)
-        {
-            throw new ArgumentException("A response ID cannot be empty.", nameof(responseId));
-        }
-
-        ResponseId = responseId;
-        Decision = DomainGuard.Defined(decision, nameof(decision));
-        Responder = DomainGuard.Required(responder, nameof(responder));
-        Comment = DomainGuard.Required(comment, nameof(comment));
-    }
-
-    public Guid ResponseId { get; }
-
-    public HumanDecision Decision { get; }
-
-    public string Responder { get; }
-
-    public string Comment { get; }
-}
-
-public enum DecisionSubmitOutcome
-{
-    Succeeded = 1,
-    ExactReplay = 2,
-    ReleaseNotFound = 3,
-    NoLongerActive = 4,
-    ResponseConflict = 5,
-    TechnicalFailure = 6,
-}
+public sealed record ActiveDecisionInteraction(
+    ApprovalRequest Approval,
+    string WorkflowRequestId);
 
 public interface IDecisionInteractionService
 {
-    Task<DecisionLoadResult> LoadAsync(
+    Task<ActiveDecisionInteraction?> GetActiveAsync(
         ReleaseId releaseId,
         CancellationToken cancellationToken = default);
 
-    Task<DecisionSubmitOutcome> SubmitAsync(
+    Task<bool> SubmitAsync(
         ReleaseId releaseId,
-        DecisionSubmission submission,
+        Guid responseId,
+        HumanDecision decision,
+        string responder,
+        string comment,
         CancellationToken cancellationToken = default);
 }
 
@@ -118,7 +30,7 @@ internal sealed class DecisionInteractionService(
     ReleaseWorkflowService workflowService,
     TimeProvider timeProvider) : IDecisionInteractionService
 {
-    public async Task<DecisionLoadResult> LoadAsync(
+    public async Task<ActiveDecisionInteraction?> GetActiveAsync(
         ReleaseId releaseId,
         CancellationToken cancellationToken = default)
     {
@@ -126,27 +38,27 @@ internal sealed class DecisionInteractionService(
         var detail = await dataService.GetReleaseDetailAsync(releaseId, cancellationToken);
         if (detail is null)
         {
-            return DecisionLoadResult.From(DecisionLoadOutcome.ReleaseNotFound);
-        }
-
-        if (!IsWaitingForApproval(detail))
-        {
-            return DecisionLoadResult.From(DecisionLoadOutcome.NoLongerActive);
+            return null;
         }
 
         try
         {
+            if (WorkflowWaitResolver.Resolve(detail) is not PendingApprovalWait)
+            {
+                return null;
+            }
+
             var restored = await workflowService.RestoreAsync(releaseId, cancellationToken);
             if (restored is not PendingApprovalWait { Approval: { } approval } approvalWait
                 || approval.Request.ReleaseId != releaseId)
             {
-                return DecisionLoadResult.From(DecisionLoadOutcome.TechnicalFailure);
+                throw new InvalidOperationException(
+                    "The restored workflow did not contain the active approval request.");
             }
 
-            return DecisionLoadResult.Active(
-                new ActiveDecisionInteraction(
-                    approval,
-                    approvalWait.WorkflowRequestId));
+            return new ActiveDecisionInteraction(
+                approval,
+                approvalWait.WorkflowRequestId);
         }
         catch (OperationCanceledException)
         {
@@ -154,38 +66,53 @@ internal sealed class DecisionInteractionService(
         }
         catch (Exception exception) when (IsSafeInteractionFailure(exception))
         {
-            return DecisionLoadResult.From(DecisionLoadOutcome.TechnicalFailure);
+            throw new WorkflowInteractionException(exception);
         }
     }
 
-    public async Task<DecisionSubmitOutcome> SubmitAsync(
+    public async Task<bool> SubmitAsync(
         ReleaseId releaseId,
-        DecisionSubmission submission,
+        Guid responseId,
+        HumanDecision decision,
+        string responder,
+        string comment,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(releaseId);
-        ArgumentNullException.ThrowIfNull(submission);
+        if (responseId == Guid.Empty)
+        {
+            throw new ArgumentException("A response ID cannot be empty.", nameof(responseId));
+        }
+
+        decision = DomainGuard.Defined(decision, nameof(decision));
+        responder = DomainGuard.Required(responder, nameof(responder));
+        comment = DomainGuard.Required(comment, nameof(comment));
         var detail = await dataService.GetReleaseDetailAsync(releaseId, cancellationToken);
         if (detail is null)
         {
-            return DecisionSubmitOutcome.ReleaseNotFound;
+            return false;
         }
 
         if (detail.TerminalResponse is { } terminal)
         {
-            return TerminalOutcome(terminal, submission);
+            return IsExactReplay(
+                terminal,
+                responseId,
+                decision,
+                responder,
+                comment);
         }
 
-        if (!IsWaitingForApproval(detail))
+        if (WorkflowWaitResolver.Resolve(detail) is not PendingApprovalWait)
         {
-            return DecisionSubmitOutcome.NoLongerActive;
+            return false;
         }
 
         var response = new ApprovalResponse(new HumanResponse(
-            submission.ResponseId,
-            submission.Decision,
-            submission.Responder,
-            submission.Comment,
+            responseId,
+            decision,
+            responder,
+            comment,
             new UtcInstant(timeProvider.GetUtcNow().ToUniversalTime())));
         try
         {
@@ -193,7 +120,7 @@ internal sealed class DecisionInteractionService(
                 releaseId,
                 response,
                 cancellationToken);
-            return DecisionSubmitOutcome.Succeeded;
+            return true;
         }
         catch (OperationCanceledException)
         {
@@ -202,46 +129,39 @@ internal sealed class DecisionInteractionService(
         catch (Exception exception) when (IsSafeInteractionFailure(exception))
         {
             detail = await dataService.GetReleaseDetailAsync(releaseId, cancellationToken);
-            return detail?.TerminalResponse is { } concurrentTerminal
-                ? TerminalOutcome(concurrentTerminal, submission)
-                : DecisionSubmitOutcome.TechnicalFailure;
+            if (detail?.TerminalResponse is { } concurrentTerminal)
+            {
+                return IsExactReplay(
+                    concurrentTerminal,
+                    responseId,
+                    decision,
+                    responder,
+                    comment);
+            }
+
+            throw new WorkflowInteractionException(exception);
         }
     }
 
-    private static bool IsWaitingForApproval(ReleaseDetailProjection detail) =>
-        detail.Release.Phase is ProcessPhase.WaitingForApproval
-        && detail.TerminalResponse is null
-        && detail.WorkflowCorrelation is
-        {
-            PendingRequestKind: WorkflowRequestKind.Approval,
-        };
-
-    private static DecisionSubmitOutcome TerminalOutcome(
+    private static bool IsExactReplay(
         PersistedHumanResponse terminal,
-        DecisionSubmission submission)
-    {
-        if (terminal.Response.Id != submission.ResponseId)
-        {
-            return DecisionSubmitOutcome.NoLongerActive;
-        }
-
-        return terminal.Response.Decision == submission.Decision
+        Guid responseId,
+        HumanDecision decision,
+        string responder,
+        string comment) =>
+        terminal.Response.Id == responseId
+            && terminal.Response.Decision == decision
             && string.Equals(
                 terminal.Response.Responder,
-                submission.Responder,
+                responder,
                 StringComparison.Ordinal)
             && string.Equals(
                 terminal.Response.Comment,
-                submission.Comment,
-                StringComparison.Ordinal)
-                ? DecisionSubmitOutcome.ExactReplay
-                : DecisionSubmitOutcome.ResponseConflict;
-    }
+                comment,
+                StringComparison.Ordinal);
 
     private static bool IsSafeInteractionFailure(Exception exception) =>
-        exception is WorkflowContinuationException
-            or ApplicationDataConflictException
-            or InvalidOperationException
+        exception is InvalidOperationException
             or AggregateException;
 }
 
@@ -281,10 +201,7 @@ internal sealed class HumanDecisionHandler(
                 "A human response requires a release waiting for approval.");
         }
 
-        var activeRequest = detail.HumanDecisionRequests
-            .OrderBy(request => request.CreatedAt)
-            .LastOrDefault()
-            ?? throw new InvalidOperationException("A human response requires a durable approval request.");
+        var activeRequest = WorkflowWaitResolver.RequireApproval(detail).Request;
         var nextSequence = detail.Timeline.IsEmpty ? 1 : detail.Timeline[^1].Sequence + 1;
         return await _dataService.SaveHumanResponseAsync(
             _releaseId,

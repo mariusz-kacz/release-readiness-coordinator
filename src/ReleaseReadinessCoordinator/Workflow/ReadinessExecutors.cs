@@ -129,7 +129,16 @@ internal sealed partial class ReadinessBranchExecutor : Executor
         _branch = ReadinessBranch.Test;
         _check = ReadinessCheck.Test;
         _submission = submission;
-        _execute = new TestReadinessBranchExecutor(provider, policy).ExecuteAsync;
+        _execute = (resultId, release, workItem, cancellationToken) =>
+            BranchExecution.ExecuteAsync(
+                resultId,
+                release,
+                workItem,
+                ReadinessCheck.Test,
+                EvidenceKind.Test,
+                provider,
+                policy.Evaluate,
+                cancellationToken);
         _reuse = new ResultReuse(timeProvider);
     }
 
@@ -143,7 +152,16 @@ internal sealed partial class ReadinessBranchExecutor : Executor
         _branch = ReadinessBranch.Security;
         _check = ReadinessCheck.Security;
         _submission = submission;
-        _execute = new SecurityReadinessBranchExecutor(provider, policy).ExecuteAsync;
+        _execute = (resultId, release, workItem, cancellationToken) =>
+            BranchExecution.ExecuteAsync(
+                resultId,
+                release,
+                workItem,
+                ReadinessCheck.Security,
+                EvidenceKind.Security,
+                provider,
+                policy.Evaluate,
+                cancellationToken);
         _reuse = new ResultReuse(timeProvider);
     }
 
@@ -157,7 +175,16 @@ internal sealed partial class ReadinessBranchExecutor : Executor
         _branch = ReadinessBranch.Change;
         _check = ReadinessCheck.Change;
         _submission = submission;
-        _execute = new ChangeReadinessBranchExecutor(provider, policy).ExecuteAsync;
+        _execute = (resultId, release, workItem, cancellationToken) =>
+            BranchExecution.ExecuteAsync(
+                resultId,
+                release,
+                workItem,
+                ReadinessCheck.Change,
+                EvidenceKind.Change,
+                provider,
+                policy.Evaluate,
+                cancellationToken);
         _reuse = new ResultReuse(timeProvider);
     }
 

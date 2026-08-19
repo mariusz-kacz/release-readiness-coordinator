@@ -19,10 +19,12 @@ public sealed class RestartRecoveryTests
             var dataService = new ApplicationDataService(firstContext);
             await fixture.SubmitAsync(dataService);
             var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
-            started = Assert.IsType<PendingApprovalWait>(await service.StartAsync(
+            await service.StartAsync(
                 fixture.Submission,
                 new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId));
+                fixture.SessionId);
+            started = Assert.IsType<PendingApprovalWait>(
+                await service.RestoreAsync(fixture.Submission.ReleaseId));
         }
 
         fixture.ReplaceCheckpointText(
@@ -57,10 +59,12 @@ public sealed class RestartRecoveryTests
             var dataService = new ApplicationDataService(firstContext);
             await fixture.SubmitAsync(dataService);
             var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
-            var started = Assert.IsType<PendingApprovalWait>(await service.StartAsync(
+            await service.StartAsync(
                 fixture.Submission,
                 new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId));
+                fixture.SessionId);
+            var started = Assert.IsType<PendingApprovalWait>(
+                await service.RestoreAsync(fixture.Submission.ReleaseId));
             await dataService.SaveWorkflowCorrelationAsync(
                 new WorkflowCorrelationRecord(
                     fixture.Submission.ReleaseId,
@@ -136,10 +140,12 @@ public sealed class RestartRecoveryTests
             var dataService = new ApplicationDataService(firstContext);
             await fixture.SubmitAsync(dataService);
             var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
-            started = Assert.IsType<PendingApprovalWait>(await service.StartAsync(
+            await service.StartAsync(
                 fixture.Submission,
                 new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId));
+                fixture.SessionId);
+            started = Assert.IsType<PendingApprovalWait>(
+                await service.RestoreAsync(fixture.Submission.ReleaseId));
         }
 
         if (corruptCheckpoint)
@@ -180,10 +186,12 @@ public sealed class RestartRecoveryTests
             var dataService = new ApplicationDataService(firstContext);
             await fixture.SubmitAsync(dataService);
             var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
-            started = Assert.IsType<PendingRemediationWait>(await service.StartAsync(
+            await service.StartAsync(
                 fixture.Submission,
                 new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId));
+                fixture.SessionId);
+            started = Assert.IsType<PendingRemediationWait>(
+                await service.RestoreAsync(fixture.Submission.ReleaseId));
         }
 
         using var secondCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory);
@@ -220,13 +228,11 @@ public sealed class RestartRecoveryTests
             []);
 
         var response = new RemediationWorkflowResponse(submission, [replacement]);
-        var continuations = await Task.WhenAll(
+        await Task.WhenAll(
             serviceAfterRestart.ResumeRemediationAsync(fixture.Submission.ReleaseId, response),
             replayService.ResumeRemediationAsync(fixture.Submission.ReleaseId, response));
-        var nextWait = Assert.IsType<PendingApprovalWait>(continuations[0]);
-        Assert.All(
-            continuations,
-            continuation => Assert.Equal(nextWait.WorkflowRequestId, continuation.WorkflowRequestId));
+        var nextWait = Assert.IsType<PendingApprovalWait>(
+            await serviceAfterRestart.RestoreAsync(fixture.Submission.ReleaseId));
 
         var detail = await dataAfterRestart.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
         Assert.NotNull(detail);
@@ -250,10 +256,12 @@ public sealed class RestartRecoveryTests
             await fixture.SubmitAsync(dataService);
             var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
 
-            started = Assert.IsType<PendingApprovalWait>(await service.StartAsync(
+            await service.StartAsync(
                 fixture.Submission,
                 new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId));
+                fixture.SessionId);
+            started = Assert.IsType<PendingApprovalWait>(
+                await service.RestoreAsync(fixture.Submission.ReleaseId));
         }
 
         using var secondCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory);
@@ -279,12 +287,9 @@ public sealed class RestartRecoveryTests
             "Approved after restart.",
             fixture.Now));
 
-        var continuations = await Task.WhenAll(
+        await Task.WhenAll(
             firstService.ResumeApprovalAsync(fixture.Submission.ReleaseId, response),
             secondService.ResumeApprovalAsync(fixture.Submission.ReleaseId, response));
-
-        Assert.All(continuations, continuation => Assert.Equal(response.Response.Id, continuation.Response.Id));
-        Assert.All(continuations, continuation => Assert.Equal(approval.Request.Id, continuation.ApprovalRequestId));
 
         await using var verificationContext = fixture.CreateContext();
         var detail = await new ApplicationDataService(verificationContext)
@@ -292,6 +297,7 @@ public sealed class RestartRecoveryTests
         Assert.NotNull(detail);
         Assert.Equal(ProcessPhase.Approved, detail.Release.Phase);
         Assert.Equal(response.Response.Id, detail.TerminalResponse?.Response.Id);
+        Assert.Equal(approval.Request.Id, detail.TerminalResponse?.ApprovalRequestId);
         Assert.Single(detail.Timeline.Where(entry => entry.Kind is TimelineEntryKind.HumanResponseAccepted));
         Assert.Single(detail.EvaluationRounds);
         Assert.Single(detail.HumanDecisionRequests);
@@ -309,10 +315,12 @@ public sealed class RestartRecoveryTests
             var dataService = new ApplicationDataService(firstContext);
             await fixture.SubmitAsync(dataService);
             var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
-            started = Assert.IsType<PendingApprovalWait>(await service.StartAsync(
+            await service.StartAsync(
                 fixture.Submission,
                 new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId));
+                fixture.SessionId);
+            started = Assert.IsType<PendingApprovalWait>(
+                await service.RestoreAsync(fixture.Submission.ReleaseId));
         }
 
         var checkpointApproval = Assert.IsType<ApprovalRequest>(started.Approval);
@@ -349,10 +357,12 @@ public sealed class RestartRecoveryTests
             var dataService = new ApplicationDataService(firstContext);
             await fixture.SubmitAsync(dataService);
             var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
-            started = Assert.IsType<PendingApprovalWait>(await service.StartAsync(
+            await service.StartAsync(
                 fixture.Submission,
                 new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId));
+                fixture.SessionId);
+            started = Assert.IsType<PendingApprovalWait>(
+                await service.RestoreAsync(fixture.Submission.ReleaseId));
         }
 
         var checkpointApproval = Assert.IsType<ApprovalRequest>(started.Approval);

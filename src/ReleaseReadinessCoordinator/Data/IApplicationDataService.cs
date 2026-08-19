@@ -16,12 +16,6 @@ public interface IApplicationDataService
         string operationKey,
         CancellationToken cancellationToken = default);
 
-    Task<EvidenceRecord> ReplaceEvidenceAsync(
-        EvidenceRecord evidence,
-        TimelineEntry timelineEntry,
-        string operationKey,
-        CancellationToken cancellationToken = default);
-
     Task<EvaluationRound> SaveEvaluationRoundAsync(
         EvaluationRound round,
         TimelineEntry timelineEntry,
@@ -65,11 +59,6 @@ public interface IApplicationDataService
     Task<Release> MarkWorkflowFailedAsync(
         ReleaseId releaseId,
         UtcInstant failedAt,
-        TimelineEntry timelineEntry,
-        string operationKey,
-        CancellationToken cancellationToken = default);
-
-    Task<TimelineEntry> AppendTimelineEntryAsync(
         TimelineEntry timelineEntry,
         string operationKey,
         CancellationToken cancellationToken = default);

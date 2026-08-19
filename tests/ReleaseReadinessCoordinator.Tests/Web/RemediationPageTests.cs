@@ -147,15 +147,13 @@ public sealed class RemediationPageTests
         Assert.Empty(service.Submissions);
     }
 
-    [Theory]
-    [InlineData(RemediationSubmitOutcome.CorrelationMismatch, "no changes were applied")]
-    [InlineData(RemediationSubmitOutcome.NoLongerActive, "no longer active")]
-    public async Task Stale_or_mismatched_submission_redirects_with_safe_feedback(
-        RemediationSubmitOutcome outcome,
-        string expectedFeedback)
+    [Fact]
+    public async Task Stale_or_mismatched_submission_redirects_with_safe_feedback()
     {
         var state = ActiveState();
-        var service = new StubRemediationInteractionService(state, outcome);
+        var service = new StubRemediationInteractionService(
+            state,
+            submitResult: false);
         var page = CreatePage(service);
         page.Input.CorrelationToken = "posted-correlation";
 
@@ -163,11 +161,32 @@ public sealed class RemediationPageTests
 
         Assert.IsType<RedirectToPageResult>(result);
         Assert.Contains(
-            expectedFeedback,
+            "no changes were applied",
             Assert.IsType<string>(page.TempData["WorkflowFeedback"]),
             StringComparison.OrdinalIgnoreCase);
         Assert.Single(service.Submissions);
         Assert.Equal("posted-correlation", service.Submissions[0].CorrelationToken);
+    }
+
+    [Fact]
+    public async Task Technical_failure_redirects_with_safe_feedback()
+    {
+        var state = ActiveState();
+        var service = new StubRemediationInteractionService(
+            state,
+            failSubmit: true);
+        var page = CreatePage(service);
+        page.Input.CorrelationToken = state.CorrelationToken;
+
+        var result = await page.OnPostAsync(
+            "release-remediation",
+            CancellationToken.None);
+
+        Assert.IsType<RedirectToPageResult>(result);
+        Assert.Contains(
+            "could not continue safely",
+            Assert.IsType<string>(page.TempData["WorkflowFeedback"]),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -198,7 +217,7 @@ public sealed class RemediationPageTests
             [replacement],
             [ReadinessCheck.Security]);
 
-        Assert.Equal(RemediationSubmitOutcome.CorrelationMismatch, mismatch);
+        Assert.False(mismatch);
         Assert.Empty((await harness.ReadAsync())!.RemediationSubmissions);
 
         var first = await harness.Interactions.SubmitAsync(
@@ -212,8 +231,8 @@ public sealed class RemediationPageTests
             [replacement],
             [ReadinessCheck.Security]);
 
-        Assert.Equal(RemediationSubmitOutcome.Succeeded, first);
-        Assert.Equal(RemediationSubmitOutcome.NoLongerActive, duplicate);
+        Assert.True(first);
+        Assert.False(duplicate);
         var detail = await harness.ReadAsync();
         Assert.NotNull(detail);
         Assert.Single(detail.RemediationSubmissions);
@@ -279,7 +298,7 @@ public sealed class RemediationPageTests
         return new ActiveRemediationInteraction(
             release,
             request,
-            evidence,
+            evidence.ToImmutableDictionary(),
             "workflow-request-42");
     }
 
@@ -306,7 +325,8 @@ public sealed class RemediationPageTests
 
     private sealed class StubRemediationInteractionService(
         ActiveRemediationInteraction? active,
-        RemediationSubmitOutcome outcome = RemediationSubmitOutcome.Succeeded)
+        bool submitResult = true,
+        bool failSubmit = false)
         : IRemediationInteractionService
     {
         public List<SubmittedRemediation> Submissions { get; } = [];
@@ -316,7 +336,7 @@ public sealed class RemediationPageTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(active?.Release.Submission.ReleaseId == releaseId ? active : null);
 
-        public Task<RemediationSubmitOutcome> SubmitAsync(
+        public Task<bool> SubmitAsync(
             ReleaseId releaseId,
             string correlationToken,
             IReadOnlyCollection<EvidenceRecord> evidenceReplacements,
@@ -328,7 +348,12 @@ public sealed class RemediationPageTests
                 correlationToken,
                 [.. evidenceReplacements],
                 [.. explicitlySelectedChecks]));
-            return Task.FromResult(outcome);
+            if (failSubmit)
+            {
+                throw new WorkflowInteractionException(new InvalidOperationException());
+            }
+
+            return Task.FromResult(submitResult);
         }
     }
 
