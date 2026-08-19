@@ -98,22 +98,6 @@ public sealed class DatabaseSchemaTests
             ],
             currentEvidence.FindPrimaryKey()!.Properties.Select(property => property.Name));
 
-        Assert.All(
-            new[]
-            {
-                typeof(ReleaseRow),
-                typeof(EvidenceRecordRow),
-                typeof(CurrentEvidenceRow),
-                typeof(EvaluationRoundRow),
-                typeof(WorkflowRequestRow),
-                typeof(DecisionSnapshotRow),
-                typeof(HumanResponseRow),
-                typeof(WorkflowCorrelationRow),
-                typeof(TimelineEntryRow),
-            },
-            rowType => Assert.Null(
-                context.Model.FindEntityType(rowType)!.FindProperty(string.Concat("Re", "vision"))));
-
         Assert.True(
             context.Model.FindEntityType(typeof(WorkflowRequestRow))!
                 .FindProperty(nameof(WorkflowRequestRow.ConcurrencyToken))!

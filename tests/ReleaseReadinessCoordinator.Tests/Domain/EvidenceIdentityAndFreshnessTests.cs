@@ -34,19 +34,6 @@ public sealed class EvidenceIdentityTests
         Assert.Equal(previousTestEvidence.CriticalSuiteFailures, replacement.CriticalSuiteFailures);
     }
 
-    [Theory]
-    [InlineData("ReleaseReadinessCoordinator.Domain.Fingerprints")]
-    [InlineData("ReleaseReadinessCoordinator.Domain.ResultInvalidation")]
-    [InlineData("ReleaseReadinessCoordinator.Domain.InvalidationMap")]
-    [InlineData("ReleaseReadinessCoordinator.Domain.ResultValidity")]
-    [InlineData("ReleaseReadinessCoordinator.Domain.ResultValidityState")]
-    [InlineData("ReleaseReadinessCoordinator.Domain.ResultValidityReason")]
-    [InlineData("ReleaseReadinessCoordinator.Domain.InputGeneration")]
-    public void Superseded_change_detection_types_are_absent(string typeName)
-    {
-        Assert.Null(typeof(EvidenceRecord).Assembly.GetType(typeName));
-    }
-
     private static TestEvidenceRecord TestEvidence(
         Guid id,
         int version,

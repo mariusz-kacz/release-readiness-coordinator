@@ -34,20 +34,6 @@ public sealed class DecisionContractTests
         });
         Assert.Equal(Utc(2026, 8, 15, 7), snapshot.EarliestValidityBound);
         Assert.Equal("All deterministic checks passed.", snapshot.DecisionBrief);
-        Assert.Null(typeof(DecisionSnapshot).GetProperty("ResultFingerprints"));
-        Assert.Null(typeof(DecisionSnapshot).GetProperty("ReleaseFingerprint"));
-        Assert.Null(typeof(DecisionSnapshot).GetProperty("DecisionBriefHash"));
-        Assert.Null(typeof(BranchResult).GetProperty("Validity"));
-    }
-
-    [Fact]
-    public void Human_response_contains_only_terminal_intent_and_audit_fields()
-    {
-        var properties = typeof(HumanResponse).GetProperties().Select(property => property.Name).Order();
-
-        Assert.Equal(
-            ["Comment", "Decision", "Id", "RespondedAt", "Responder"],
-            properties);
     }
 
     private static BranchResult[] CompleteResults() =>

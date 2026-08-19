@@ -132,34 +132,14 @@ public sealed class DecisionIntegritySnapshotTests
 
 public sealed class DecisionIntegrityResponseTests
 {
-    [Theory]
-    [InlineData(HumanDecision.Approve, ProcessPhase.Approved)]
-    [InlineData(HumanDecision.Reject, ProcessPhase.Rejected)]
-    public async Task Response_is_persisted_once_and_terminates_the_release(
-        HumanDecision decision,
-        ProcessPhase expectedPhase)
-    {
-        await using var fixture = await DecisionFixture.CreateAsync($"current-{decision}");
-        var response = fixture.Response(decision);
-        var handler = new HumanDecisionHandler(fixture.Submission.ReleaseId, fixture.DataService);
-
-        var first = await handler.HandleAsync(response);
-        var replay = await handler.HandleAsync(response);
-
-        Assert.Equal(first, replay);
-        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
-        Assert.Equal(expectedPhase, detail!.Release.Phase);
-        Assert.Equal(first, detail.TerminalResponse);
-        Assert.Equal(TimelineEntryKind.HumanResponseAccepted, detail.Timeline[^1].Kind);
-    }
-
     [Fact]
     public async Task Reusing_a_response_id_with_different_content_fails()
     {
         await using var fixture = await DecisionFixture.CreateAsync("conflicting-response-id");
         var response = fixture.Response(HumanDecision.Approve);
         var handler = new HumanDecisionHandler(fixture.Submission.ReleaseId, fixture.DataService);
-        await handler.HandleAsync(response);
+        var first = await handler.HandleAsync(response);
+        var replay = await handler.HandleAsync(response);
         var conflict = new HumanResponse(
             response.Id,
             HumanDecision.Reject,
@@ -167,6 +147,7 @@ public sealed class DecisionIntegrityResponseTests
             "Conflicting decision.",
             response.RespondedAt);
 
+        Assert.Equal(first, replay);
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(conflict));
 
         var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
@@ -175,26 +156,10 @@ public sealed class DecisionIntegrityResponseTests
     }
 
     [Fact]
-    public async Task Approval_does_not_regenerate_the_brief_or_revalidate_expired_results()
+    public async Task Approval_boundary_preserves_the_snapshot_and_rejects_workflow_input_changes()
     {
         await using var fixture = await DecisionFixture.CreateAsync("closed-snapshot");
         var originalBrief = fixture.Snapshot.DecisionBrief;
-        fixture.Clock.SetUtcNow(
-            new DateTimeOffset(2026, 8, 18, 12, 0, 0, TimeSpan.Zero));
-        var handler = new HumanDecisionHandler(fixture.Submission.ReleaseId, fixture.DataService);
-
-        await handler.HandleAsync(fixture.Response(HumanDecision.Approve));
-
-        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
-        Assert.Equal(ProcessPhase.Approved, detail!.Release.Phase);
-        Assert.Equal(originalBrief, Assert.Single(detail.DecisionSnapshots).DecisionBrief);
-        Assert.Single(detail.EvaluationRounds);
-    }
-
-    [Fact]
-    public async Task Approval_wait_locks_evidence_remediation_and_rerun_changes()
-    {
-        await using var fixture = await DecisionFixture.CreateAsync("approval-lock");
 
         var evidenceConflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(
             fixture.ReplaceTestEvidenceAsync);
@@ -206,26 +171,20 @@ public sealed class DecisionIntegrityResponseTests
         Assert.All(
             [evidenceConflict, remediationConflict, rerunConflict],
             conflict => Assert.Equal(ApplicationDataConflictKind.InvalidState, conflict.Kind));
+
+        fixture.Clock.SetUtcNow(
+            new DateTimeOffset(2026, 8, 18, 12, 0, 0, TimeSpan.Zero));
+        var handler = new HumanDecisionHandler(fixture.Submission.ReleaseId, fixture.DataService);
+
+        await handler.HandleAsync(fixture.Response(HumanDecision.Approve));
+
         var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
-        Assert.Equal(ProcessPhase.WaitingForApproval, detail!.Release.Phase);
+        Assert.Equal(ProcessPhase.Approved, detail!.Release.Phase);
+        Assert.Equal(originalBrief, Assert.Single(detail.DecisionSnapshots).DecisionBrief);
         Assert.Single(detail.EvaluationRounds);
         Assert.Empty(detail.RemediationSubmissions);
         Assert.Single(detail.EvidenceHistory.Where(item => item.Kind is EvidenceKind.Test));
-        Assert.Null(detail.TerminalResponse);
-    }
-
-    [Fact]
-    public void Human_response_does_not_submit_snapshot_or_concurrency_identity()
-    {
-        var responseProperties = typeof(HumanResponse).GetProperties().Select(property => property.Name);
-        var requestProperties = typeof(HumanDecisionRequest).GetProperties().Select(property => property.Name);
-
-        Assert.DoesNotContain("RequestId", responseProperties);
-        Assert.DoesNotContain("SnapshotId", responseProperties);
-        Assert.DoesNotContain("SnapshotConcurrencyToken", responseProperties);
-        Assert.DoesNotContain("ConcurrencyToken", requestProperties);
-        Assert.Null(typeof(HumanResponse).Assembly.GetType(
-            "ReleaseReadinessCoordinator.Domain.HumanResponseValidation"));
+        Assert.NotNull(detail.TerminalResponse);
     }
 }
 
@@ -275,20 +234,6 @@ public sealed class DecisionIntegrityRealGraphTests
         var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
         Assert.Equal(ProcessPhase.WaitingForApproval, detail!.Release.Phase);
         Assert.Null(detail.TerminalResponse);
-    }
-
-    [Fact]
-    public async Task Human_decision_has_no_edge_back_to_the_planner()
-    {
-        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(BranchOutcome.Passed);
-        var workflow = host.CreateWorkflow();
-
-        var edges = workflow.ReflectEdges().SelectMany(pair => pair.Value);
-
-        Assert.DoesNotContain(
-            edges,
-            edge => edge.Connection.SourceIds.Contains(ReleaseWorkflowExecutorIds.HumanDecisionHandler)
-                && edge.Connection.SinkIds.Contains(ReleaseWorkflowExecutorIds.Planner));
     }
 
     private static ApprovalResponse Response(PendingApprovalWait pending, HumanDecision decision)

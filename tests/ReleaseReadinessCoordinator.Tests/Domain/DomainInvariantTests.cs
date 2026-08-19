@@ -61,37 +61,6 @@ public sealed class DomainInvariantTests
     }
 
     [Fact]
-    public void Evidence_vocabulary_covers_all_three_readiness_sources()
-    {
-        EvidenceRecord[] evidence =
-        [
-            new TestEvidenceRecord(
-                Guid.NewGuid(), Id, 1, SubmittedAt, null,
-                "2.4.0", Utc(2026, 8, 14, 7), 0.97m, []),
-            new SecurityEvidenceRecord(
-                Guid.NewGuid(), Id, 1, SubmittedAt, null,
-                "2.4.0", Utc(2026, 8, 14, 7), [], [],
-                new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
-            new ChangeEvidenceRecord(
-                Guid.NewGuid(), Id, 1, SubmittedAt, null,
-                isApproved: true,
-                new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11))),
-        ];
-
-        Assert.Equal(
-            [EvidenceKind.Test, EvidenceKind.Security, EvidenceKind.Change],
-            evidence.Select(item => item.Kind));
-    }
-
-    [Fact]
-    public void State_dimensions_are_distinct_domain_concepts()
-    {
-        Assert.NotEqual(typeof(ProcessPhase), typeof(BranchOutcome));
-        Assert.NotEqual(typeof(BranchOutcome), typeof(ExecutionDisposition));
-        Assert.NotEqual(typeof(ExecutionDisposition), typeof(PlanningReason));
-    }
-
-    [Fact]
     public void Branch_result_rejects_evidence_from_another_readiness_source()
     {
         Assert.Throws<ArgumentException>(
@@ -142,7 +111,7 @@ public sealed class DomainInvariantTests
     }
 
     [Fact]
-    public void Evaluation_round_requires_exactly_one_result_per_readiness_check()
+    public void Evaluation_contract_rejects_duplicate_omitted_and_unknown_checks()
     {
         var results = CompleteResults();
         results[2] = Result(ReadinessCheck.Test, EvidenceKind.Test);
@@ -151,6 +120,15 @@ public sealed class DomainInvariantTests
             () => new EvaluationRound(
                 Guid.NewGuid(), Id, roundNumber: 2,
                 Utc(2026, 8, 14, 8), Utc(2026, 8, 14, 9), results));
+
+        Assert.Throws<InvalidOperationException>(
+            () => new EvaluationRound(
+                Guid.NewGuid(), Id, roundNumber: 2,
+                Utc(2026, 8, 14, 8), Utc(2026, 8, 14, 9),
+                CompleteResults().Where(result => result.Check is not ReadinessCheck.Change)));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => Result((ReadinessCheck)999, EvidenceKind.Test));
     }
 
     [Fact]

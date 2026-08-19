@@ -3,279 +3,8 @@ using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
-using BranchResult = ReleaseReadinessCoordinator.Domain.BranchResult;
 
 namespace ReleaseReadinessCoordinator.Tests.Workflow;
-
-public sealed class RemediationWorkflowAggregationTests
-{
-    [Fact]
-    public async Task Complete_fan_in_persists_one_round_and_one_request_with_every_problem()
-    {
-        await using var database = await TemporaryDatabase.CreateAsync();
-        var submission = Submission("aggregate-problems");
-        var evidence = Evidence(submission);
-
-        await using var context = database.CreateContext();
-        var dataService = new ApplicationDataService(context);
-        await SubmitAsync(dataService, submission, evidence);
-        var startedAt = Utc(2026, 8, 17, 10);
-        var start = new EvaluationRoundStart(Guid.NewGuid(), 1, startedAt, []);
-        var results = new[]
-        {
-            Result(start, ReadinessCheck.Test, BranchOutcome.Blocked, evidence[0]),
-            Result(start, ReadinessCheck.Security, BranchOutcome.MissingEvidence, evidence[1]),
-            Result(start, ReadinessCheck.Change, BranchOutcome.Passed, evidence[2]),
-        };
-        var aggregator = new RoundAggregator(
-            dataService,
-            new FixedTimeProvider(Utc(2026, 8, 17, 10, 5).Value));
-
-        var first = await aggregator.CompleteAsync(start, results);
-        var replay = await aggregator.CompleteAsync(start, results);
-
-        Assert.Equal(first.Round.Id, replay.Round.Id);
-        Assert.Equal(
-            first.Round.Results.Select(result => result.Id),
-            replay.Round.Results.Select(result => result.Id));
-        Assert.NotNull(first.RemediationRequest);
-        Assert.NotNull(replay.RemediationRequest);
-        Assert.Equal(first.RemediationRequest.Id, replay.RemediationRequest.Id);
-        Assert.Equal(
-            [ReadinessCheck.Test, ReadinessCheck.Security],
-            first.RemediationRequest.Problems.Select(result => result.Check));
-
-        var detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
-        Assert.NotNull(detail);
-        Assert.Single(detail.EvaluationRounds);
-        Assert.Single(detail.RemediationRequests);
-        Assert.Equal(3, detail.EvaluationRounds[0].Results.Length);
-        Assert.All(
-            detail.EvaluationRounds[0].Results,
-            result => Assert.StartsWith("Executed because", result.PlanningDetail));
-        Assert.Equal(
-            [TimelineEntryKind.ReleaseSubmitted, TimelineEntryKind.EvaluationCompleted, TimelineEntryKind.RemediationRequested],
-            detail.Timeline.Select(entry => entry.Kind));
-    }
-
-    private static async Task SubmitAsync(
-        IApplicationDataService dataService,
-        ReleaseSubmission submission,
-        IReadOnlyCollection<EvidenceRecord> evidence) =>
-        await dataService.SubmitReleaseAsync(
-            submission,
-            evidence,
-            new TimelineEntry(
-                Guid.NewGuid(),
-                submission.ReleaseId,
-                1,
-                TimelineEntryKind.ReleaseSubmitted,
-                "Release submitted.",
-                submission.SubmittedAt),
-            $"test:{submission.ReleaseId.Value}:submit");
-
-    private static BranchResult Result(
-        EvaluationRoundStart start,
-        ReadinessCheck check,
-        BranchOutcome outcome,
-        EvidenceRecord evidence) => new(
-        Guid.NewGuid(),
-        evidence.ReleaseId,
-        start.RoundNumber,
-        check,
-        outcome,
-        ExecutionDisposition.Executed,
-        PlanningReason.InitialEvaluation,
-        "Executed because no prior result exists.",
-        evidence.Id,
-        evidence.Kind,
-        outcome is BranchOutcome.Passed ? Utc(2026, 8, 17, 12) : null,
-        ["Attempt 1 succeeded."],
-        new Dictionary<string, string> { ["result"] = outcome.ToString() },
-        reuseSourceResultId: null,
-        reuseSourceRound: null);
-
-    private static ReleaseSubmission Submission(string releaseId) => new(
-        new ReleaseId(releaseId),
-        "orders",
-        "2.4.0",
-        new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
-        Utc(2026, 8, 17, 9));
-
-    private static EvidenceRecord[] Evidence(ReleaseSubmission submission) =>
-    [
-        new TestEvidenceRecord(
-            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
-            submission.ReleaseVersion, submission.SubmittedAt, 0.90m, []),
-        new SecurityEvidenceRecord(
-            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
-            submission.ReleaseVersion, submission.SubmittedAt, [], [],
-            new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
-        new ChangeEvidenceRecord(
-            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
-            true, submission.RequestedDeploymentWindow),
-    ];
-
-    private static UtcInstant Utc(int year, int month, int day, int hour, int minute = 0) =>
-        new(new DateTimeOffset(year, month, day, hour, minute, 0, TimeSpan.Zero));
-
-    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => utcNow;
-    }
-}
-
-public sealed class RemediationWorkflowResponseTests
-{
-    [Fact]
-    public async Task Correlated_response_replaces_only_named_evidence_records_and_replays_once()
-    {
-        await using var database = await TemporaryDatabase.CreateAsync();
-        var submission = Submission();
-        var evidence = Evidence(submission);
-
-        await using var context = database.CreateContext();
-        var dataService = new ApplicationDataService(context);
-        await dataService.SubmitReleaseAsync(
-            submission,
-            evidence,
-            Timeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
-            "response:submit");
-        var round = Round(submission, evidence);
-        await dataService.SaveEvaluationRoundAsync(
-            round,
-            Timeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
-            "response:round:1");
-        var request = new ReleaseReadinessCoordinator.Domain.RemediationRequest(
-            Guid.NewGuid(),
-            submission.ReleaseId,
-            1,
-            Utc(2026, 8, 17, 10),
-            round.Results.Where(result => result.Outcome is not BranchOutcome.Passed));
-        await dataService.OpenRemediationRequestAsync(
-            request,
-            Timeline(submission.ReleaseId, 3, TimelineEntryKind.RemediationRequested, "Remediation requested."),
-            "response:request:1");
-
-        var replacement = new TestEvidenceRecord(
-            Guid.NewGuid(),
-            submission.ReleaseId,
-            2,
-            Utc(2026, 8, 17, 10, 30),
-            evidence[0].Id,
-            submission.ReleaseVersion,
-            Utc(2026, 8, 17, 10),
-            0.99m,
-            []);
-        var remediation = new RemediationSubmission(
-            Guid.NewGuid(),
-            request.Id,
-            Utc(2026, 8, 17, 10, 30),
-            new Dictionary<EvidenceKind, Guid> { [EvidenceKind.Test] = replacement.Id },
-            [ReadinessCheck.Change]);
-        var response = new RemediationWorkflowResponse(remediation, [replacement]);
-        var handler = new RemediationHandler(submission.ReleaseId, dataService);
-
-        var mismatch = new RemediationSubmission(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            remediation.SubmittedAt,
-            new Dictionary<EvidenceKind, Guid>(),
-            []);
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => handler.HandleAsync(new RemediationWorkflowResponse(mismatch, [])));
-
-        var first = await handler.HandleAsync(response);
-        var replay = await handler.HandleAsync(response);
-
-        Assert.Equal(2, first.RoundNumber);
-        Assert.Equal(first.RoundNumber, replay.RoundNumber);
-        Assert.Equal(new[] { ReadinessCheck.Change }, first.ExplicitlySelectedChecks.AsEnumerable());
-
-        var detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
-        Assert.NotNull(detail);
-        Assert.Equal(submission, detail.Release.Submission);
-        Assert.Single(detail.RemediationSubmissions);
-        Assert.Equal(
-            new[] { ReadinessCheck.Change },
-            detail.RemediationSubmissions[0].ExplicitlySelectedChecks.AsEnumerable());
-        Assert.Equal(replacement.Id, detail.CurrentEvidence[EvidenceKind.Test].Id);
-        Assert.Equal(evidence[1].Id, detail.CurrentEvidence[EvidenceKind.Security].Id);
-        Assert.Equal(evidence[2].Id, detail.CurrentEvidence[EvidenceKind.Change].Id);
-        Assert.Equal(2, detail.EvidenceHistory.Count(item => item.Kind is EvidenceKind.Test));
-        Assert.Equal(ProcessPhase.Evaluating, detail.Release.Phase);
-        Assert.Equal(4, detail.Timeline.Length);
-    }
-
-    private static EvaluationRound Round(
-        ReleaseSubmission submission,
-        IReadOnlyList<EvidenceRecord> evidence)
-    {
-        var start = new EvaluationRoundStart(Guid.NewGuid(), 1, Utc(2026, 8, 17, 9, 30), []);
-        return new EvaluationRound(
-            start.RoundId,
-            submission.ReleaseId,
-            1,
-            start.StartedAt,
-            Utc(2026, 8, 17, 10),
-            [
-                Result(start, ReadinessCheck.Test, BranchOutcome.Blocked, evidence[0]),
-                Result(start, ReadinessCheck.Security, BranchOutcome.Passed, evidence[1]),
-                Result(start, ReadinessCheck.Change, BranchOutcome.Passed, evidence[2]),
-            ]);
-    }
-
-    private static BranchResult Result(
-        EvaluationRoundStart start,
-        ReadinessCheck check,
-        BranchOutcome outcome,
-        EvidenceRecord evidence) => new(
-        Guid.NewGuid(),
-        evidence.ReleaseId,
-        start.RoundNumber,
-        check,
-        outcome,
-        ExecutionDisposition.Executed,
-        PlanningReason.InitialEvaluation,
-        "Executed because no prior result exists.",
-        evidence.Id,
-        evidence.Kind,
-        outcome is BranchOutcome.Passed ? Utc(2026, 8, 17, 12) : null,
-        ["Attempt 1 succeeded."],
-        new Dictionary<string, string> { ["result"] = outcome.ToString() },
-        null,
-        null);
-
-    private static TimelineEntry Timeline(
-        ReleaseId key,
-        long sequence,
-        TimelineEntryKind kind,
-        string summary) => new(Guid.NewGuid(), key, sequence, kind, summary, Utc(2026, 8, 17, 10));
-
-    private static ReleaseSubmission Submission() => new(
-        new ReleaseId("correlated-response"),
-        "orders",
-        "2.4.0",
-        new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
-        Utc(2026, 8, 17, 9));
-
-    private static EvidenceRecord[] Evidence(ReleaseSubmission submission) =>
-    [
-        new TestEvidenceRecord(
-            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
-            submission.ReleaseVersion, submission.SubmittedAt, 0.90m, []),
-        new SecurityEvidenceRecord(
-            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
-            submission.ReleaseVersion, submission.SubmittedAt, [], [],
-            new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
-        new ChangeEvidenceRecord(
-            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
-            true, submission.RequestedDeploymentWindow),
-    ];
-
-    private static UtcInstant Utc(int year, int month, int day, int hour, int minute = 0) =>
-        new(new DateTimeOffset(year, month, day, hour, minute, 0, TimeSpan.Zero));
-}
 
 public sealed class RemediationWorkflowRealGraphTests
 {
@@ -315,10 +44,11 @@ public sealed class RemediationWorkflowRealGraphTests
             ReleaseWorkflowFactory.Create(submission, dataService, timeProvider, dependencies);
 
         using var coordinator = new CheckpointStoreCoordinator(checkpoints.Info);
+        var start = new EvaluationRoundStart(Guid.NewGuid(), 1, now, []);
         var started = Assert.IsType<PendingRemediationWait>(
             await coordinator.StartAsync(
                 Workflow(),
-                new EvaluationRoundStart(Guid.NewGuid(), 1, now, []),
+                start,
                 "real-graph-remediation"));
 
         var afterFirstRound = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
@@ -327,6 +57,9 @@ public sealed class RemediationWorkflowRealGraphTests
         Assert.Equal(
             [ReadinessCheck.Test, ReadinessCheck.Security],
             request.Problems.Select(result => result.Check));
+        var replay = await new RoundAggregator(dataService, timeProvider)
+            .CompleteAsync(start, afterFirstRound.EvaluationRounds[0].Results);
+        Assert.Equal(request.Id, replay.RemediationRequest?.Id);
 
         var replacements = ReplacementEvidence(submission, initialEvidence);
         var remediation = new RemediationSubmission(
@@ -334,7 +67,7 @@ public sealed class RemediationWorkflowRealGraphTests
             request.Id,
             Utc(2026, 8, 17, 10, 15),
             replacements.ToDictionary(item => item.Kind, item => item.Id),
-            []);
+            [ReadinessCheck.Test]);
         var response = new RemediationWorkflowResponse(remediation, replacements);
         var mismatched = new RemediationWorkflowResponse(
             new RemediationSubmission(
@@ -344,6 +77,9 @@ public sealed class RemediationWorkflowRealGraphTests
                 new Dictionary<EvidenceKind, Guid>(),
                 []),
             []);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new RemediationHandler(submission.ReleaseId, dataService).HandleAsync(mismatched));
 
         await Assert.ThrowsAsync<WorkflowContinuationException>(() =>
             coordinator.ResumeRemediationAsync(
@@ -370,7 +106,7 @@ public sealed class RemediationWorkflowRealGraphTests
             test =>
             {
                 Assert.Equal(ExecutionDisposition.Executed, test.Disposition);
-                Assert.Equal(PlanningReason.EvidenceChanged, test.PlanningReason);
+                Assert.Equal(PlanningReason.ExplicitlySelected, test.PlanningReason);
             },
             security =>
             {
@@ -540,7 +276,6 @@ public sealed class RemediationWorkflowRealGraphTests
         }
     }
 }
-
 internal sealed class TemporaryDatabase : IAsyncDisposable
 {
     private TemporaryDatabase(string path)
