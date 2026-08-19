@@ -3,6 +3,12 @@
 @using ReleaseReadinessCoordinator.Domain
 @{
     var submission = Model.State.Release.Submission;
+    var activeProblemChecks = Model.State.Request.Problems
+        .Select(problem => problem.Check)
+        .ToHashSet();
+    var testHasActiveProblem = activeProblemChecks.Contains(ReadinessCheck.Test);
+    var securityHasActiveProblem = activeProblemChecks.Contains(ReadinessCheck.Security);
+    var changeHasActiveProblem = activeProblemChecks.Contains(ReadinessCheck.Change);
     ViewData["Title"] = $"Remediate release {submission.ReleaseId}";
 }
 
@@ -10,7 +16,7 @@
     <div>
         <p class="text-uppercase text-secondary fw-semibold mb-1">Release readiness remediation</p>
         <h1>Remediate release @submission.ReleaseId</h1>
-        <p class="lead mb-0">Resolve the active problems or explicitly select checks to run again.</p>
+        <p class="lead mb-0">Update evidence for active problems. Passing checks rerun only when their evidence changes or you select an override.</p>
     </div>
     <a class="btn btn-outline-secondary" asp-page="/Releases/Detail" asp-route-releaseId="@submission.ReleaseId.Value">Back to release detail</a>
 </header>
@@ -58,6 +64,14 @@
     </div>
 </section>
 
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <a class="btn btn-outline-secondary"
+       asp-page="/Releases/Remediate"
+       asp-route-releaseId="@submission.ReleaseId.Value"
+       asp-route-demo="ready">Load ready demo evidence</a>
+    <span class="text-secondary small">Fills the form only; the workflow continues after you submit.</span>
+</div>
+
 <form method="post" asp-route-releaseId="@submission.ReleaseId.Value" class="detail-section">
     <div asp-validation-summary="All" class="text-danger" role="alert"></div>
     <input asp-for="Input.CorrelationToken" type="hidden" />
@@ -69,12 +83,16 @@
 
     <fieldset class="border rounded p-3 mb-4">
         <legend class="float-none w-auto px-2 fs-5">New evidence versions</legend>
-        <p class="text-secondary">Select a branch to append an immutable version. Unselected branch fields are ignored.</p>
+        <p class="text-secondary">Changing any field for a branch appends one immutable evidence version for that branch and reruns its check.</p>
 
-        <section class="mb-4" aria-labelledby="test-evidence-heading">
+        <section class="mb-4"
+                 aria-labelledby="test-evidence-heading"
+                 data-evidence-section
+                 data-active-problem="@testHasActiveProblem.ToString().ToLowerInvariant()"
+                 data-rerun-id="Input_RerunTest">
             <h3 id="test-evidence-heading" class="h6">Test evidence</h3>
+            <p id="test-branch-status" class="small fw-semibold" data-branch-status aria-live="polite">@(testHasActiveProblem ? "Active problem" : "Passing result") &mdash; @(testHasActiveProblem ? "this check will rerun automatically." : "it will be reused if its evidence stays unchanged and remains current.")</p>
             <p class="small text-secondary">@(Model.State.CurrentEvidence.TryGetValue(EvidenceKind.Test, out var currentTest) ? $"Current version: {currentTest.Version}. The replacement will be version {currentTest.Version + 1}." : "No current record. The new record will be version 1.")</p>
-            <div class="form-check mb-3"><input asp-for="Input.ReplaceTestEvidence" class="form-check-input" /><label asp-for="Input.ReplaceTestEvidence" class="form-check-label">Create a new Test evidence version</label></div>
             <div class="row g-3">
                 <div class="col-md-4"><label asp-for="Input.TestRunVersion" class="form-label">Test run version</label><input asp-for="Input.TestRunVersion" class="form-control" /><span asp-validation-for="Input.TestRunVersion" class="text-danger"></span></div>
                 <div class="col-md-4"><label asp-for="Input.TestCompletedAt" class="form-label">Completed at</label><input asp-for="Input.TestCompletedAt" class="form-control" /><span asp-validation-for="Input.TestCompletedAt" class="text-danger"></span></div>
@@ -83,10 +101,14 @@
             </div>
         </section>
 
-        <section class="mb-4" aria-labelledby="security-evidence-heading">
+        <section class="mb-4"
+                 aria-labelledby="security-evidence-heading"
+                 data-evidence-section
+                 data-active-problem="@securityHasActiveProblem.ToString().ToLowerInvariant()"
+                 data-rerun-id="Input_RerunSecurity">
             <h3 id="security-evidence-heading" class="h6">Security evidence</h3>
+            <p id="security-branch-status" class="small fw-semibold" data-branch-status aria-live="polite">@(securityHasActiveProblem ? "Active problem" : "Passing result") &mdash; @(securityHasActiveProblem ? "this check will rerun automatically." : "it will be reused if its evidence stays unchanged and remains current.")</p>
             <p class="small text-secondary">@(Model.State.CurrentEvidence.TryGetValue(EvidenceKind.Security, out var currentSecurity) ? $"Current version: {currentSecurity.Version}. The replacement will be version {currentSecurity.Version + 1}." : "No current record. The new record will be version 1.")</p>
-            <div class="form-check mb-3"><input asp-for="Input.ReplaceSecurityEvidence" class="form-check-input" /><label asp-for="Input.ReplaceSecurityEvidence" class="form-check-label">Create a new Security evidence version</label></div>
             <div class="row g-3">
                 <div class="col-md-6"><label asp-for="Input.SecurityScanVersion" class="form-label">Scan version</label><input asp-for="Input.SecurityScanVersion" class="form-control" /><span asp-validation-for="Input.SecurityScanVersion" class="text-danger"></span></div>
                 <div class="col-md-6"><label asp-for="Input.SecurityScannedAt" class="form-label">Scanned at</label><input asp-for="Input.SecurityScannedAt" class="form-control" /><span asp-validation-for="Input.SecurityScannedAt" class="text-danger"></span></div>
@@ -96,10 +118,13 @@
             </div>
         </section>
 
-        <section aria-labelledby="change-evidence-heading">
+        <section aria-labelledby="change-evidence-heading"
+                 data-evidence-section
+                 data-active-problem="@changeHasActiveProblem.ToString().ToLowerInvariant()"
+                 data-rerun-id="Input_RerunChange">
             <h3 id="change-evidence-heading" class="h6">Change evidence</h3>
+            <p id="change-branch-status" class="small fw-semibold" data-branch-status aria-live="polite">@(changeHasActiveProblem ? "Active problem" : "Passing result") &mdash; @(changeHasActiveProblem ? "this check will rerun automatically." : "it will be reused if its evidence stays unchanged and remains current.")</p>
             <p class="small text-secondary">@(Model.State.CurrentEvidence.TryGetValue(EvidenceKind.Change, out var currentChange) ? $"Current version: {currentChange.Version}. The replacement will be version {currentChange.Version + 1}." : "No current record. The new record will be version 1.")</p>
-            <div class="form-check mb-3"><input asp-for="Input.ReplaceChangeEvidence" class="form-check-input" /><label asp-for="Input.ReplaceChangeEvidence" class="form-check-label">Create a new Change evidence version</label></div>
             <div class="row g-3">
                 <div class="col-md-4 form-check ms-2 mt-5"><input asp-for="Input.ChangeApproved" class="form-check-input" /><label asp-for="Input.ChangeApproved" class="form-check-label">Approved</label></div>
                 <div class="col-md-4"><label asp-for="Input.ChangeWindowStart" class="form-label">Approved window start</label><input asp-for="Input.ChangeWindowStart" class="form-control" /><span asp-validation-for="Input.ChangeWindowStart" class="text-danger"></span></div>
@@ -109,16 +134,63 @@
     </fieldset>
 
     <fieldset class="border rounded p-3 mb-4">
-        <legend class="float-none w-auto px-2 fs-5">Explicit rerun selections</legend>
-        <p class="text-secondary">Selected checks execute even when their passing result would otherwise be reusable.</p>
-        <div class="form-check"><input asp-for="Input.RerunTest" class="form-check-input" /><label asp-for="Input.RerunTest" class="form-check-label">Rerun Test</label></div>
-        <div class="form-check"><input asp-for="Input.RerunSecurity" class="form-check-input" /><label asp-for="Input.RerunSecurity" class="form-check-label">Rerun Security</label></div>
-        <div class="form-check"><input asp-for="Input.RerunChange" class="form-check-input" /><label asp-for="Input.RerunChange" class="form-check-label">Rerun Change</label></div>
+        <legend class="float-none w-auto px-2 fs-5">Rerun checks with unchanged evidence</legend>
+        <p class="text-secondary">Use these overrides only for passing, current checks whose evidence you are not changing. Active problems, changed evidence, and expired results rerun automatically.</p>
+        <div class="form-check">
+            <input asp-for="Input.RerunTest" class="form-check-input" disabled="@(testHasActiveProblem ? "disabled" : null)" aria-describedby="test-branch-status" />
+            <label asp-for="Input.RerunTest" class="form-check-label">Rerun Test even if its evidence is unchanged</label>
+        </div>
+        <div class="form-check">
+            <input asp-for="Input.RerunSecurity" class="form-check-input" disabled="@(securityHasActiveProblem ? "disabled" : null)" aria-describedby="security-branch-status" />
+            <label asp-for="Input.RerunSecurity" class="form-check-label">Rerun Security even if its evidence is unchanged</label>
+        </div>
+        <div class="form-check">
+            <input asp-for="Input.RerunChange" class="form-check-input" disabled="@(changeHasActiveProblem ? "disabled" : null)" aria-describedby="change-branch-status" />
+            <label asp-for="Input.RerunChange" class="form-check-label">Rerun Change even if its evidence is unchanged</label>
+        </div>
     </fieldset>
 
-    <button type="submit" class="btn btn-primary">Submit remediation</button>
+    <button type="submit" class="btn btn-primary">Save evidence and run next evaluation</button>
 </form>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const changedStatus = "Evidence changed — a new version will be created and this check will rerun automatically.";
+
+            document.querySelectorAll("[data-evidence-section]").forEach(section => {
+                const inputs = Array.from(section.querySelectorAll("input:not([type='hidden']), textarea"));
+                const initialValues = inputs.map(input => input.type === "checkbox" ? input.checked : input.value);
+                const rerun = document.getElementById(section.dataset.rerunId);
+                const status = section.querySelector("[data-branch-status]");
+                const defaultStatus = status.textContent.trim();
+                const hasActiveProblem = section.dataset.activeProblem === "true";
+
+                const updateState = () => {
+                    const changed = inputs.some((input, index) =>
+                        (input.type === "checkbox" ? input.checked : input.value) !== initialValues[index]);
+
+                    if (hasActiveProblem) {
+                        rerun.checked = false;
+                        rerun.disabled = true;
+                        status.textContent = defaultStatus;
+                    } else if (changed) {
+                        rerun.checked = false;
+                        rerun.disabled = true;
+                        status.textContent = changedStatus;
+                    } else {
+                        rerun.disabled = false;
+                        status.textContent = defaultStatus;
+                    }
+                };
+
+                inputs.forEach(input => {
+                    input.addEventListener("input", updateState);
+                    input.addEventListener("change", updateState);
+                });
+                updateState();
+            });
+        })();
+    </script>
 }

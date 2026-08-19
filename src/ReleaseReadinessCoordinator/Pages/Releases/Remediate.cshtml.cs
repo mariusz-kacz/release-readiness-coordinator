@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -20,7 +21,8 @@ public sealed class RemediateModel(
 
     public async Task<IActionResult> OnGetAsync(
         string releaseId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? demo = null)
     {
         var id = ParseReleaseId(releaseId);
         if (id is null)
@@ -35,7 +37,14 @@ public sealed class RemediateModel(
         }
 
         State = active;
-        Input.CorrelationToken = active.CorrelationToken;
+        Input = InputModel.From(active);
+        if (string.Equals(demo, "ready", StringComparison.OrdinalIgnoreCase))
+        {
+            Input.ApplyReadyDemo(
+                active,
+                new UtcInstant(timeProvider.GetUtcNow().ToUniversalTime()));
+        }
+
         return Page();
     }
 
@@ -104,8 +113,6 @@ public sealed class RemediateModel(
         [StringLength(512)]
         public string CorrelationToken { get; set; } = string.Empty;
 
-        public bool ReplaceTestEvidence { get; set; }
-
         [StringLength(100)]
         public string? TestRunVersion { get; set; }
 
@@ -116,8 +123,6 @@ public sealed class RemediateModel(
 
         [StringLength(4000)]
         public string? CriticalSuiteFailures { get; set; }
-
-        public bool ReplaceSecurityEvidence { get; set; }
 
         [StringLength(100)]
         public string? SecurityScanVersion { get; set; }
@@ -133,8 +138,6 @@ public sealed class RemediateModel(
         [StringLength(8000)]
         public string? SecurityExceptions { get; set; }
 
-        public bool ReplaceChangeEvidence { get; set; }
-
         public bool ChangeApproved { get; set; }
 
         public DateTimeOffset? ChangeWindowStart { get; set; }
@@ -147,13 +150,74 @@ public sealed class RemediateModel(
 
         public bool RerunChange { get; set; }
 
+        internal static InputModel From(ActiveRemediationInteraction active)
+        {
+            var input = new InputModel { CorrelationToken = active.CorrelationToken };
+            if (Current(active, EvidenceKind.Test) is TestEvidenceRecord test)
+            {
+                input.TestRunVersion = test.TestRunVersion;
+                input.TestCompletedAt = test.CompletedAt?.Value;
+                input.TestPassRatePercent = test.PassRate * 100m;
+                input.CriticalSuiteFailures = FormatList(test.CriticalSuiteFailures);
+            }
+
+            if (Current(active, EvidenceKind.Security) is SecurityEvidenceRecord security)
+            {
+                input.SecurityScanVersion = security.ScanVersion;
+                input.SecurityScannedAt = security.ScannedAt?.Value;
+                input.CriticalFindingIds = FormatList(security.UnresolvedCriticalFindingIds);
+                input.HighFindingIds = FormatList(security.UnresolvedHighFindingIds);
+                input.SecurityExceptions = FormatExceptions(security.ApprovedExceptions);
+            }
+
+            if (Current(active, EvidenceKind.Change) is ChangeEvidenceRecord change)
+            {
+                input.ChangeApproved = change.IsApproved is true;
+                input.ChangeWindowStart = change.ApprovedWindow?.Start.Value;
+                input.ChangeWindowEnd = change.ApprovedWindow?.End.Value;
+            }
+
+            return input;
+        }
+
+        internal void ApplyReadyDemo(ActiveRemediationInteraction active, UtcInstant now)
+        {
+            var problemChecks = active.Request.Problems
+                .Select(problem => problem.Check)
+                .ToHashSet();
+            var submission = active.Release.Submission;
+            if (problemChecks.Contains(ReadinessCheck.Test))
+            {
+                TestRunVersion = submission.ReleaseVersion;
+                TestCompletedAt = now.Value;
+                TestPassRatePercent = 99m;
+                CriticalSuiteFailures = string.Empty;
+            }
+
+            if (problemChecks.Contains(ReadinessCheck.Security))
+            {
+                SecurityScanVersion = submission.ReleaseVersion;
+                SecurityScannedAt = now.Value;
+                CriticalFindingIds = string.Empty;
+                HighFindingIds = string.Empty;
+                SecurityExceptions = string.Empty;
+            }
+
+            if (problemChecks.Contains(ReadinessCheck.Change))
+            {
+                ChangeApproved = true;
+                ChangeWindowStart = submission.RequestedDeploymentWindow.Start.Value;
+                ChangeWindowEnd = submission.RequestedDeploymentWindow.End.Value;
+            }
+        }
+
         internal IReadOnlyCollection<EvidenceRecord> ToEvidence(
             ActiveRemediationInteraction active,
             UtcInstant recordedAt)
         {
             var releaseId = active.Release.Submission.ReleaseId;
             var evidence = new List<EvidenceRecord>();
-            if (ReplaceTestEvidence)
+            if (HasTestEvidenceChanges(active))
             {
                 var current = Current(active, EvidenceKind.Test);
                 evidence.Add(new TestEvidenceRecord(
@@ -164,7 +228,7 @@ public sealed class RemediateModel(
                     ParseList(CriticalSuiteFailures)));
             }
 
-            if (ReplaceSecurityEvidence)
+            if (HasSecurityEvidenceChanges(active))
             {
                 var current = Current(active, EvidenceKind.Security);
                 evidence.Add(new SecurityEvidenceRecord(
@@ -176,7 +240,7 @@ public sealed class RemediateModel(
                     ParseExceptions(SecurityExceptions)));
             }
 
-            if (ReplaceChangeEvidence)
+            if (HasChangeEvidenceChanges(active))
             {
                 var current = Current(active, EvidenceKind.Change);
                 evidence.Add(new ChangeEvidenceRecord(
@@ -219,6 +283,88 @@ public sealed class RemediateModel(
 
         private static int NextVersion(EvidenceRecord? current) =>
             current is null ? 1 : checked(current.Version + 1);
+
+        private bool HasTestEvidenceInput() =>
+            !string.IsNullOrWhiteSpace(TestRunVersion)
+            || TestCompletedAt.HasValue
+            || TestPassRatePercent.HasValue
+            || !string.IsNullOrWhiteSpace(CriticalSuiteFailures);
+
+        private bool HasSecurityEvidenceInput() =>
+            !string.IsNullOrWhiteSpace(SecurityScanVersion)
+            || SecurityScannedAt.HasValue
+            || !string.IsNullOrWhiteSpace(CriticalFindingIds)
+            || !string.IsNullOrWhiteSpace(HighFindingIds)
+            || !string.IsNullOrWhiteSpace(SecurityExceptions);
+
+        private bool HasTestEvidenceChanges(ActiveRemediationInteraction active)
+        {
+            if (Current(active, EvidenceKind.Test) is not TestEvidenceRecord current)
+            {
+                return HasTestEvidenceInput();
+            }
+
+            return !string.Equals(TestRunVersion?.Trim(), current.TestRunVersion, StringComparison.Ordinal)
+                || Instant(TestCompletedAt) != current.CompletedAt
+                || TestPassRatePercent / 100m != current.PassRate
+                || !SameItems(ParseList(CriticalSuiteFailures), current.CriticalSuiteFailures);
+        }
+
+        private bool HasSecurityEvidenceChanges(ActiveRemediationInteraction active)
+        {
+            if (Current(active, EvidenceKind.Security) is not SecurityEvidenceRecord current)
+            {
+                return HasSecurityEvidenceInput();
+            }
+
+            return !string.Equals(SecurityScanVersion?.Trim(), current.ScanVersion, StringComparison.Ordinal)
+                || Instant(SecurityScannedAt) != current.ScannedAt
+                || !SameItems(ParseList(CriticalFindingIds), current.UnresolvedCriticalFindingIds)
+                || !SameItems(ParseList(HighFindingIds), current.UnresolvedHighFindingIds)
+                || !SameExceptions(ParseExceptions(SecurityExceptions), current.ApprovedExceptions);
+        }
+
+        private bool HasChangeEvidenceChanges(ActiveRemediationInteraction active)
+        {
+            if (Current(active, EvidenceKind.Change) is not ChangeEvidenceRecord current)
+            {
+                return ChangeApproved || ChangeWindowStart.HasValue || ChangeWindowEnd.HasValue;
+            }
+
+            return ChangeApproved != (current.IsApproved ?? false)
+                || OptionalInterval(
+                    ChangeWindowStart,
+                    ChangeWindowEnd,
+                    "change approval window") != current.ApprovedWindow;
+        }
+
+        private static bool SameItems(
+            IEnumerable<string> posted,
+            ImmutableArray<string>? current) =>
+            posted.SequenceEqual(current ?? [], StringComparer.Ordinal);
+
+        private static bool SameExceptions(
+            IReadOnlyDictionary<string, (string Scope, UtcInstant ExpiresAt)> posted,
+            IReadOnlyDictionary<string, (string Scope, UtcInstant ExpiresAt)>? current) =>
+            posted.Count == (current?.Count ?? 0)
+            && posted.All(pair =>
+                current is not null
+                && current.TryGetValue(pair.Key, out var value)
+                && value == pair.Value);
+
+        private static string? FormatList(ImmutableArray<string>? values) =>
+            values.HasValue ? string.Join(", ", values.Value) : null;
+
+        private static string? FormatExceptions(
+            IReadOnlyDictionary<string, (string Scope, UtcInstant ExpiresAt)>? exceptions) =>
+            exceptions is null
+                ? null
+                : string.Join(
+                    Environment.NewLine,
+                    exceptions
+                        .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                        .Select(pair =>
+                            $"{pair.Key}|{pair.Value.Scope}|{pair.Value.ExpiresAt.Value:O}"));
 
     }
 

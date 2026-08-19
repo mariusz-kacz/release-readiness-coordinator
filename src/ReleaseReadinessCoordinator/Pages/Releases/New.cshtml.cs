@@ -11,20 +11,76 @@ namespace ReleaseReadinessCoordinator.Pages.Releases;
 
 public sealed class NewModel(
     ReleaseSubmissionApplicationService submissionService,
+    IApplicationDataService dataService,
     TimeProvider timeProvider) : PageModel
 {
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
+    [BindProperty(SupportsGet = true)]
+    [Display(Name = "Release ID")]
+    [StringLength(200)]
+    public string ExistingReleaseId { get; set; } = string.Empty;
+
     public IReadOnlyList<DemoReleaseFixture> Fixtures => DemoReleaseFixtures.All;
 
-    public void OnGet(string? fixture)
+    public async Task<IActionResult> OnGetAsync(
+        string? fixture,
+        CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(ExistingReleaseId))
+        {
+            return await ContinueAsync(cancellationToken);
+        }
+
         var selected = DemoReleaseFixtures.Find(fixture);
         if (selected is not null)
         {
             Input = InputModel.FromFixture(selected);
         }
+
+        return Page();
+    }
+
+    private async Task<IActionResult> ContinueAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return Page();
+        }
+
+        ReleaseId releaseId;
+        try
+        {
+            releaseId = new ReleaseId(ExistingReleaseId);
+        }
+        catch (ArgumentException)
+        {
+            ModelState.AddModelError(
+                nameof(ExistingReleaseId),
+                "Enter a valid release ID.");
+            return Page();
+        }
+
+        var detail = await dataService.GetReleaseDetailAsync(
+            releaseId,
+            cancellationToken);
+        if (detail is null)
+        {
+            ModelState.AddModelError(
+                nameof(ExistingReleaseId),
+                $"Release '{releaseId}' was not found.");
+            return Page();
+        }
+
+        var page = detail.Release.Phase switch
+        {
+            ProcessPhase.WaitingForRemediation => "/Releases/Remediate",
+            ProcessPhase.WaitingForApproval => "/Releases/Decision",
+            _ => "/Releases/Detail",
+        };
+        return RedirectToPage(page, new { releaseId = releaseId.Value });
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)

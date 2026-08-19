@@ -1,22 +1,40 @@
-@page
+@page "/"
 @model ReleaseReadinessCoordinator.Pages.Releases.NewModel
 @{
-    ViewData["Title"] = "Submit release";
+    ViewData["Title"] = "Release workflows";
 }
 
-<h1>Submit release</h1>
+<h1>Release workflows</h1>
 
-<p>Load a local fixture, review the values, then submit it as a new immutable release.</p>
-<div class="mb-4 d-flex flex-wrap gap-2">
-    @foreach (var fixture in Model.Fixtures)
-    {
-        <a class="btn btn-outline-secondary" asp-page="/Releases/New" asp-route-fixture="@fixture.Key">
-            Load @fixture.Name
-        </a>
-    }
-</div>
+<section class="detail-section mb-4" aria-labelledby="continue-workflow-heading">
+    <h2 id="continue-workflow-heading">Continue existing workflow</h2>
+    <p>Enter a release ID to open its active remediation or decision request, or view its current status.</p>
+    <form method="get" class="row g-3 align-items-end">
+        <div class="col-md-8">
+            <label asp-for="ExistingReleaseId" class="form-label"></label>
+            <input asp-for="ExistingReleaseId" class="form-control" required aria-required="true" />
+            <span asp-validation-for="ExistingReleaseId" class="text-danger"></span>
+        </div>
+        <div class="col-md-4">
+            <button type="submit" class="btn btn-primary">Continue workflow</button>
+        </div>
+    </form>
+</section>
 
-<form method="post">
+<section aria-labelledby="submit-release-heading">
+    <h2 id="submit-release-heading">Submit release</h2>
+
+    <p>Load a local fixture, review the values, then submit it as a new immutable release.</p>
+    <div class="mb-4 d-flex flex-wrap gap-2">
+        @foreach (var fixture in Model.Fixtures)
+        {
+            <a class="btn btn-outline-secondary" asp-page="/Releases/New" asp-route-fixture="@fixture.Key">
+                Load @fixture.Name
+            </a>
+        }
+    </div>
+
+    <form method="post">
     <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
     <p><span class="text-danger" aria-hidden="true">*</span> Required release metadata fields must be completed.</p>
 
@@ -92,7 +110,8 @@
     </fieldset>
 
     <button type="submit" class="btn btn-primary">Submit and start workflow</button>
-</form>
+    </form>
+</section>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />

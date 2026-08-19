@@ -112,6 +112,46 @@ public sealed class ReleaseSubmissionTests
         Assert.Equal(ProcessPhase.WaitingForApproval, detail.Release.Phase);
     }
 
+    [Theory]
+    [InlineData("complete", "/Releases/Decision")]
+    [InlineData("missing", "/Releases/Remediate")]
+    public async Task Continue_existing_workflow_routes_to_its_active_interaction(
+        string fixtureName,
+        string expectedPage)
+    {
+        var fixture = fixtureName == "complete"
+            ? DemoReleaseFixtures.Complete
+            : DemoReleaseFixtures.MissingEvidence;
+        await using var harness = await SubmissionHarness.CreateAsync();
+        var submission = harness.CreatePage();
+        submission.Input = NewModel.InputModel.FromFixture(fixture);
+        Assert.IsType<RedirectToPageResult>(
+            await submission.OnPostAsync(CancellationToken.None));
+        var page = harness.CreatePage();
+        page.ExistingReleaseId = fixture.ReleaseId;
+
+        var result = await page.OnGetAsync(fixture: null, CancellationToken.None);
+
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal(expectedPage, redirect.PageName);
+        Assert.Equal(fixture.ReleaseId, redirect.RouteValues!["releaseId"]);
+    }
+
+    [Fact]
+    public async Task Continue_unknown_release_rerenders_with_safe_feedback()
+    {
+        await using var harness = await SubmissionHarness.CreateAsync();
+        var page = harness.CreatePage();
+        page.ExistingReleaseId = "unknown-release";
+
+        var result = await page.OnGetAsync(fixture: null, CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.Contains(
+            page.ModelState[nameof(NewModel.ExistingReleaseId)]!.Errors,
+            error => error.ErrorMessage.Contains("not found", StringComparison.OrdinalIgnoreCase));
+    }
+
     private sealed class SubmissionHarness : IAsyncDisposable
     {
         private readonly string _databasePath;
@@ -154,7 +194,7 @@ public sealed class ReleaseSubmissionTests
                 dataService,
                 new ReleaseWorkflowService(dataService, _checkpointCoordinator, timeProvider),
                 timeProvider);
-            var page = new NewModel(submissionService, timeProvider)
+            var page = new NewModel(submissionService, dataService, timeProvider)
             {
                 PageContext = new PageContext
                 {

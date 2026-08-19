@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Net;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
@@ -44,9 +45,9 @@ public sealed class RemediationPageTests
         Assert.Contains("Security evidence is missing", html, StringComparison.Ordinal);
         Assert.Contains("workflow-request-42", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.CorrelationToken\"", html, StringComparison.Ordinal);
-        Assert.Contains("name=\"Input.ReplaceTestEvidence\"", html, StringComparison.Ordinal);
-        Assert.Contains("name=\"Input.ReplaceSecurityEvidence\"", html, StringComparison.Ordinal);
-        Assert.Contains("name=\"Input.ReplaceChangeEvidence\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Input.ReplaceTestEvidence\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Input.ReplaceSecurityEvidence\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Input.ReplaceChangeEvidence\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.TestRunVersion\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.TestPassRatePercent\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.SecurityScanVersion\"", html, StringComparison.Ordinal);
@@ -55,6 +56,31 @@ public sealed class RemediationPageTests
         Assert.Contains("name=\"Input.RerunTest\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.RerunSecurity\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.RerunChange\"", html, StringComparison.Ordinal);
+        Assert.Contains("Rerun checks with unchanged evidence", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "Changing any field for a branch appends one immutable evidence version",
+            html,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Active problem &mdash; this check will rerun automatically.",
+            html,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Passing result &mdash; it will be reused if its evidence stays unchanged and remains current.",
+            html,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Rerun Test even if its evidence is unchanged",
+            html,
+            StringComparison.Ordinal);
+        Assert.Contains("disabled", InputTag(html, "Input.RerunTest"), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("disabled", InputTag(html, "Input.RerunSecurity"), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("disabled", InputTag(html, "Input.RerunChange"), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("data-evidence-section", html, StringComparison.Ordinal);
+        Assert.Contains("data-branch-status", html, StringComparison.Ordinal);
+        Assert.Contains("Save evidence and run next evaluation", html, StringComparison.Ordinal);
+        Assert.Contains("Load ready demo evidence", html, StringComparison.Ordinal);
+        Assert.Contains("demo=ready", html, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"Input.ReleaseId\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"Input.ServiceName\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"Input.ReleaseVersion\"", html, StringComparison.Ordinal);
@@ -75,18 +101,15 @@ public sealed class RemediationPageTests
         page.Input = new RemediateModel.InputModel
         {
             CorrelationToken = state.CorrelationToken,
-            ReplaceTestEvidence = true,
             TestRunVersion = "2026.08.19",
             TestCompletedAt = Now.Value,
             TestPassRatePercent = 99m,
             CriticalSuiteFailures = string.Empty,
-            ReplaceSecurityEvidence = true,
             SecurityScanVersion = "2026.08.19",
             SecurityScannedAt = Now.Value,
             CriticalFindingIds = string.Empty,
             HighFindingIds = "HIGH-7",
             SecurityExceptions = "HIGH-7|payments-api|2026-08-20T10:00:00Z",
-            ReplaceChangeEvidence = true,
             ChangeApproved = true,
             ChangeWindowStart = Now.Value,
             ChangeWindowEnd = Now.Value.AddHours(2),
@@ -129,6 +152,153 @@ public sealed class RemediationPageTests
                 Assert.Equal(state.CurrentEvidence[EvidenceKind.Change].Id, replacement.SupersedesEvidenceId);
                 Assert.True(replacement.IsApproved);
             });
+    }
+
+    [Fact]
+    public async Task Active_request_prefills_current_evidence_for_focused_corrections()
+    {
+        var state = ActiveState() with
+        {
+            CurrentEvidence = new Dictionary<EvidenceKind, EvidenceRecord>
+            {
+                [EvidenceKind.Test] = new TestEvidenceRecord(
+                    Guid.NewGuid(), new ReleaseId("release-remediation"), 2, Now, Guid.NewGuid(),
+                    "2026.08.19", Now, null, ["checkout"]),
+                [EvidenceKind.Security] = new SecurityEvidenceRecord(
+                    Guid.NewGuid(), new ReleaseId("release-remediation"), 2, Now, Guid.NewGuid(),
+                    "2026.08.19", null, ["CRIT-1"], ["HIGH-1"],
+                    new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>
+                    {
+                        ["HIGH-1"] = ("payments-api", Now),
+                    }),
+            }.ToImmutableDictionary(),
+        };
+        var service = new StubRemediationInteractionService(state);
+        var page = CreatePage(service);
+
+        var result = await page.OnGetAsync("release-remediation", CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        Assert.Equal("2026.08.19", page.Input.TestRunVersion);
+        Assert.Equal(Now.Value, page.Input.TestCompletedAt);
+        Assert.Null(page.Input.TestPassRatePercent);
+        Assert.Equal("checkout", page.Input.CriticalSuiteFailures);
+        Assert.Equal("2026.08.19", page.Input.SecurityScanVersion);
+        Assert.Null(page.Input.SecurityScannedAt);
+        Assert.Equal("CRIT-1", page.Input.CriticalFindingIds);
+        Assert.Equal("HIGH-1", page.Input.HighFindingIds);
+        Assert.Equal(
+            "HIGH-1|payments-api|2026-08-19T09:00:00.0000000+00:00",
+            page.Input.SecurityExceptions);
+
+        page.Input.TestPassRatePercent = 99m;
+        page.Input.SecurityScannedAt = Now.Value;
+        await page.OnPostAsync("release-remediation", CancellationToken.None);
+
+        var submission = Assert.Single(service.Submissions);
+        Assert.Collection(
+            submission.Evidence,
+            item =>
+            {
+                var test = Assert.IsType<TestEvidenceRecord>(item);
+                Assert.Equal("2026.08.19", test.TestRunVersion);
+                Assert.Equal(Now, test.CompletedAt);
+                Assert.Equal(0.99m, test.PassRate);
+                Assert.Equal("checkout", Assert.Single(test.CriticalSuiteFailures!.Value));
+            },
+            item =>
+            {
+                var security = Assert.IsType<SecurityEvidenceRecord>(item);
+                Assert.Equal("2026.08.19", security.ScanVersion);
+                Assert.Equal(Now, security.ScannedAt);
+                Assert.Equal("CRIT-1", Assert.Single(security.UnresolvedCriticalFindingIds!.Value));
+                Assert.Equal("HIGH-1", Assert.Single(security.UnresolvedHighFindingIds!.Value));
+                Assert.Equal("payments-api", security.ApprovedExceptions!["HIGH-1"].Scope);
+            });
+    }
+
+    [Fact]
+    public async Task Ready_demo_prefill_uses_active_release_facts_without_submitting()
+    {
+        var state = ActiveState();
+        var service = new StubRemediationInteractionService(state);
+        var page = CreatePage(service);
+
+        var result = await page.OnGetAsync(
+            "release-remediation",
+            CancellationToken.None,
+            demo: "ready");
+
+        Assert.IsType<PageResult>(result);
+        Assert.Equal(state.CorrelationToken, page.Input.CorrelationToken);
+        Assert.Equal("2026.08.19", page.Input.TestRunVersion);
+        Assert.Equal(Now.Value, page.Input.TestCompletedAt);
+        Assert.Equal(99m, page.Input.TestPassRatePercent);
+        Assert.Equal(string.Empty, page.Input.CriticalSuiteFailures);
+        Assert.Equal("2026.08.19", page.Input.SecurityScanVersion);
+        Assert.Equal(Now.Value, page.Input.SecurityScannedAt);
+        Assert.Equal(string.Empty, page.Input.CriticalFindingIds);
+        Assert.Equal(string.Empty, page.Input.HighFindingIds);
+        Assert.Equal(string.Empty, page.Input.SecurityExceptions);
+        Assert.False(page.Input.ChangeApproved);
+        Assert.Null(page.Input.ChangeWindowStart);
+        Assert.Null(page.Input.ChangeWindowEnd);
+        Assert.Empty(service.Submissions);
+    }
+
+    [Fact]
+    public async Task Ready_demo_preserves_evidence_for_checks_without_active_problems()
+    {
+        var state = ActiveState(includeCurrentEvidence: true);
+        state = state with
+        {
+            Request = new RemediationRequest(
+                state.Request.Id,
+                state.Release.Submission.ReleaseId,
+                state.Request.RoundNumber,
+                state.Request.CreatedAt,
+                [
+                    Problem(state.Release.Submission.ReleaseId, ReadinessCheck.Security, "Security evidence is missing"),
+                    Problem(state.Release.Submission.ReleaseId, ReadinessCheck.Change, "Change evidence is blocked"),
+                ]),
+        };
+        var currentTest = Assert.IsType<TestEvidenceRecord>(
+            state.CurrentEvidence[EvidenceKind.Test]);
+        var service = new StubRemediationInteractionService(state);
+        var page = CreatePage(service);
+
+        await page.OnGetAsync(
+            "release-remediation",
+            CancellationToken.None,
+            demo: "ready");
+        await page.OnPostAsync("release-remediation", CancellationToken.None);
+
+        Assert.Equal(currentTest.TestRunVersion, page.Input.TestRunVersion);
+        Assert.Equal(currentTest.CompletedAt?.Value, page.Input.TestCompletedAt);
+        Assert.Equal(currentTest.PassRate * 100m, page.Input.TestPassRatePercent);
+        var submission = Assert.Single(service.Submissions);
+        Assert.DoesNotContain(
+            submission.Evidence,
+            evidence => evidence.Kind is EvidenceKind.Test);
+        Assert.Equal(
+            [EvidenceKind.Security, EvidenceKind.Change],
+            submission.Evidence.Select(evidence => evidence.Kind));
+    }
+
+    [Fact]
+    public async Task Explicit_rerun_with_unchanged_prefilled_evidence_does_not_create_versions()
+    {
+        var state = ActiveState(includeCurrentEvidence: true);
+        var service = new StubRemediationInteractionService(state);
+        var page = CreatePage(service);
+        await page.OnGetAsync("release-remediation", CancellationToken.None);
+        page.Input.RerunTest = true;
+
+        await page.OnPostAsync("release-remediation", CancellationToken.None);
+
+        var submission = Assert.Single(service.Submissions);
+        Assert.Empty(submission.Evidence);
+        Assert.Equal([ReadinessCheck.Test], submission.SelectedChecks);
     }
 
     [Fact]
@@ -265,6 +435,12 @@ public sealed class RemediationPageTests
             TempData = new TempDataDictionary(httpContext, new TestTempDataProvider()),
         };
     }
+
+    private static string InputTag(string html, string name) =>
+        Regex.Match(
+            html,
+            $"<input[^>]*name=\"{Regex.Escape(name)}\"[^>]*>",
+            RegexOptions.IgnoreCase).Value;
 
     private static ActiveRemediationInteraction ActiveState(bool includeCurrentEvidence = false)
     {
