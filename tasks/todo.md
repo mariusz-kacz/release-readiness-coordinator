@@ -2,6 +2,8 @@
 
 This checklist implements `SPEC.md` without changing its authority. Complete tasks in dependency order and stop at each checkpoint for review. Commands assume repository root.
 
+Tasks completed before the 2026-08-19 single-release-identifier decision remain checked as historical implementation records. Task 21 supersedes their revision-bearing identity clauses and must complete before Tasks 22-27.
+
 ## Task 1: Bootstrap the .NET 10 solution and command baseline
 
 **Description:** Create one solution, one deployable Razor Pages application, and one focused xUnit test project. Pin the justified package references, enable nullable analysis, exclude application data from source control, and record the root commands in a minimal `AGENTS.md`.
@@ -473,7 +475,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Large contract simplification; implement incrementally across domain/data, workflow, then tests while keeping Task 16 as the single owner of the correction.
 
-## Task 16A: Allocate round and result identities once
+## Task 17: Allocate round and result identities once
 
 **Description:** Clarify evaluation identity ownership without changing workflow behavior. Rename the start-message identity to `RoundId`, allocate one `ResultId` per planned branch, and use that same result identity for both executed and reused branch results instead of generating and then ignoring an extra ID.
 
@@ -501,7 +503,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (5 files)
 
-## Task 16B: Separate workflow waits from business requests
+## Task 18: Separate workflow waits from business requests
 
 **Description:** Make the MAF continuation boundary explicit in names. Rename pending workflow types from `Pending*Request` to `Pending*Wait`, rename their engine-generated identifier to `WorkflowRequestId`, and rename remediation's optional domain correlation to `RemediationRequestId`. Keep durable `HumanDecisionRequest` and `RemediationRequest` entities unchanged.
 
@@ -517,7 +519,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [x] Search confirms no `PendingWorkflowRequest.RequestId`, `DomainRequestId`, or `Pending*Request` workflow type remains.
 - [x] `dotnet build --no-restore`
 
-**Dependencies:** Task 16A
+**Dependencies:** Task 17
 
 **Files likely touched:**
 
@@ -529,7 +531,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 
 **Estimated scope:** Medium (5 files)
 
-## Task 16C: Clarify persisted approval-response references
+## Task 19: Clarify persisted approval-response references
 
 **Description:** Rename the persisted response's `ActiveRequestId` reference to `ApprovalRequestId` across the domain projection, data-service boundary, and storage mapping. Preserve `HumanResponse.Id` as the response's own idempotency identity and preserve the one-terminal-response-per-release constraint.
 
@@ -546,7 +548,7 @@ This checklist implements `SPEC.md` without changing its authority. Complete tas
 - [x] `dotnet format --verify-no-changes`
 - [x] `dotnet build --no-restore`
 
-**Dependencies:** Task 16B
+**Dependencies:** Task 18
 
 **Schema decision:** Pre-release SQLite databases are disposable. For this task's column rename,
 delete `src/ReleaseReadinessCoordinator/app-data/release-readiness.db` and restart the application;
@@ -564,33 +566,33 @@ no migration or existing-data preservation is provided.
 
 ## Checkpoint D: Core end-to-end workflow
 
-- [x] Tasks 14-16 acceptance criteria are met.
+- [x] Tasks 14-19 acceptance criteria are met.
 - [x] The all-pass, remediation/selective-reuse, terminal approval, and terminal rejection paths run on the simplified real graph.
 - [x] Round/business history is complete, idempotent, and explainable.
 - [x] No branch-local wait, rerun-all shortcut, automatic approval, or human-decision edge back to the planner exists.
 - [x] Identity names distinguish entity IDs, cross-entity references, and MAF continuation IDs without relying on comments.
 
-## Task 17: Add restart recovery, synchronization, and reconciliation
+## Task 20: Add restart recovery, synchronization, and reconciliation
 
-**Description:** Implement the HTTP-driven workflow host that starts or restores runs under one checkpoint-store critical section. Rebuild the identical graph, select the latest valid checkpoint, verify re-emitted request correlation, reconcile idempotent business writes, and surface technical failures.
+**Description:** Implement the HTTP-driven release workflow service that starts or restores runs under one checkpoint-store critical section. Rebuild the identical graph, select the latest valid checkpoint, verify re-emitted request correlation, reconcile idempotent business writes, and surface technical failures.
 
 **Acceptance criteria:**
 
-- [ ] One application-lifetime filesystem store is protected by external async synchronization; no startup worker or background resumer is introduced.
-- [ ] Detail/response requests restore the same workflow and pending request after disposal/restart, then continue exactly once without duplicate business records.
-- [ ] Missing/corrupt/incompatible checkpoints, impossible state, and unrecoverable SQLite failures persist a visible `Failed` phase and diagnostic timeline entry.
+- [x] One application-lifetime filesystem store is protected by external async synchronization; no startup worker or background resumer is introduced.
+- [x] Detail/response requests restore the same workflow and pending request after disposal/restart, then continue exactly once without duplicate business records.
+- [x] Missing/corrupt/incompatible checkpoints, impossible state, and unrecoverable SQLite failures persist a visible `Failed` phase and diagnostic timeline entry.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~RestartRecovery"`
-- [ ] Integration test creates a wait, disposes the host, creates a new host over the same SQLite/checkpoint directories, responds, and verifies one continuation.
-- [ ] Concurrent response test proves serialization/idempotency.
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~RestartRecovery"`
+- [x] Integration test creates a wait, disposes the host, creates a new host over the same SQLite/checkpoint directories, responds, and verifies one continuation.
+- [x] Concurrent response test proves serialization/idempotency.
 
-**Dependencies:** Tasks 3, 9, 15-16, and 16A-16C
+**Dependencies:** Tasks 3, 9, and 15-19
 
 **Files likely touched:**
 
-- `src/ReleaseReadinessCoordinator/Workflow/WorkflowHost.cs`
+- `src/ReleaseReadinessCoordinator/Workflow/ReleaseWorkflowService.cs`
 - `src/ReleaseReadinessCoordinator/Workflow/CheckpointStoreCoordinator.cs`
 - `src/ReleaseReadinessCoordinator/Workflow/WorkflowReconciler.cs`
 - `src/ReleaseReadinessCoordinator/Program.cs`
@@ -598,7 +600,39 @@ no migration or existing-data preservation is provided.
 
 **Estimated scope:** Medium (5 files)
 
-## Task 18: Build release detail and timeline UI
+## Task 21: Remove numeric release revisions across the application
+
+**Description:** Replace the established `(ReleaseId, Revision)` identity with one globally unique validated `ReleaseId` across domain records, SQLite keys and foreign keys, workflow correlation/session IDs, Razor routes/forms, projections, and tests. This is a compulsory pre-release contract cutover: retain no compatibility adapter or revision-family behavior, and reset disposable local SQLite/checkpoint stores.
+
+**Acceptance criteria:**
+
+- [x] `ReleaseRevisionKey`, `ReleaseRevision`, numeric `Revision` fields/parameters, revision form input, and `{revision}` route segments are removed; every release-owned domain and workflow record references its owning release through one validated `ReleaseId`.
+- [x] SQLite release identity and all dependent keys use only `ReleaseId`; duplicate IDs conflict, metadata correction requires a different ID, and revision-bearing local SQLite/checkpoint data is deleted and recreated without backfill or dual-read compatibility.
+- [x] Submission, readiness evaluation, remediation/reuse, terminal decisions, restart recovery, projections, and timeline behavior remain covered and unchanged apart from the simplified identity and routes.
+
+**Verification:**
+
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~ReleaseIdentity|FullyQualifiedName~DatabaseSchema|FullyQualifiedName~ReleaseSubmission|FullyQualifiedName~RestartRecovery"`
+- [x] `rg -n "ReleaseRevision|\bRevision\b|\{revision\}" src tests` returns no revision-bearing application contract.
+- [x] `dotnet build --no-restore`
+- [x] `dotnet test --no-build`
+- [x] `dotnet format --verify-no-changes`
+
+**Dependencies:** Tasks 4-10 and 14-20
+
+**Migration decision:** Pre-release application data is disposable. Delete the revision-bearing SQLite database and workflow-checkpoint directory before running the corrected application; do not implement a schema/data migration, compatibility constructor/property, or cross-release history copy.
+
+**Primary areas likely touched:**
+
+- `src/ReleaseReadinessCoordinator/Domain/`
+- `src/ReleaseReadinessCoordinator/Data/`
+- `src/ReleaseReadinessCoordinator/Workflow/`
+- `src/ReleaseReadinessCoordinator/Pages/Releases/`
+- `tests/ReleaseReadinessCoordinator.Tests/`
+
+**Estimated scope:** Large cross-cutting contract simplification; implement incrementally across domain/data, workflow, web, then tests while keeping Task 21 as the single owner of the correction.
+
+## Task 22: Build release detail and timeline UI
 
 **Description:** Render the current process state and immutable history from the release-detail projection, using manual refresh and accessible server-rendered HTML.
 
@@ -614,7 +648,7 @@ no migration or existing-data preservation is provided.
 - [ ] Manually inspect empty, evaluating, remediation, approval, terminal, and failed states at narrow and desktop widths.
 - [ ] Keyboard navigation and heading/table semantics are coherent.
 
-**Dependencies:** Tasks 10 and 17
+**Dependencies:** Tasks 10, 20, and 21
 
 **Files likely touched:**
 
@@ -627,11 +661,11 @@ no migration or existing-data preservation is provided.
 
 ## Checkpoint E1: Recovery and read model
 
-- [ ] Tasks 17-18 acceptance criteria are met.
+- [ ] Tasks 20-22 acceptance criteria are met.
 - [ ] Remediation and approval waits survive host replacement with no duplicate history.
 - [ ] The detail page explains current state, immutable round history, reuse sources, active waits, and failures.
 
-## Task 19: Build remediation interaction UI
+## Task 23: Build remediation interaction UI
 
 **Description:** Add the typed remediation page and PRG handler for the active correlated request, presenting all problems and accepting new evidence versions plus explicit branch selections for rerun. Immutable release metadata remains visible but cannot be edited.
 
@@ -647,7 +681,7 @@ no migration or existing-data preservation is provided.
 - [ ] Manual blocker -> remediation -> selective rerun confirms correct Execute/Reused display.
 - [ ] Invalid model state and double-submit behavior are checked.
 
-**Dependencies:** Tasks 15 and 17-18
+**Dependencies:** Tasks 15 and 20-22
 
 **Files likely touched:**
 
@@ -658,7 +692,7 @@ no migration or existing-data preservation is provided.
 
 **Estimated scope:** Medium (4 files)
 
-## Task 20: Build decision interaction UI
+## Task 24: Build decision interaction UI
 
 **Description:** Add the typed human-decision page and PRG handler, displaying the immutable snapshot/brief and active MAF request identity, then accepting Approve/Reject, actor, and comment.
 
@@ -674,7 +708,7 @@ no migration or existing-data preservation is provided.
 - [ ] Manual approval, rejection, and invalid-continuation journeys succeed.
 - [ ] Double-submit produces one terminal decision.
 
-**Dependencies:** Tasks 16-18
+**Dependencies:** Tasks 16 and 20-22
 
 **Files likely touched:**
 
@@ -687,12 +721,12 @@ no migration or existing-data preservation is provided.
 
 ## Checkpoint E2: Demonstrable MVP
 
-- [ ] Tasks 17-20 acceptance criteria are met.
+- [ ] Tasks 20-24 acceptance criteria are met.
 - [ ] Remediation and approval waits both survive a real host restart.
 - [ ] The four-page Razor UI supports the complete approved journey with manual refresh.
 - [ ] Accessibility, request correlation, continuation-error feedback, failure visibility, and duplicate protection are manually reviewed.
 
-## Task 21: Complete real-graph workflow scenario coverage
+## Task 25: Complete real-graph workflow scenario coverage
 
 **Description:** Consolidate the six required orchestration-risk scenarios into a small real-graph suite using deterministic providers, fake time, temporary SQLite, and temporary checkpoint directories. Assert business history and provider/policy call counts, not DTO trivia.
 
@@ -708,7 +742,7 @@ no migration or existing-data preservation is provided.
 - [ ] Run the suite twice against clean temporary stores to expose ordering/static-state leaks.
 - [ ] `dotnet format --verify-no-changes`
 
-**Dependencies:** Tasks 17-20
+**Dependencies:** Tasks 20-24
 
 **Files likely touched:**
 
@@ -719,7 +753,7 @@ no migration or existing-data preservation is provided.
 
 **Estimated scope:** Medium (4 files)
 
-## Task 22: Add minimal browser smoke coverage
+## Task 26: Add minimal browser smoke coverage
 
 **Description:** Add real-browser smoke tests for only the two required user journeys: submit/pass/human decision and blocker/remediation/selective rerun. Use accessible locators and retain server-side PRG/manual-refresh behavior.
 
@@ -735,7 +769,7 @@ no migration or existing-data preservation is provided.
 - [ ] `dotnet test --no-build --filter "FullyQualifiedName~BrowserSmoke"`
 - [ ] Inspect failure screenshots/traces only when a test fails.
 
-**Dependencies:** Tasks 18-21
+**Dependencies:** Tasks 22-25
 
 **Files likely touched:**
 
@@ -748,11 +782,11 @@ no migration or existing-data preservation is provided.
 
 ## Checkpoint F1: Evaluation
 
-- [ ] Tasks 21-22 acceptance criteria are met.
+- [ ] Tasks 25-26 acceptance criteria are met.
 - [ ] Required real-graph scenarios and both browser journeys pass.
 - [ ] Test evidence is deterministic.
 
-## Task 23: Finish documentation, full verification, and spec audit
+## Task 27: Finish documentation, full verification, and spec audit
 
 **Description:** Document setup, simulated fixtures, app-data locations, restart demo, test commands, and architecture boundaries. Run the complete quality gate, inspect the diff, and map evidence to all 13 MVP acceptance criteria.
 
@@ -771,7 +805,7 @@ no migration or existing-data preservation is provided.
 - [ ] Run both manual end-to-end journeys, including stop/restart at remediation and approval waits.
 - [ ] Review the complete diff and report unrun checks, residual risks, and any approved deviation.
 
-**Dependencies:** Tasks 21-22
+**Dependencies:** Tasks 25-26
 
 **Files likely touched:**
 
@@ -784,7 +818,7 @@ no migration or existing-data preservation is provided.
 
 ## Checkpoint F2: Complete
 
-- [ ] Tasks 1-23 and every intermediate checkpoint are complete.
+- [ ] Tasks 1-27 and every intermediate checkpoint are complete.
 - [ ] All task acceptance criteria and the standing Definition of Done are satisfied.
 - [ ] All 13 MVP acceptance criteria have recorded evidence.
 - [ ] The solution remains one bounded deployable application with one focused test project.

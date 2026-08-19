@@ -26,11 +26,11 @@ public sealed class TestReadinessPolicyTests
         [
             Evidence(testRunVersion: null),
             new TestEvidenceRecord(
-                Guid.NewGuid(), RevisionKey(), 1, Utc(2026, 8, 17, 9), null,
+                Guid.NewGuid(), Id(), 1, Utc(2026, 8, 17, 9), null,
                 "2.4.0", completedAt: null, 0.98m, []),
             Evidence(passRate: null),
             new TestEvidenceRecord(
-                Guid.NewGuid(), RevisionKey(), 1, Utc(2026, 8, 17, 9), null,
+                Guid.NewGuid(), Id(), 1, Utc(2026, 8, 17, 9), null,
                 "2.4.0", CompletedAt, 0.98m, criticalSuiteFailures: null),
         ];
 
@@ -82,7 +82,7 @@ public sealed class TestReadinessPolicyTests
         new(new FixedTimeProvider(now));
 
     private static ReleaseSubmission Submission(string releaseVersion = "2.4.0") => new(
-        RevisionKey(),
+        Id(),
         "orders",
         releaseVersion,
         new UtcInterval(Utc(2026, 8, 20, 20), Utc(2026, 8, 20, 21)),
@@ -93,7 +93,7 @@ public sealed class TestReadinessPolicyTests
         decimal? passRate = 0.98m,
         IEnumerable<string>? criticalSuiteFailures = default) => new(
             Guid.NewGuid(),
-            RevisionKey(),
+            Id(),
             1,
             Utc(2026, 8, 17, 9),
             null,
@@ -102,7 +102,7 @@ public sealed class TestReadinessPolicyTests
             passRate,
             criticalSuiteFailures ?? []);
 
-    private static ReleaseRevisionKey RevisionKey() => new("release-42", 3);
+    private static ReleaseId Id() => new("release-42");
 
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
@@ -124,8 +124,8 @@ public sealed class TestReadinessBranchExecutionTests
         var provider = new SimulatedTestEvidenceProvider(evidence, knownTransientFailuresBeforeSuccess: 1);
 
         var exception = await Assert.ThrowsAsync<KnownTransientEvidenceProviderException>(
-            async () => await provider.GetCurrentAsync(RevisionKey(), CancellationToken.None));
-        var current = await provider.GetCurrentAsync(RevisionKey(), CancellationToken.None);
+            async () => await provider.GetCurrentAsync(Id(), CancellationToken.None));
+        var current = await provider.GetCurrentAsync(Id(), CancellationToken.None);
 
         Assert.Equal(evidence.Id, exception.EvidenceId);
         Assert.Same(evidence, current);
@@ -222,7 +222,7 @@ public sealed class TestReadinessBranchExecutionTests
         new Dictionary<string, string> { ["ready"] = "Test evidence satisfies the policy." });
 
     private static ReleaseReadinessCoordinator.Domain.BranchWorkItem WorkItem() => new(
-        RevisionKey(),
+        Id(),
         roundNumber: 1,
         ReadinessCheck.Test,
         WorkDisposition.Execute,
@@ -230,7 +230,7 @@ public sealed class TestReadinessBranchExecutionTests
         "Executed because this is the initial evaluation.");
 
     private static ReleaseSubmission Submission() => new(
-        RevisionKey(),
+        Id(),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 20, 20), Utc(2026, 8, 20, 21)),
@@ -238,7 +238,7 @@ public sealed class TestReadinessBranchExecutionTests
 
     private static TestEvidenceRecord Evidence() => new(
         Guid.NewGuid(),
-        RevisionKey(),
+        Id(),
         1,
         Utc(2026, 8, 17, 9),
         null,
@@ -247,7 +247,7 @@ public sealed class TestReadinessBranchExecutionTests
         0.98m,
         []);
 
-    private static ReleaseRevisionKey RevisionKey() => new("release-42", 3);
+    private static ReleaseId Id() => new("release-42");
 
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
@@ -260,7 +260,7 @@ public sealed class TestReadinessBranchExecutionTests
         public int CallCount { get; private set; }
 
         public ValueTask<TestEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;
@@ -300,7 +300,7 @@ public sealed class TestReadinessWorkflowIntegrationTests
     public async Task Real_graph_test_branch_uses_provider_and_policy_instead_of_simulated_outcome()
     {
         var submission = Submission();
-        var evidence = Evidence(submission.Key);
+        var evidence = Evidence(submission.ReleaseId);
         var provider = new CountingProvider(evidence);
         var policy = new CountingPolicy();
         await using var host = await ReadinessWorkflowTestHost.CreateWithTestAsync(
@@ -316,7 +316,7 @@ public sealed class TestReadinessWorkflowIntegrationTests
         Assert.DoesNotContain(
             run.NewEvents.OfType<WorkflowOutputEvent>(),
             output => output.Data is EvaluationRound);
-        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
         var round = Assert.Single(detail!.EvaluationRounds);
         var testResult = Assert.Single(
             round.Results,
@@ -328,13 +328,13 @@ public sealed class TestReadinessWorkflowIntegrationTests
     }
 
     private static ReleaseSubmission Submission() => new(
-        new ReleaseRevisionKey("release-graph", 1),
+        new ReleaseId("release-graph"),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 20, 20), Utc(2026, 8, 20, 21)),
         Utc(2026, 8, 17, 7));
 
-    private static TestEvidenceRecord Evidence(ReleaseRevisionKey releaseRevision) => new(
+    private static TestEvidenceRecord Evidence(ReleaseId releaseRevision) => new(
         Guid.NewGuid(),
         releaseRevision,
         1,
@@ -353,7 +353,7 @@ public sealed class TestReadinessWorkflowIntegrationTests
         public int CallCount { get; private set; }
 
         public ValueTask<TestEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;

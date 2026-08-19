@@ -42,7 +42,7 @@ public enum ExecutionDisposition
 public sealed record BranchWorkItem
 {
     public BranchWorkItem(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int roundNumber,
         ReadinessCheck check,
         WorkDisposition disposition,
@@ -73,7 +73,7 @@ public sealed record BranchWorkItem
                 nameof(planningReason));
         }
 
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         RoundNumber = roundNumber;
         Check = check;
         Disposition = disposition;
@@ -82,7 +82,7 @@ public sealed record BranchWorkItem
         ReuseSourceResultId = reuseSourceResultId;
     }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public int RoundNumber { get; }
 
@@ -109,7 +109,7 @@ public sealed record BranchResult
 {
     public BranchResult(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int roundNumber,
         ReadinessCheck check,
         BranchOutcome outcome,
@@ -167,7 +167,7 @@ public sealed record BranchResult
         ValidateReuse(roundNumber, outcome, disposition, reuseSourceResultId, reuseSourceRound);
 
         Id = id;
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         RoundNumber = roundNumber;
         Check = check;
         Outcome = outcome;
@@ -190,7 +190,7 @@ public sealed record BranchResult
 
     public Guid Id { get; }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public int RoundNumber { get; }
 
@@ -281,7 +281,7 @@ public sealed record EvaluationRound
 {
     public EvaluationRound(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int roundNumber,
         UtcInstant startedAt,
         UtcInstant completedAt,
@@ -303,13 +303,13 @@ public sealed record EvaluationRound
         }
 
         var completeResults = RequireEveryCheck(results, "An evaluation round");
-        if (completeResults.Any(result => result.ReleaseRevision != releaseRevision || result.RoundNumber != roundNumber))
+        if (completeResults.Any(result => result.ReleaseId != releaseId || result.RoundNumber != roundNumber))
         {
-            throw new InvalidOperationException("Every result must belong to the evaluation round and release revision.");
+            throw new InvalidOperationException("Every result must belong to the evaluation round and release.");
         }
 
         Id = id;
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         RoundNumber = roundNumber;
         StartedAt = startedAt;
         CompletedAt = completedAt;
@@ -318,7 +318,7 @@ public sealed record EvaluationRound
 
     public Guid Id { get; }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public int RoundNumber { get; }
 
@@ -347,7 +347,7 @@ public sealed record RemediationRequest
 {
     public RemediationRequest(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int roundNumber,
         UtcInstant createdAt,
         IEnumerable<BranchResult> problems)
@@ -374,13 +374,13 @@ public sealed record RemediationRequest
             throw new InvalidOperationException("A remediation request cannot repeat a readiness check.");
         }
 
-        if (currentProblems.Any(result => result.ReleaseRevision != releaseRevision || result.RoundNumber != roundNumber))
+        if (currentProblems.Any(result => result.ReleaseId != releaseId || result.RoundNumber != roundNumber))
         {
-            throw new InvalidOperationException("Every problem must belong to the request round and release revision.");
+            throw new InvalidOperationException("Every problem must belong to the request round and release.");
         }
 
         Id = id;
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         RoundNumber = roundNumber;
         CreatedAt = createdAt;
         Problems = [.. currentProblems.OrderBy(result => result.Check)];
@@ -388,7 +388,7 @@ public sealed record RemediationRequest
 
     public Guid Id { get; }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public int RoundNumber { get; }
 

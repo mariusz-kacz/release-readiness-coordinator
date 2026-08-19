@@ -25,9 +25,13 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IApplicationDataService, ApplicationDataService>();
 builder.Services.AddSingleton(_ => new CheckpointStoreCoordinator(
     Directory.CreateDirectory(checkpointPath)));
-builder.Services.AddScoped(serviceProvider => new ReleaseSubmissionApplicationService(
+builder.Services.AddScoped(serviceProvider => new ReleaseWorkflowService(
     serviceProvider.GetRequiredService<IApplicationDataService>(),
     serviceProvider.GetRequiredService<CheckpointStoreCoordinator>(),
+    serviceProvider.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped(serviceProvider => new ReleaseSubmissionApplicationService(
+    serviceProvider.GetRequiredService<IApplicationDataService>(),
+    serviceProvider.GetRequiredService<ReleaseWorkflowService>(),
     serviceProvider.GetRequiredService<TimeProvider>()));
 
 var app = builder.Build();

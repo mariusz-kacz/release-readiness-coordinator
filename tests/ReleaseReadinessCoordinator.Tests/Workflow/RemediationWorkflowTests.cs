@@ -45,7 +45,7 @@ public sealed class RemediationWorkflowAggregationTests
             [ReadinessCheck.Test, ReadinessCheck.Security],
             first.RemediationRequest.Problems.Select(result => result.Check));
 
-        var detail = await dataService.GetReleaseDetailAsync(submission.Key);
+        var detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.NotNull(detail);
         Assert.Single(detail.EvaluationRounds);
         Assert.Single(detail.RemediationRequests);
@@ -67,12 +67,12 @@ public sealed class RemediationWorkflowAggregationTests
             evidence,
             new TimelineEntry(
                 Guid.NewGuid(),
-                submission.Key,
+                submission.ReleaseId,
                 1,
                 TimelineEntryKind.ReleaseSubmitted,
                 "Release submitted.",
                 submission.SubmittedAt),
-            $"test:{submission.Key.ReleaseId}:submit");
+            $"test:{submission.ReleaseId.Value}:submit");
 
     private static BranchResult Result(
         EvaluationRoundStart start,
@@ -80,7 +80,7 @@ public sealed class RemediationWorkflowAggregationTests
         BranchOutcome outcome,
         EvidenceRecord evidence) => new(
         Guid.NewGuid(),
-        evidence.ReleaseRevision,
+        evidence.ReleaseId,
         start.RoundNumber,
         check,
         outcome,
@@ -96,7 +96,7 @@ public sealed class RemediationWorkflowAggregationTests
         reuseSourceRound: null);
 
     private static ReleaseSubmission Submission(string releaseId) => new(
-        new ReleaseRevisionKey(releaseId, 1),
+        new ReleaseId(releaseId),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
@@ -105,14 +105,14 @@ public sealed class RemediationWorkflowAggregationTests
     private static EvidenceRecord[] Evidence(ReleaseSubmission submission) =>
     [
         new TestEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, 0.90m, []),
         new SecurityEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, [], [],
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
         new ChangeEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             true, submission.RequestedDeploymentWindow),
     ];
 
@@ -139,27 +139,27 @@ public sealed class RemediationWorkflowResponseTests
         await dataService.SubmitReleaseAsync(
             submission,
             evidence,
-            Timeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            Timeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             "response:submit");
         var round = Round(submission, evidence);
         await dataService.SaveEvaluationRoundAsync(
             round,
-            Timeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
+            Timeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
             "response:round:1");
         var request = new ReleaseReadinessCoordinator.Domain.RemediationRequest(
             Guid.NewGuid(),
-            submission.Key,
+            submission.ReleaseId,
             1,
             Utc(2026, 8, 17, 10),
             round.Results.Where(result => result.Outcome is not BranchOutcome.Passed));
         await dataService.OpenRemediationRequestAsync(
             request,
-            Timeline(submission.Key, 3, TimelineEntryKind.RemediationRequested, "Remediation requested."),
+            Timeline(submission.ReleaseId, 3, TimelineEntryKind.RemediationRequested, "Remediation requested."),
             "response:request:1");
 
         var replacement = new TestEvidenceRecord(
             Guid.NewGuid(),
-            submission.Key,
+            submission.ReleaseId,
             2,
             Utc(2026, 8, 17, 10, 30),
             evidence[0].Id,
@@ -174,7 +174,7 @@ public sealed class RemediationWorkflowResponseTests
             new Dictionary<EvidenceKind, Guid> { [EvidenceKind.Test] = replacement.Id },
             [ReadinessCheck.Change]);
         var response = new RemediationWorkflowResponse(remediation, [replacement]);
-        var handler = new RemediationHandler(submission.Key, dataService);
+        var handler = new RemediationHandler(submission.ReleaseId, dataService);
 
         var mismatch = new RemediationSubmission(
             Guid.NewGuid(),
@@ -192,7 +192,7 @@ public sealed class RemediationWorkflowResponseTests
         Assert.Equal(first.RoundNumber, replay.RoundNumber);
         Assert.Equal(new[] { ReadinessCheck.Change }, first.ExplicitlySelectedChecks.AsEnumerable());
 
-        var detail = await dataService.GetReleaseDetailAsync(submission.Key);
+        var detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.NotNull(detail);
         Assert.Equal(submission, detail.Release.Submission);
         Assert.Single(detail.RemediationSubmissions);
@@ -214,7 +214,7 @@ public sealed class RemediationWorkflowResponseTests
         var start = new EvaluationRoundStart(Guid.NewGuid(), 1, Utc(2026, 8, 17, 9, 30), []);
         return new EvaluationRound(
             start.RoundId,
-            submission.Key,
+            submission.ReleaseId,
             1,
             start.StartedAt,
             Utc(2026, 8, 17, 10),
@@ -231,7 +231,7 @@ public sealed class RemediationWorkflowResponseTests
         BranchOutcome outcome,
         EvidenceRecord evidence) => new(
         Guid.NewGuid(),
-        evidence.ReleaseRevision,
+        evidence.ReleaseId,
         start.RoundNumber,
         check,
         outcome,
@@ -247,13 +247,13 @@ public sealed class RemediationWorkflowResponseTests
         null);
 
     private static TimelineEntry Timeline(
-        ReleaseRevisionKey key,
+        ReleaseId key,
         long sequence,
         TimelineEntryKind kind,
         string summary) => new(Guid.NewGuid(), key, sequence, kind, summary, Utc(2026, 8, 17, 10));
 
     private static ReleaseSubmission Submission() => new(
-        new ReleaseRevisionKey("correlated-response", 1),
+        new ReleaseId("correlated-response"),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
@@ -262,14 +262,14 @@ public sealed class RemediationWorkflowResponseTests
     private static EvidenceRecord[] Evidence(ReleaseSubmission submission) =>
     [
         new TestEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, 0.90m, []),
         new SecurityEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, [], [],
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
         new ChangeEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             true, submission.RequestedDeploymentWindow),
     ];
 
@@ -295,7 +295,7 @@ public sealed class RemediationWorkflowRealGraphTests
             submission,
             initialEvidence,
             new TimelineEntry(
-                Guid.NewGuid(), submission.Key, 1, TimelineEntryKind.ReleaseSubmitted,
+                Guid.NewGuid(), submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted,
                 "Release submitted.", submission.SubmittedAt),
             "real-graph:submit");
         var testProvider = new CountingTestProvider(dataService);
@@ -321,7 +321,7 @@ public sealed class RemediationWorkflowRealGraphTests
                 new EvaluationRoundStart(Guid.NewGuid(), 1, now, []),
                 "real-graph-remediation"));
 
-        var afterFirstRound = await dataService.GetReleaseDetailAsync(submission.Key);
+        var afterFirstRound = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.NotNull(afterFirstRound);
         var request = Assert.Single(afterFirstRound.RemediationRequests);
         Assert.Equal(
@@ -351,7 +351,7 @@ public sealed class RemediationWorkflowRealGraphTests
                 "real-graph-remediation",
                 started,
                 mismatched));
-        Assert.Empty((await dataService.GetReleaseDetailAsync(submission.Key))!.RemediationSubmissions);
+        Assert.Empty((await dataService.GetReleaseDetailAsync(submission.ReleaseId))!.RemediationSubmissions);
 
         timeProvider.SetUtcNow(Utc(2026, 8, 17, 10, 20).Value);
         var resumed = await coordinator.ResumeRemediationAsync(
@@ -361,7 +361,7 @@ public sealed class RemediationWorkflowRealGraphTests
             response);
 
         Assert.IsType<PendingApprovalWait>(resumed);
-        var detail = await dataService.GetReleaseDetailAsync(submission.Key);
+        var detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.NotNull(detail);
         Assert.Equal(2, detail.EvaluationRounds.Length);
         var secondRound = detail.EvaluationRounds[1];
@@ -397,14 +397,14 @@ public sealed class RemediationWorkflowRealGraphTests
                 "real-graph-remediation",
                 started,
                 response));
-        detail = await dataService.GetReleaseDetailAsync(submission.Key);
+        detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.NotNull(detail);
         Assert.Equal(2, detail.EvaluationRounds.Length);
         Assert.Single(detail.RemediationSubmissions);
     }
 
     private static ReleaseSubmission Submission() => new(
-        new ReleaseRevisionKey("real-graph-remediation", 1),
+        new ReleaseId("real-graph-remediation"),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
@@ -413,14 +413,14 @@ public sealed class RemediationWorkflowRealGraphTests
     private static EvidenceRecord[] InitialEvidence(ReleaseSubmission submission) =>
     [
         new TestEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, 0.90m, []),
         new SecurityEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, ["CRITICAL-1"], [],
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
         new ChangeEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             true, new UtcInterval(Utc(2026, 8, 17, 9), Utc(2026, 8, 17, 12))),
     ];
 
@@ -429,10 +429,10 @@ public sealed class RemediationWorkflowRealGraphTests
         IReadOnlyList<EvidenceRecord> initialEvidence) =>
     [
         new TestEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 2, Utc(2026, 8, 17, 10, 15), initialEvidence[0].Id,
+            Guid.NewGuid(), submission.ReleaseId, 2, Utc(2026, 8, 17, 10, 15), initialEvidence[0].Id,
             submission.ReleaseVersion, Utc(2026, 8, 17, 10), 0.99m, []),
         new SecurityEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 2, Utc(2026, 8, 17, 10, 15), initialEvidence[1].Id,
+            Guid.NewGuid(), submission.ReleaseId, 2, Utc(2026, 8, 17, 10, 15), initialEvidence[1].Id,
             submission.ReleaseVersion, Utc(2026, 8, 17, 10), [], [],
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
     ];
@@ -454,7 +454,7 @@ public sealed class RemediationWorkflowRealGraphTests
         public int CallCount { get; private set; }
 
         public async ValueTask<TestEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;
@@ -468,7 +468,7 @@ public sealed class RemediationWorkflowRealGraphTests
         public int CallCount { get; private set; }
 
         public async ValueTask<SecurityEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;
@@ -482,7 +482,7 @@ public sealed class RemediationWorkflowRealGraphTests
         public int CallCount { get; private set; }
 
         public async ValueTask<ChangeEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;

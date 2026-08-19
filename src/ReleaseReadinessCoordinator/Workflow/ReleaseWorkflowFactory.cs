@@ -54,7 +54,7 @@ public static class ReleaseWorkflowFactory
         ArgumentNullException.ThrowIfNull(dependencies);
 
         var planner = new ReadinessPlanner(
-            submission.Key,
+            submission.ReleaseId,
             dataService,
             timeProvider);
         var test = new ReadinessBranchExecutor(
@@ -74,16 +74,16 @@ public static class ReleaseWorkflowFactory
             timeProvider);
         var aggregator = new ReadinessAggregator(dataService, timeProvider);
         var snapshotBuilder = new DecisionSnapshotWorkflowExecutor(
-            submission.Key,
+            submission.ReleaseId,
             dataService,
             timeProvider);
         var remediation = RequestPort.Create<DomainRemediationRequest, RemediationWorkflowResponse>(
             ReleaseWorkflowPortIds.Remediation);
-        var remediationHandler = new RemediationWorkflowExecutor(submission.Key, dataService);
+        var remediationHandler = new RemediationWorkflowExecutor(submission.ReleaseId, dataService);
         var approval = RequestPort.Create<ApprovalRequest, ApprovalResponse>(
             ReleaseWorkflowPortIds.Approval);
         var humanDecisionHandler = new HumanDecisionWorkflowExecutor(
-            submission.Key,
+            submission.ReleaseId,
             dataService);
         var approvalCompletion = new ApprovalCompletionExecutor();
 

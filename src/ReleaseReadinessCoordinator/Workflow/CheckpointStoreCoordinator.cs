@@ -44,6 +44,7 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
 {
     private readonly FileSystemJsonCheckpointStore _store;
     private readonly CheckpointManager _manager;
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
@@ -82,6 +83,13 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
             await foreach (var workflowEvent in run
                 .WatchStreamAsync(blockOnPendingRequest: false, cancellationToken))
             {
+                if (workflowEvent is ExecutorFailedEvent failed)
+                {
+                    throw new InvalidOperationException(
+                        $"Workflow failed in executor '{failed.ExecutorId}': {failed.Data?.Message}",
+                        failed.Data);
+                }
+
                 if (workflowEvent is not RequestInfoEvent requestEvent)
                 {
                     continue;
@@ -106,6 +114,24 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
         finally
         {
             _gate.Release();
+        }
+    }
+
+    public async Task<T> ExecuteExclusivelyAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(operation);
+
+        await _operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await operation(cancellationToken);
+        }
+        finally
+        {
+            _operationGate.Release();
         }
     }
 
@@ -135,6 +161,53 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
                 response,
                 sessionId,
                 cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<PendingWorkflowWait> RestoreAsync(
+        Microsoft.Agents.AI.Workflows.Workflow workflow,
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(workflow);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var run = await RestoreStreamingRunAsync(
+                workflow,
+                sessionId,
+                cancellationToken);
+            PendingWorkflowWait? restoredWait = null;
+            await foreach (var workflowEvent in run
+                .WatchStreamAsync(blockOnPendingRequest: false, cancellationToken))
+            {
+                if (workflowEvent is not RequestInfoEvent requestEvent)
+                {
+                    continue;
+                }
+
+                if (restoredWait is not null)
+                {
+                    throw ContinuationFailure(
+                        ContinuationFailureKind.Incompatible,
+                        sessionId,
+                        "restored more than one pending external request");
+                }
+
+                restoredWait = ToRestoredPendingWorkflowWait(requestEvent.Request);
+            }
+
+            return restoredWait ?? throw ContinuationFailure(
+                ContinuationFailureKind.Incompatible,
+                sessionId,
+                "did not restore a pending external request");
         }
         finally
         {
@@ -184,6 +257,7 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
 
         _disposed = true;
         _store.Dispose();
+        _operationGate.Dispose();
         _gate.Dispose();
     }
 

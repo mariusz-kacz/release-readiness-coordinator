@@ -4,11 +4,11 @@ using ReleaseReadinessCoordinator.Domain;
 namespace ReleaseReadinessCoordinator.Workflow;
 
 internal sealed class HumanDecisionHandler(
-    ReleaseRevisionKey releaseRevision,
+    ReleaseId releaseId,
     IApplicationDataService dataService)
 {
-    private readonly ReleaseRevisionKey _releaseRevision =
-        releaseRevision ?? throw new ArgumentNullException(nameof(releaseRevision));
+    private readonly ReleaseId _releaseId =
+        releaseId ?? throw new ArgumentNullException(nameof(releaseId));
     private readonly IApplicationDataService _dataService =
         dataService ?? throw new ArgumentNullException(nameof(dataService));
 
@@ -17,9 +17,9 @@ internal sealed class HumanDecisionHandler(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(response);
-        var detail = await _dataService.GetReleaseDetailAsync(_releaseRevision, cancellationToken)
+        var detail = await _dataService.GetReleaseDetailAsync(_releaseId, cancellationToken)
             ?? throw new InvalidOperationException(
-                $"Release revision '{_releaseRevision.ReleaseId}/{_releaseRevision.Revision}' does not exist.");
+                $"Release '{_releaseId}' does not exist.");
 
         if (detail.TerminalResponse?.Response.Id == response.Id)
         {
@@ -45,17 +45,17 @@ internal sealed class HumanDecisionHandler(
             ?? throw new InvalidOperationException("A human response requires a durable approval request.");
         var nextSequence = detail.Timeline.IsEmpty ? 1 : detail.Timeline[^1].Sequence + 1;
         return await _dataService.SaveHumanResponseAsync(
-            _releaseRevision,
+            _releaseId,
             activeRequest.Id,
             response,
             new TimelineEntry(
                 Guid.NewGuid(),
-                _releaseRevision,
+                _releaseId,
                 nextSequence,
                 TimelineEntryKind.HumanResponseAccepted,
                 $"Human response '{response.Decision}' accepted from '{response.Responder}'.",
                 response.RespondedAt),
-            RoundAggregator.OperationKey(_releaseRevision, $"human-response:{response.Id:N}"),
+            RoundAggregator.OperationKey(_releaseId, $"human-response:{response.Id:N}"),
             cancellationToken);
     }
 }

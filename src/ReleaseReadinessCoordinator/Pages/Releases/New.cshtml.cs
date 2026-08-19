@@ -37,14 +37,14 @@ public sealed class NewModel(
         {
             var now = new UtcInstant(timeProvider.GetUtcNow());
             var submission = Input.ToSubmission(now);
-            var evidence = Input.ToEvidence(submission.Key, now);
+            var evidence = Input.ToEvidence(submission.ReleaseId, now);
             await submissionService.SubmitAsync(submission, evidence, cancellationToken);
             return RedirectToPage(
                 "/Releases/Detail",
-                new { releaseId = submission.Key.ReleaseId, revision = submission.Key.Revision });
+                new { releaseId = submission.ReleaseId.Value });
         }
         catch (ApplicationDataConflictException exception)
-            when (exception.Kind is ApplicationDataConflictKind.DuplicateReleaseRevision
+            when (exception.Kind is ApplicationDataConflictKind.DuplicateReleaseId
                 or ApplicationDataConflictKind.TerminalRelease)
         {
             Response.StatusCode = StatusCodes.Status409Conflict;
@@ -62,9 +62,6 @@ public sealed class NewModel(
     {
         [Required]
         public string ReleaseId { get; set; } = string.Empty;
-
-        [Range(1, int.MaxValue)]
-        public int Revision { get; set; } = 1;
 
         [Required]
         public string ServiceName { get; set; } = string.Empty;
@@ -110,7 +107,6 @@ public sealed class NewModel(
         public static InputModel FromFixture(DemoReleaseFixture fixture) => new()
         {
             ReleaseId = fixture.ReleaseId,
-            Revision = fixture.Revision,
             ServiceName = fixture.ServiceName,
             ReleaseVersion = fixture.ReleaseVersion,
             DeploymentWindowStart = fixture.DeploymentWindowStart,
@@ -134,9 +130,9 @@ public sealed class NewModel(
 
         internal ReleaseSubmission ToSubmission(UtcInstant submittedAt)
         {
-            var key = new ReleaseRevisionKey(ReleaseId, Revision);
+            var releaseId = new Domain.ReleaseId(ReleaseId);
             return new ReleaseSubmission(
-                key,
+                releaseId,
                 ServiceName,
                 ReleaseVersion,
                 Interval(DeploymentWindowStart, DeploymentWindowEnd),
@@ -144,14 +140,14 @@ public sealed class NewModel(
         }
 
         internal IReadOnlyCollection<EvidenceRecord> ToEvidence(
-            ReleaseRevisionKey key,
+            Domain.ReleaseId releaseId,
             UtcInstant recordedAt)
         {
             var evidence = new List<EvidenceRecord>();
             if (IncludeTestEvidence)
             {
                 evidence.Add(new TestEvidenceRecord(
-                    Guid.NewGuid(), key, 1, recordedAt, null,
+                    Guid.NewGuid(), releaseId, 1, recordedAt, null,
                     TestRunVersion,
                     Instant(TestCompletedAt),
                     TestPassRatePercent / 100m,
@@ -161,7 +157,7 @@ public sealed class NewModel(
             if (IncludeSecurityEvidence)
             {
                 evidence.Add(new SecurityEvidenceRecord(
-                    Guid.NewGuid(), key, 1, recordedAt, null,
+                    Guid.NewGuid(), releaseId, 1, recordedAt, null,
                     SecurityScanVersion,
                     Instant(SecurityScannedAt),
                     ParseList(CriticalFindingIds),
@@ -172,7 +168,7 @@ public sealed class NewModel(
             if (IncludeChangeEvidence)
             {
                 evidence.Add(new ChangeEvidenceRecord(
-                    Guid.NewGuid(), key, 1, recordedAt, null,
+                    Guid.NewGuid(), releaseId, 1, recordedAt, null,
                     ChangeApproved,
                     OptionalInterval(ChangeWindowStart, ChangeWindowEnd, "change approval window")));
             }

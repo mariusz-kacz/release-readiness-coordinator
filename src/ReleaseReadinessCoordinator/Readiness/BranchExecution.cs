@@ -7,7 +7,7 @@ internal interface IEvidenceProvider<TEvidence>
     where TEvidence : EvidenceRecord
 {
     ValueTask<TEvidence?> GetCurrentAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken);
 }
 
@@ -152,7 +152,7 @@ internal static class BranchExecution
 
         var retrieval = await EvidenceProviderRetry.GetCurrentAsync(
             provider,
-            workItem.ReleaseRevision,
+            workItem.ReleaseId,
             cancellationToken);
         if (retrieval.ExhaustedEvidenceId.HasValue)
         {
@@ -188,10 +188,10 @@ internal static class BranchExecution
                 });
         }
 
-        if (retrieval.Evidence.ReleaseRevision != workItem.ReleaseRevision)
+        if (retrieval.Evidence.ReleaseId != workItem.ReleaseId)
         {
             throw new InvalidOperationException(
-                $"The {check} evidence provider returned evidence for a different release revision.");
+                $"The {check} evidence provider returned evidence for a different release.");
         }
 
         var evaluation = evaluate(submission, retrieval.Evidence);
@@ -218,7 +218,7 @@ internal static class BranchExecution
         IEnumerable<string> attempts,
         IReadOnlyDictionary<string, string> findings) => new(
             resultId,
-            workItem.ReleaseRevision,
+            workItem.ReleaseId,
             workItem.RoundNumber,
             check,
             outcome,
@@ -238,10 +238,10 @@ internal static class BranchExecution
         BranchWorkItem workItem,
         ReadinessCheck check)
     {
-        if (submission.Key != workItem.ReleaseRevision)
+        if (submission.ReleaseId != workItem.ReleaseId)
         {
             throw new InvalidOperationException(
-                $"The {check} work item and release submission identify different revisions.");
+                $"The {check} work item and release submission identify different releases.");
         }
 
         if (workItem.Check != check)
@@ -264,12 +264,12 @@ internal static class EvidenceProviderRetry
 
     public static async ValueTask<EvidenceRetrieval<TEvidence>> GetCurrentAsync<TEvidence>(
         IEvidenceProvider<TEvidence> provider,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken)
         where TEvidence : EvidenceRecord
     {
         ArgumentNullException.ThrowIfNull(provider);
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
 
         var attempts = ImmutableArray.CreateBuilder<string>(MaximumAttempts);
         Guid? failedEvidenceId = null;
@@ -277,7 +277,7 @@ internal static class EvidenceProviderRetry
         {
             try
             {
-                var evidence = await provider.GetCurrentAsync(releaseRevision, cancellationToken);
+                var evidence = await provider.GetCurrentAsync(releaseId, cancellationToken);
                 attempts.Add($"Attempt {attempt} succeeded.");
                 return new EvidenceRetrieval<TEvidence>(evidence, null, attempts.ToImmutable());
             }

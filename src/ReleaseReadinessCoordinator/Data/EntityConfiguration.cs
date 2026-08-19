@@ -8,7 +8,7 @@ internal static class EntityConfiguration
 {
     public static void Configure(ModelBuilder modelBuilder)
     {
-        ConfigureReleaseRevision(modelBuilder.Entity<ReleaseRevisionRow>());
+        ConfigureRelease(modelBuilder.Entity<ReleaseRow>());
         ConfigureEvidence(modelBuilder.Entity<EvidenceRecordRow>());
         ConfigureCurrentEvidence(modelBuilder.Entity<CurrentEvidenceRow>());
         ConfigureEvaluationRound(modelBuilder.Entity<EvaluationRoundRow>());
@@ -22,18 +22,18 @@ internal static class EntityConfiguration
         ConfigureTimelineEntry(modelBuilder.Entity<TimelineEntryRow>());
     }
 
-    private static void ConfigureReleaseRevision(EntityTypeBuilder<ReleaseRevisionRow> builder)
+    private static void ConfigureRelease(EntityTypeBuilder<ReleaseRow> builder)
     {
-        builder.ToTable("ReleaseRevisions", table => table.HasCheckConstraint(
-            "CK_ReleaseRevisions_DeploymentWindow",
+        builder.ToTable("Releases", table => table.HasCheckConstraint(
+            "CK_Releases_DeploymentWindow",
             "RequestedWindowEndUtc >= RequestedWindowStartUtc"));
-        builder.HasKey(row => new { row.ReleaseId, row.Revision });
+        builder.HasKey(row => row.ReleaseId);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.ServiceName).HasMaxLength(200);
         builder.Property(row => row.ReleaseVersion).HasMaxLength(100);
         builder.Property(row => row.Phase).HasConversion<int>();
         ConfigureConcurrencyToken(builder.Property(row => row.ConcurrencyToken));
-        ConfigureOperationKey(builder, "UX_ReleaseRevisions_OperationKey");
+        ConfigureOperationKey(builder, "UX_Releases_OperationKey");
 
         MakeImmutable(builder.Property(row => row.ServiceName));
         MakeImmutable(builder.Property(row => row.ReleaseVersion));
@@ -51,24 +51,23 @@ internal static class EntityConfiguration
         builder.HasKey(row => row.Id);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.Kind).HasConversion<int>();
-        builder.HasIndex(row => new { row.ReleaseId, row.Revision, row.Kind, row.Version })
+        builder.HasIndex(row => new { row.ReleaseId, row.Kind, row.Version })
             .IsUnique()
             .HasDatabaseName("UX_EvidenceRecords_Release_Kind_Version");
-        builder.HasAlternateKey(row => new { row.ReleaseId, row.Revision, row.Kind, row.Id });
-        builder.HasOne<ReleaseRevisionRow>()
+        builder.HasAlternateKey(row => new { row.ReleaseId, row.Kind, row.Id });
+        builder.HasOne<ReleaseRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision })
+            .HasForeignKey(row => row.ReleaseId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<EvidenceRecordRow>()
             .WithMany()
             .HasForeignKey(row => new
             {
                 row.ReleaseId,
-                row.Revision,
                 row.Kind,
                 row.SupersedesEvidenceId,
             })
-            .HasPrincipalKey(row => new { row.ReleaseId, row.Revision, row.Kind, row.Id })
+            .HasPrincipalKey(row => new { row.ReleaseId, row.Kind, row.Id })
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureOperationKey(builder, "UX_EvidenceRecords_OperationKey");
         MakeAllPropertiesImmutable(builder);
@@ -77,18 +76,18 @@ internal static class EntityConfiguration
     private static void ConfigureCurrentEvidence(EntityTypeBuilder<CurrentEvidenceRow> builder)
     {
         builder.ToTable("CurrentEvidence");
-        builder.HasKey(row => new { row.ReleaseId, row.Revision, row.Kind });
+        builder.HasKey(row => new { row.ReleaseId, row.Kind });
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.Kind).HasConversion<int>();
         builder.HasIndex(row => row.EvidenceId).IsUnique();
-        builder.HasOne<ReleaseRevisionRow>()
+        builder.HasOne<ReleaseRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision })
+            .HasForeignKey(row => row.ReleaseId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<EvidenceRecordRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision, row.Kind, row.EvidenceId })
-            .HasPrincipalKey(row => new { row.ReleaseId, row.Revision, row.Kind, row.Id })
+            .HasForeignKey(row => new { row.ReleaseId, row.Kind, row.EvidenceId })
+            .HasPrincipalKey(row => new { row.ReleaseId, row.Kind, row.Id })
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureConcurrencyToken(builder.Property(row => row.ConcurrencyToken));
     }
@@ -104,10 +103,10 @@ internal static class EntityConfiguration
         });
         builder.HasKey(row => row.Id);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
-        builder.HasIndex(row => new { row.ReleaseId, row.Revision, row.RoundNumber }).IsUnique();
-        builder.HasOne<ReleaseRevisionRow>()
+        builder.HasIndex(row => new { row.ReleaseId, row.RoundNumber }).IsUnique();
+        builder.HasOne<ReleaseRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision })
+            .HasForeignKey(row => row.ReleaseId)
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureOperationKey(builder, "UX_EvaluationRounds_OperationKey");
     }
@@ -148,16 +147,16 @@ internal static class EntityConfiguration
         builder.HasKey(row => row.Id);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.Kind).HasConversion<int>();
-        builder.HasIndex(row => new { row.ReleaseId, row.Revision })
+        builder.HasIndex(row => row.ReleaseId)
             .IsUnique()
             .HasFilter("IsActive = 1")
             .HasDatabaseName("UX_WorkflowRequests_Active_Release");
         builder.HasIndex(row => new { row.EvaluationRoundId, row.Kind })
             .IsUnique()
             .HasDatabaseName("UX_WorkflowRequests_Round_Kind");
-        builder.HasOne<ReleaseRevisionRow>()
+        builder.HasOne<ReleaseRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision })
+            .HasForeignKey(row => row.ReleaseId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<EvaluationRoundRow>()
             .WithMany()
@@ -170,7 +169,6 @@ internal static class EntityConfiguration
         ConfigureConcurrencyToken(builder.Property(row => row.ConcurrencyToken));
         ConfigureOperationKey(builder, "UX_WorkflowRequests_OperationKey");
         MakeImmutable(builder.Property(row => row.ReleaseId));
-        MakeImmutable(builder.Property(row => row.Revision));
         MakeImmutable(builder.Property(row => row.Kind));
         MakeImmutable(builder.Property(row => row.EvaluationRoundId));
         MakeImmutable(builder.Property(row => row.DecisionSnapshotId));
@@ -199,9 +197,9 @@ internal static class EntityConfiguration
         builder.HasKey(row => row.Id);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.HasIndex(row => row.EvaluationRoundId).IsUnique();
-        builder.HasOne<ReleaseRevisionRow>()
+        builder.HasOne<ReleaseRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision })
+            .HasForeignKey(row => row.ReleaseId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<EvaluationRoundRow>()
             .WithMany()
@@ -239,12 +237,12 @@ internal static class EntityConfiguration
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.Decision).HasConversion<int>();
         builder.HasIndex(row => row.ApprovalRequestId).IsUnique();
-        builder.HasIndex(row => new { row.ReleaseId, row.Revision })
+        builder.HasIndex(row => row.ReleaseId)
             .IsUnique()
             .HasDatabaseName("UX_HumanResponses_Terminal_Release");
-        builder.HasOne<ReleaseRevisionRow>()
+        builder.HasOne<ReleaseRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision })
+            .HasForeignKey(row => row.ReleaseId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<WorkflowRequestRow>()
             .WithMany()
@@ -257,14 +255,14 @@ internal static class EntityConfiguration
     private static void ConfigureWorkflowCorrelation(EntityTypeBuilder<WorkflowCorrelationRow> builder)
     {
         builder.ToTable("WorkflowCorrelations");
-        builder.HasKey(row => new { row.ReleaseId, row.Revision });
+        builder.HasKey(row => row.ReleaseId);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.PendingRequestKind).HasConversion<int>();
         builder.HasIndex(row => row.WorkflowSessionId).IsUnique();
         builder.HasIndex(row => row.PendingWorkflowRequestId).IsUnique();
-        builder.HasOne<ReleaseRevisionRow>()
+        builder.HasOne<ReleaseRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision })
+            .HasForeignKey(row => row.ReleaseId)
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureConcurrencyToken(builder.Property(row => row.ConcurrencyToken));
         ConfigureOperationKey(builder, "UX_WorkflowCorrelations_OperationKey");
@@ -278,10 +276,10 @@ internal static class EntityConfiguration
         builder.HasKey(row => row.Id);
         builder.Property(row => row.ReleaseId).HasMaxLength(200);
         builder.Property(row => row.Kind).HasConversion<int>();
-        builder.HasIndex(row => new { row.ReleaseId, row.Revision, row.Sequence }).IsUnique();
-        builder.HasOne<ReleaseRevisionRow>()
+        builder.HasIndex(row => new { row.ReleaseId, row.Sequence }).IsUnique();
+        builder.HasOne<ReleaseRow>()
             .WithMany()
-            .HasForeignKey(row => new { row.ReleaseId, row.Revision })
+            .HasForeignKey(row => row.ReleaseId)
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureOperationKey(builder, "UX_TimelineEntries_OperationKey");
         MakeAllPropertiesImmutable(builder);

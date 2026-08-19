@@ -4,11 +4,11 @@ using ReleaseReadinessCoordinator.Domain;
 namespace ReleaseReadinessCoordinator.Workflow;
 
 internal sealed class RemediationHandler(
-    ReleaseRevisionKey releaseRevision,
+    ReleaseId releaseId,
     IApplicationDataService dataService)
 {
-    private readonly ReleaseRevisionKey _releaseRevision =
-        releaseRevision ?? throw new ArgumentNullException(nameof(releaseRevision));
+    private readonly ReleaseId _releaseId =
+        releaseId ?? throw new ArgumentNullException(nameof(releaseId));
     private readonly IApplicationDataService _dataService =
         dataService ?? throw new ArgumentNullException(nameof(dataService));
 
@@ -17,30 +17,30 @@ internal sealed class RemediationHandler(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(response);
-        var detail = await _dataService.GetReleaseDetailAsync(_releaseRevision, cancellationToken)
+        var detail = await _dataService.GetReleaseDetailAsync(_releaseId, cancellationToken)
             ?? throw new InvalidOperationException(
-                $"Release revision '{_releaseRevision.ReleaseId}/{_releaseRevision.Revision}' does not exist.");
+                $"Release '{_releaseId}' does not exist.");
         var request = detail.RemediationRequests.SingleOrDefault(
             item => item.Id == response.Submission.RequestId)
             ?? throw new InvalidOperationException(
-                $"Remediation request '{response.Submission.RequestId}' does not belong to this release revision.");
+                $"Remediation request '{response.Submission.RequestId}' does not belong to this release.");
         var nextSequence = detail.Timeline.IsEmpty
             ? 1
             : detail.Timeline[^1].Sequence + 1;
 
         var persisted = await _dataService.SaveRemediationSubmissionAsync(
-            _releaseRevision,
+            _releaseId,
             response.Submission,
             response.EvidenceReplacements,
             new TimelineEntry(
                 Guid.NewGuid(),
-                _releaseRevision,
+                _releaseId,
                 nextSequence,
                 TimelineEntryKind.RemediationSubmitted,
                 Explain(response.Submission),
                 response.Submission.SubmittedAt),
             RoundAggregator.OperationKey(
-                _releaseRevision,
+                _releaseId,
                 $"remediation:{response.Submission.Id:N}"),
             cancellationToken);
 

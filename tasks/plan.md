@@ -8,6 +8,7 @@ Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application
 
 - `SPEC.md` is the sole authoritative product and architecture specification.
 - Tasks 1-15 are implemented and verified in the current repository. Task 16 is reopened to replace its production-oriented stale-decision contract with the approved portfolio-focused terminal MAF decision flow.
+- On 2026-08-19 the owner removed numeric release revisions from the MVP. Completed revision-bearing tasks remain historical records; Task 21 performs the compulsory single-identifier cutover before remaining UI work.
 - The NuGet V3 package index was checked on 2026-08-11 and includes `Microsoft.Agents.AI.Workflows` version `1.17.0`.
 - Official MAF documentation confirms the planned superstep synchronization barrier, typed `RequestPort` external requests, checkpoint capture of pending requests, stable topology/executor identity requirements during rehydration, and the process-exclusive/non-thread-safe filesystem checkpoint store. Because some API reference pages display an older package label, Tasks 2 and 3 require compiled 1.17.0 contract tests before feature implementation continues.
 
@@ -27,12 +28,12 @@ Official references:
 - Root namespace: `ReleaseReadinessCoordinator`
 - Razor routes:
   - `/Releases/New`
-  - `/Releases/{releaseId}/{revision}`
-  - `/Releases/{releaseId}/{revision}/Remediate`
-  - `/Releases/{releaseId}/{revision}/Decision`
+  - `/Releases/{releaseId}`
+  - `/Releases/{releaseId}/Remediate`
+  - `/Releases/{releaseId}/Decision`
 - One bounded application data service uses EF Core directly. There are no generic repositories, CQRS layers, event sourcing, workers, queues, or additional deployables.
 - Built-in `TimeProvider` is injected for all time-sensitive logic.
-- Release metadata is immutable within a revision. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs and `ValidUntil` deadlines.
+- Every submission has one globally unique `ReleaseId`; there is no numeric revision or release-family relationship. Release metadata is immutable after submission, and corrections require a new release ID. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs and `ValidUntil` deadlines.
 - Evidence changes are allowed through remediation only and are locked while approval is pending. The restored typed MAF request is the authority for approval-response correlation; human decision never routes back to the planner.
 - Local simulated providers implement typed evidence-source contracts. Only known typed transient failures receive one initial attempt plus two immediate retries.
 - SQLite stores immutable/versioned business records and an append-only timeline. MAF checkpoints live under a configurable private application-data directory that is excluded from source control.
@@ -42,25 +43,26 @@ Official references:
 
 ```mermaid
 flowchart TD
-    A[Solution and command baseline] --> B[MAF conditional-routing/fan-in proof]
-    B --> C[MAF request/checkpoint proof]
-    C --> D[Immutable release and evidence contracts]
-    D --> EV[Evaluation and reuse contracts]
-    EV --> DE[Decision and audit contracts]
-    EV --> FR[Evidence identity and freshness rules]
-    DE --> E[SQLite schema and bounded data service]
-    FR --> E
-    E --> F[Release submission]
-    FR --> G[Test, Security, Change slices]
-    F --> H[Selective round planner]
-    G --> H
-    H --> I[Complete aggregation and remediation]
-    I --> J[Decision snapshot and response integrity]
-    J --> ID[Identity vocabulary simplification]
-    ID --> K[Restart recovery and reconciliation]
-    K --> L[Razor Pages interactions]
-    L --> M[Workflow and browser evaluation]
-    M --> N[Documentation and final acceptance]
+    T1[Task 1: Solution and command baseline] --> T2[Task 2: MAF conditional-routing/fan-in proof]
+    T2 --> T3[Task 3: MAF request/checkpoint proof]
+    T3 --> T4[Task 4: Immutable release and evidence contracts]
+    T4 --> T5[Task 5: Evaluation and reuse contracts]
+    T5 --> T6[Task 6: Decision and audit contracts]
+    T5 --> T7[Task 7: Evidence identity and freshness rules]
+    T6 --> T8_9[Tasks 8-9: SQLite schema and bounded data service]
+    T7 --> T8_9
+    T8_9 --> T10[Task 10: Release submission]
+    T7 --> T11_13[Tasks 11-13: Test, Security, Change slices]
+    T10 --> T14[Task 14: Selective round planner]
+    T11_13 --> T14
+    T14 --> T15[Task 15: Complete aggregation and remediation]
+    T15 --> T16[Task 16: Decision snapshot and response integrity]
+    T16 --> T17_19[Tasks 17-19: Identity vocabulary simplification]
+    T17_19 --> T20[Task 20: Restart recovery and reconciliation]
+    T20 --> T21[Task 21: Single release-identifier cutover]
+    T21 --> T22_24[Tasks 22-24: Razor Pages interactions]
+    T22_24 --> T25_26[Tasks 25-26: Workflow and browser evaluation]
+    T25_26 --> T27[Task 27: Documentation and final acceptance]
 ```
 
 ## Task List
@@ -125,9 +127,9 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] Task 14: Implement selective execution and safe reuse planning
 - [x] Task 15: Complete aggregation and remediation resumption
 - [x] Task 16: Build immutable snapshots and terminal MAF human decisions
-- [x] Task 16A: Allocate round and result identities once
-- [x] Task 16B: Separate workflow waits from business requests
-- [x] Task 16C: Clarify persisted approval-response references
+- [x] Task 17: Allocate round and result identities once
+- [x] Task 18: Separate workflow waits from business requests
+- [x] Task 19: Clarify persisted approval-response references
 
 ### Checkpoint D: Core End-to-End Workflow
 
@@ -139,16 +141,18 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 5: Recovery and Minimal Razor UI
 
-- [ ] Task 17: Add restart recovery, synchronization, and reconciliation
-- [ ] Task 18: Build release detail and timeline UI
+- [x] Task 20: Add restart recovery, synchronization, and reconciliation
+- [x] Task 21: Remove numeric release revisions across the application
+- [ ] Task 22: Build release detail and timeline UI
 
 ### Checkpoint E1: Recovery and Read Model
 
-- [ ] Stop/restart/resume works for remediation and approval waits
+- [x] Stop/restart/resume works for remediation and approval waits
+- [x] Release identity, persistence, workflow sessions, and routes use only `ReleaseId`
 - [ ] The detail page explains current state and immutable history
 
-- [ ] Task 19: Build remediation interaction UI
-- [ ] Task 20: Build decision interaction UI
+- [ ] Task 23: Build remediation interaction UI
+- [ ] Task 24: Build decision interaction UI
 
 ### Checkpoint E2: Demonstrable MVP
 
@@ -157,15 +161,15 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 6: Evaluation and Delivery
 
-- [ ] Task 21: Complete real-graph workflow scenario coverage
-- [ ] Task 22: Add minimal browser smoke coverage
+- [ ] Task 25: Complete real-graph workflow scenario coverage
+- [ ] Task 26: Add minimal browser smoke coverage
 
 ### Checkpoint F1: Evaluation
 
 - [ ] Required workflow and browser scenarios pass
 - [ ] Test evidence covers orchestration risks and both user journeys
 
-- [ ] Task 23: Finish documentation, full verification, and spec audit
+- [ ] Task 27: Finish documentation, full verification, and spec audit
 
 ### Checkpoint F2: Complete
 
@@ -182,7 +186,8 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 | MAF 1.17.0 APIs differ from current documentation examples | High | Tasks 2-3 compile and execute version-pinned topology, request, checkpoint, and stable-ID probes before domain implementation. Any conflict is reported; the version is never changed silently. |
 | SQLite writes and filesystem checkpoints cannot be atomic | High | Use stable operation keys, unique constraints, replay-safe upserts, correlation verification, and explicit reconciliation tests. |
 | Reuse accidentally calls providers or policies | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
-| Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate revision without adding supersession/cancellation behavior to the MVP. |
+| Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate release ID without adding grouping, supersession, or cancellation behavior to the MVP. |
+| Removing revision changes established domain, persisted, route, and checkpoint identities | High | Land Task 21 before further UI work, reset disposable pre-release SQLite/checkpoint stores, update all contracts and tests together, and add no compatibility layer. |
 | An approval response resumes the wrong external request | High | Rebuild the identical graph, restore the pending request, and verify its MAF request ID and response type before sending the response. Invalid continuation has no business effect. |
 | Mutable release/evidence data erases audit history | Medium | Append immutable/versioned records and expose current projections without updating historical facts. |
 | Checkpoint store is accessed concurrently or from multiple instances | Medium | Register one application-lifetime store, guard all start/resume access, document the single-process constraint, and test concurrent response handling. |

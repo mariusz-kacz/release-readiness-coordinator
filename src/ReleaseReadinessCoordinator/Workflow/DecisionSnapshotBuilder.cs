@@ -10,12 +10,12 @@ internal sealed record DecisionSnapshotBuildResult(
     HumanDecisionRequest Request);
 
 internal sealed class DecisionSnapshotBuilder(
-    ReleaseRevisionKey releaseRevision,
+    ReleaseId releaseId,
     IApplicationDataService dataService,
     TimeProvider timeProvider)
 {
-    private readonly ReleaseRevisionKey _releaseRevision =
-        releaseRevision ?? throw new ArgumentNullException(nameof(releaseRevision));
+    private readonly ReleaseId _releaseId =
+        releaseId ?? throw new ArgumentNullException(nameof(releaseId));
     private readonly IApplicationDataService _dataService =
         dataService ?? throw new ArgumentNullException(nameof(dataService));
     private readonly TimeProvider _timeProvider =
@@ -26,9 +26,9 @@ internal sealed class DecisionSnapshotBuilder(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(round);
-        var detail = await _dataService.GetReleaseDetailAsync(_releaseRevision, cancellationToken)
+        var detail = await _dataService.GetReleaseDetailAsync(_releaseId, cancellationToken)
             ?? throw new InvalidOperationException(
-                $"Release revision '{_releaseRevision.ReleaseId}/{_releaseRevision.Revision}' does not exist.");
+                $"Release '{_releaseId}' does not exist.");
         EnsureLatestPassingRound(round, detail);
 
         var existingSnapshot = detail.DecisionSnapshots.SingleOrDefault(
@@ -43,7 +43,7 @@ internal sealed class DecisionSnapshotBuilder(
         var createdAt = new UtcInstant(_timeProvider.GetUtcNow());
         var snapshot = new DecisionSnapshot(
             Guid.NewGuid(),
-            _releaseRevision,
+            _releaseId,
             round.Id,
             round.RoundNumber,
             round.Results,
@@ -52,7 +52,7 @@ internal sealed class DecisionSnapshotBuilder(
             createdAt);
         var request = new HumanDecisionRequest(
             Guid.NewGuid(),
-            _releaseRevision,
+            _releaseId,
             snapshot.Id,
             createdAt);
         var nextSequence = detail.Timeline.IsEmpty ? 1 : detail.Timeline[^1].Sequence + 1;
@@ -61,13 +61,13 @@ internal sealed class DecisionSnapshotBuilder(
             request,
             new TimelineEntry(
                 Guid.NewGuid(),
-                _releaseRevision,
+                _releaseId,
                 nextSequence,
                 TimelineEntryKind.ApprovalRequested,
                 $"Round {round.RoundNumber} passed all checks; human approval requested.",
                 createdAt),
             RoundAggregator.OperationKey(
-                _releaseRevision,
+                _releaseId,
                 $"round:{round.RoundNumber}:approval-request"),
             cancellationToken);
 
@@ -84,8 +84,7 @@ internal sealed class DecisionSnapshotBuilder(
 
         var earliest = round.Results.Min(result => result.ValidUntil!.Value);
         var brief = new StringBuilder();
-        brief.Append("Release ").Append(round.ReleaseRevision.ReleaseId)
-            .Append(" revision ").Append(round.ReleaseRevision.Revision.ToString(CultureInfo.InvariantCulture))
+        brief.Append("Release ").Append(round.ReleaseId.Value)
             .Append(" passed all deterministic readiness checks in round ")
             .Append(round.RoundNumber.ToString(CultureInfo.InvariantCulture)).Append(".\n")
             .Append("Earliest validity bound: ").Append(earliest.Value.ToString("O", CultureInfo.InvariantCulture)).Append(".\n");
@@ -108,12 +107,12 @@ internal sealed class DecisionSnapshotBuilder(
     private void EnsureLatestPassingRound(EvaluationRound round, ReleaseDetailProjection detail)
     {
         var latestRound = detail.EvaluationRounds.LastOrDefault();
-        if (round.ReleaseRevision != _releaseRevision
+        if (round.ReleaseId != _releaseId
             || latestRound?.Id != round.Id
             || round.Results.Any(result => result.Outcome is not BranchOutcome.Passed))
         {
             throw new InvalidOperationException(
-                "A decision snapshot requires the latest fully passing round for this release revision.");
+                "A decision snapshot requires the latest fully passing round for this release.");
         }
     }
 }

@@ -1,26 +1,25 @@
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
-using ReleaseReadinessCoordinator.Readiness;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
 public sealed class ReleaseSubmissionApplicationService
 {
     private readonly IApplicationDataService _dataService;
-    private readonly CheckpointStoreCoordinator _checkpointCoordinator;
+    private readonly ReleaseWorkflowService _workflowService;
     private readonly TimeProvider _timeProvider;
 
     internal ReleaseSubmissionApplicationService(
         IApplicationDataService dataService,
-        CheckpointStoreCoordinator checkpointCoordinator,
+        ReleaseWorkflowService workflowService,
         TimeProvider timeProvider)
     {
         _dataService = dataService;
-        _checkpointCoordinator = checkpointCoordinator;
+        _workflowService = workflowService;
         _timeProvider = timeProvider;
     }
 
-    public async Task<ReleaseRevision> SubmitAsync(
+    public async Task<Release> SubmitAsync(
         ReleaseSubmission submission,
         IReadOnlyCollection<EvidenceRecord> initialEvidence,
         CancellationToken cancellationToken = default)
@@ -31,10 +30,10 @@ public sealed class ReleaseSubmissionApplicationService
         var operationId = Guid.NewGuid().ToString("N");
         var timeline = new TimelineEntry(
             Guid.NewGuid(),
-            submission.Key,
+            submission.ReleaseId,
             1,
             TimelineEntryKind.ReleaseSubmitted,
-            $"Release {submission.Key.ReleaseId} revision {submission.Key.Revision} submitted.",
+            $"Release {submission.ReleaseId} submitted.",
             submission.SubmittedAt);
         var release = await _dataService.SubmitReleaseAsync(
             submission,
@@ -43,42 +42,15 @@ public sealed class ReleaseSubmissionApplicationService
             $"submission:{operationId}",
             cancellationToken);
 
-        var sessionId = $"release-{Uri.EscapeDataString(submission.Key.ReleaseId)}-revision-{submission.Key.Revision}";
-        var started = await _checkpointCoordinator.StartAsync(
-            ReleaseWorkflowFactory.Create(
-                submission,
-                _dataService,
-                _timeProvider,
-                new ReadinessWorkflowDependencies(
-                    new ApplicationDataTestEvidenceProvider(_dataService),
-                    new TestReadinessPolicy(_timeProvider),
-                    new ApplicationDataSecurityEvidenceProvider(_dataService),
-                    new SecurityReadinessPolicy(_timeProvider),
-                    new ApplicationDataChangeEvidenceProvider(_dataService),
-                    new ChangeReadinessPolicy())),
+        var sessionId = $"release-{Uri.EscapeDataString(submission.ReleaseId.Value)}";
+        await _workflowService.StartAsync(
+            submission,
             new EvaluationRoundStart(
                 Guid.NewGuid(),
                 1,
                 submission.SubmittedAt,
                 []),
             sessionId,
-            cancellationToken);
-        var correlatedAt = new UtcInstant(_timeProvider.GetUtcNow());
-        var correlation = new WorkflowCorrelationRecord(
-            submission.Key,
-            sessionId,
-            started.WorkflowRequestId,
-            started switch
-            {
-                PendingRemediationWait => WorkflowRequestKind.Remediation,
-                PendingApprovalWait => WorkflowRequestKind.Approval,
-                _ => throw new InvalidOperationException(
-                    $"Unknown pending workflow request '{started.GetType().Name}'."),
-            },
-            correlatedAt);
-        await _dataService.SaveWorkflowCorrelationAsync(
-            correlation,
-            $"submission:{operationId}:workflow-correlation",
             cancellationToken);
         return release;
     }

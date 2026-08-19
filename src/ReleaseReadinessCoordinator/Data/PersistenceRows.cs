@@ -7,10 +7,9 @@ internal interface IOperationRow
     string OperationKey { get; set; }
 }
 
-internal sealed class ReleaseRevisionRow : IOperationRow
+internal sealed class ReleaseRow : IOperationRow
 {
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public string ServiceName { get; set; } = null!;
     public string ReleaseVersion { get; set; } = null!;
     public DateTimeOffset RequestedWindowStartUtc { get; set; }
@@ -26,7 +25,6 @@ internal sealed class EvidenceRecordRow : IOperationRow
 {
     public Guid Id { get; set; }
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public EvidenceKind Kind { get; set; }
     public int Version { get; set; }
     public DateTimeOffset RecordedAtUtc { get; set; }
@@ -38,7 +36,6 @@ internal sealed class EvidenceRecordRow : IOperationRow
 internal sealed class CurrentEvidenceRow
 {
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public EvidenceKind Kind { get; set; }
     public Guid EvidenceId { get; set; }
     public DateTimeOffset SelectedAtUtc { get; set; }
@@ -49,7 +46,6 @@ internal sealed class EvaluationRoundRow : IOperationRow
 {
     public Guid Id { get; set; }
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public int RoundNumber { get; set; }
     public DateTimeOffset StartedAtUtc { get; set; }
     public DateTimeOffset? CompletedAtUtc { get; set; }
@@ -79,7 +75,6 @@ internal sealed class WorkflowRequestRow : IOperationRow
 {
     public Guid Id { get; set; }
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public WorkflowRequestKind Kind { get; set; }
     public Guid? EvaluationRoundId { get; set; }
     public Guid? DecisionSnapshotId { get; set; }
@@ -104,7 +99,6 @@ internal sealed class DecisionSnapshotRow : IOperationRow
 {
     public Guid Id { get; set; }
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public Guid EvaluationRoundId { get; set; }
     public int RoundNumber { get; set; }
     public DateTimeOffset EarliestValidityBoundUtc { get; set; }
@@ -125,7 +119,6 @@ internal sealed class HumanResponseRow : IOperationRow
 {
     public Guid Id { get; set; }
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public Guid ApprovalRequestId { get; set; }
     public HumanDecision Decision { get; set; }
     public string Responder { get; set; } = null!;
@@ -137,7 +130,6 @@ internal sealed class HumanResponseRow : IOperationRow
 internal sealed class WorkflowCorrelationRow : IOperationRow
 {
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public string WorkflowSessionId { get; set; } = null!;
     public string PendingWorkflowRequestId { get; set; } = null!;
     public WorkflowRequestKind PendingRequestKind { get; set; }
@@ -150,7 +142,6 @@ internal sealed class TimelineEntryRow : IOperationRow
 {
     public Guid Id { get; set; }
     public string ReleaseId { get; set; } = null!;
-    public int Revision { get; set; }
     public long Sequence { get; set; }
     public TimelineEntryKind Kind { get; set; }
     public string Summary { get; set; } = null!;

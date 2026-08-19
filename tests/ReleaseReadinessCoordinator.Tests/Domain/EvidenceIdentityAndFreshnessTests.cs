@@ -4,7 +4,7 @@ namespace ReleaseReadinessCoordinator.Tests.Domain;
 
 public sealed class EvidenceIdentityTests
 {
-    private static readonly ReleaseRevisionKey RevisionKey = new("release-42", 3);
+    private static readonly ReleaseId Id = new("release-42");
     private static readonly UtcInstant ObservedAt = Utc(2026, 8, 14, 8);
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class EvidenceIdentityTests
         int version,
         Guid? supersedesEvidenceId) => new(
             id,
-            RevisionKey,
+            Id,
             version,
             ObservedAt,
             supersedesEvidenceId,
@@ -116,7 +116,7 @@ public sealed class FreshnessTests
     public void Change_evidence_does_not_use_the_24_hour_freshness_policy()
     {
         var evidence = new ChangeEvidenceRecord(
-            Guid.NewGuid(), Revision(), 1, ObservedAt, null,
+            Guid.NewGuid(), Id(), 1, ObservedAt, null,
             isApproved: true,
             new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 11)));
 
@@ -126,16 +126,16 @@ public sealed class FreshnessTests
     private static EvidenceRecord Evidence(ReadinessCheck check) => check switch
     {
         ReadinessCheck.Test => new TestEvidenceRecord(
-            Guid.NewGuid(), Revision(), 1, ObservedAt, null,
+            Guid.NewGuid(), Id(), 1, ObservedAt, null,
             "2.4.0", ObservedAt, 0.97m, []),
         ReadinessCheck.Security => new SecurityEvidenceRecord(
-            Guid.NewGuid(), Revision(), 1, ObservedAt, null,
+            Guid.NewGuid(), Id(), 1, ObservedAt, null,
             "2.4.0", ObservedAt, [], [],
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
         _ => throw new ArgumentOutOfRangeException(nameof(check)),
     };
 
-    private static ReleaseRevisionKey Revision() => new("release-42", 3);
+    private static ReleaseId Id() => new("release-42");
 
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));

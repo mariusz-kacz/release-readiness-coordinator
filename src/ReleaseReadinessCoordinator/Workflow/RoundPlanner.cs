@@ -60,7 +60,7 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
 
         return reason is PlanningReason.StillCurrent
             ? new DomainBranchWorkItem(
-                request.ReleaseRevision,
+                request.ReleaseId,
                 request.RoundNumber,
                 check,
                 WorkDisposition.Reuse,
@@ -99,7 +99,7 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
         RoundPlanningRequest request,
         PlanningReason reason,
         string detail) => new(
-        request.ReleaseRevision,
+        request.ReleaseId,
         request.RoundNumber,
         check,
         WorkDisposition.Execute,

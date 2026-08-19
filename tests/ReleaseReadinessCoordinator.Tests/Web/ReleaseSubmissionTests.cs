@@ -27,11 +27,9 @@ public sealed class ReleaseSubmissionTests
         var redirect = Assert.IsType<RedirectToPageResult>(result);
         Assert.Equal("/Releases/Detail", redirect.PageName);
         Assert.Equal(DemoReleaseFixtures.Complete.ReleaseId, redirect.RouteValues!["releaseId"]);
-        Assert.Equal(DemoReleaseFixtures.Complete.Revision, redirect.RouteValues["revision"]);
+        Assert.DoesNotContain("revision", redirect.RouteValues.Keys);
 
-        var detail = await harness.ReadAsync(
-            DemoReleaseFixtures.Complete.ReleaseId,
-            DemoReleaseFixtures.Complete.Revision);
+        var detail = await harness.ReadAsync(DemoReleaseFixtures.Complete.ReleaseId);
         Assert.NotNull(detail);
         Assert.Equal(DemoReleaseFixtures.Complete.ServiceName, detail.Release.Submission.ServiceName);
         Assert.Equal(DemoReleaseFixtures.Complete.ReleaseVersion, detail.Release.Submission.ReleaseVersion);
@@ -81,16 +79,14 @@ public sealed class ReleaseSubmissionTests
         var result = await page.OnPostAsync(CancellationToken.None);
 
         Assert.IsType<RedirectToPageResult>(result);
-        var detail = await harness.ReadAsync(
-            DemoReleaseFixtures.MissingEvidence.ReleaseId,
-            DemoReleaseFixtures.MissingEvidence.Revision);
+        var detail = await harness.ReadAsync(DemoReleaseFixtures.MissingEvidence.ReleaseId);
         Assert.NotNull(detail);
         Assert.Empty(detail.CurrentEvidence);
         Assert.NotNull(detail.WorkflowCorrelation);
     }
 
     [Fact]
-    public async Task Duplicate_revision_returns_conflict_page_and_does_not_reopen_or_replace_release()
+    public async Task Duplicate_release_id_returns_conflict_page_and_does_not_reopen_or_replace_release()
     {
         await using var harness = await SubmissionHarness.CreateAsync();
         var original = harness.CreatePage();
@@ -110,9 +106,7 @@ public sealed class ReleaseSubmissionTests
         Assert.Contains(
             duplicate.ModelState[string.Empty]!.Errors,
             error => error.ErrorMessage.Contains("already exists", StringComparison.OrdinalIgnoreCase));
-        var detail = await harness.ReadAsync(
-            DemoReleaseFixtures.Complete.ReleaseId,
-            DemoReleaseFixtures.Complete.Revision);
+        var detail = await harness.ReadAsync(DemoReleaseFixtures.Complete.ReleaseId);
         Assert.NotNull(detail);
         Assert.Equal(DemoReleaseFixtures.Complete.ServiceName, detail.Release.Submission.ServiceName);
         Assert.Equal(ProcessPhase.WaitingForApproval, detail.Release.Phase);
@@ -155,11 +149,12 @@ public sealed class ReleaseSubmissionTests
         public NewModel CreatePage()
         {
             var dataService = new ApplicationDataService(_context);
+            var timeProvider = new FixedTimeProvider(SubmittedAt);
             var submissionService = new ReleaseSubmissionApplicationService(
                 dataService,
-                _checkpointCoordinator,
-                new FixedTimeProvider(SubmittedAt));
-            var page = new NewModel(submissionService, new FixedTimeProvider(SubmittedAt))
+                new ReleaseWorkflowService(dataService, _checkpointCoordinator, timeProvider),
+                timeProvider);
+            var page = new NewModel(submissionService, timeProvider)
             {
                 PageContext = new PageContext
                 {
@@ -169,9 +164,9 @@ public sealed class ReleaseSubmissionTests
             return page;
         }
 
-        public Task<ReleaseDetailProjection?> ReadAsync(string releaseId, int revision) =>
+        public Task<ReleaseDetailProjection?> ReadAsync(string releaseId) =>
             new ApplicationDataService(_context).GetReleaseDetailAsync(
-                new ReleaseRevisionKey(releaseId, revision));
+                new ReleaseId(releaseId));
 
         public async ValueTask DisposeAsync()
         {

@@ -5,11 +5,11 @@ namespace ReleaseReadinessCoordinator.Data;
 public interface IApplicationDataService
 {
     Task<EvidenceRecord?> GetCurrentEvidenceAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         EvidenceKind kind,
         CancellationToken cancellationToken = default);
 
-    Task<ReleaseRevision> SubmitReleaseAsync(
+    Task<Release> SubmitReleaseAsync(
         ReleaseSubmission submission,
         IReadOnlyCollection<EvidenceRecord> initialEvidence,
         TimelineEntry timelineEntry,
@@ -35,7 +35,7 @@ public interface IApplicationDataService
         CancellationToken cancellationToken = default);
 
     Task<RemediationSubmission> SaveRemediationSubmissionAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         RemediationSubmission submission,
         IReadOnlyCollection<EvidenceRecord> evidenceReplacements,
         TimelineEntry timelineEntry,
@@ -50,7 +50,7 @@ public interface IApplicationDataService
         CancellationToken cancellationToken = default);
 
     Task<PersistedHumanResponse> SaveHumanResponseAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         Guid approvalRequestId,
         HumanResponse response,
         TimelineEntry timelineEntry,
@@ -62,8 +62,8 @@ public interface IApplicationDataService
         string operationKey,
         CancellationToken cancellationToken = default);
 
-    Task<ReleaseRevision> MarkWorkflowFailedAsync(
-        ReleaseRevisionKey releaseRevision,
+    Task<Release> MarkWorkflowFailedAsync(
+        ReleaseId releaseId,
         UtcInstant failedAt,
         TimelineEntry timelineEntry,
         string operationKey,
@@ -75,13 +75,13 @@ public interface IApplicationDataService
         CancellationToken cancellationToken = default);
 
     Task<ReleaseDetailProjection?> GetReleaseDetailAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken = default);
 }
 
 public enum ApplicationDataConflictKind
 {
-    DuplicateReleaseRevision = 1,
+    DuplicateReleaseId = 1,
     OperationKeyReused = 2,
     TerminalRelease = 3,
     InvalidState = 5,

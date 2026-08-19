@@ -23,7 +23,7 @@ internal sealed class TestReadinessPolicy(TimeProvider timeProvider) : ITestRead
     {
         ArgumentNullException.ThrowIfNull(submission);
         ArgumentNullException.ThrowIfNull(evidence);
-        if (evidence.ReleaseRevision != submission.Key)
+        if (evidence.ReleaseId != submission.ReleaseId)
         {
             throw new InvalidOperationException(
                 "Test evidence and release submission identify different revisions.");

@@ -19,16 +19,16 @@ public sealed class SecurityReadinessPolicyTests
         [
             Evidence(scanVersion: null),
             new SecurityEvidenceRecord(
-                Guid.NewGuid(), RevisionKey(), 1, Utc(2026, 8, 17, 9), null,
+                Guid.NewGuid(), Id(), 1, Utc(2026, 8, 17, 9), null,
                 "2.4.0", scannedAt: null, [], [], EmptyExceptions()),
             new SecurityEvidenceRecord(
-                Guid.NewGuid(), RevisionKey(), 1, Utc(2026, 8, 17, 9), null,
+                Guid.NewGuid(), Id(), 1, Utc(2026, 8, 17, 9), null,
                 "2.4.0", ScannedAt, unresolvedCriticalFindingIds: null, [], EmptyExceptions()),
             new SecurityEvidenceRecord(
-                Guid.NewGuid(), RevisionKey(), 1, Utc(2026, 8, 17, 9), null,
+                Guid.NewGuid(), Id(), 1, Utc(2026, 8, 17, 9), null,
                 "2.4.0", ScannedAt, [], unresolvedHighFindingIds: null, EmptyExceptions()),
             new SecurityEvidenceRecord(
-                Guid.NewGuid(), RevisionKey(), 1, Utc(2026, 8, 17, 9), null,
+                Guid.NewGuid(), Id(), 1, Utc(2026, 8, 17, 9), null,
                 "2.4.0", ScannedAt, [], [], approvedExceptions: null),
         ];
 
@@ -154,7 +154,7 @@ public sealed class SecurityReadinessPolicyTests
     private static ReleaseSubmission Submission(
         string releaseVersion = "2.4.0",
         long requestedEndTicksAfterWindowEnd = 0) => new(
-            RevisionKey(),
+            Id(),
             "orders",
             releaseVersion,
             new UtcInterval(
@@ -168,7 +168,7 @@ public sealed class SecurityReadinessPolicyTests
         IEnumerable<string>? highFindings = default,
         IReadOnlyDictionary<string, (string Scope, UtcInstant ExpiresAt)>? approvedExceptions = default) => new(
             Guid.NewGuid(),
-            RevisionKey(),
+            Id(),
             1,
             Utc(2026, 8, 17, 9),
             null,
@@ -181,7 +181,7 @@ public sealed class SecurityReadinessPolicyTests
     private static IReadOnlyDictionary<string, (string Scope, UtcInstant ExpiresAt)> EmptyExceptions() =>
         new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>(StringComparer.Ordinal);
 
-    private static ReleaseRevisionKey RevisionKey() => new("release-42", 3);
+    private static ReleaseId Id() => new("release-42");
 
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
@@ -205,8 +205,8 @@ public sealed class SecurityReadinessBranchExecutionTests
             knownTransientFailuresBeforeSuccess: 1);
 
         var exception = await Assert.ThrowsAsync<KnownTransientEvidenceProviderException>(
-            async () => await provider.GetCurrentAsync(RevisionKey(), CancellationToken.None));
-        var current = await provider.GetCurrentAsync(RevisionKey(), CancellationToken.None);
+            async () => await provider.GetCurrentAsync(Id(), CancellationToken.None));
+        var current = await provider.GetCurrentAsync(Id(), CancellationToken.None);
 
         Assert.Equal(evidence.Id, exception.EvidenceId);
         Assert.Same(evidence, current);
@@ -293,7 +293,7 @@ public sealed class SecurityReadinessBranchExecutionTests
         });
 
     private static ReleaseReadinessCoordinator.Domain.BranchWorkItem WorkItem() => new(
-        RevisionKey(),
+        Id(),
         roundNumber: 1,
         ReadinessCheck.Security,
         WorkDisposition.Execute,
@@ -301,7 +301,7 @@ public sealed class SecurityReadinessBranchExecutionTests
         "Executed because this is the initial evaluation.");
 
     private static ReleaseSubmission Submission() => new(
-        RevisionKey(),
+        Id(),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
@@ -309,7 +309,7 @@ public sealed class SecurityReadinessBranchExecutionTests
 
     private static SecurityEvidenceRecord Evidence() => new(
         Guid.NewGuid(),
-        RevisionKey(),
+        Id(),
         1,
         Utc(2026, 8, 17, 9),
         null,
@@ -319,7 +319,7 @@ public sealed class SecurityReadinessBranchExecutionTests
         [],
         new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>());
 
-    private static ReleaseRevisionKey RevisionKey() => new("release-42", 3);
+    private static ReleaseId Id() => new("release-42");
 
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
@@ -332,7 +332,7 @@ public sealed class SecurityReadinessBranchExecutionTests
         public int CallCount { get; private set; }
 
         public ValueTask<SecurityEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;
@@ -372,7 +372,7 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
     public async Task Real_graph_security_branch_uses_provider_and_policy_instead_of_simulated_outcome()
     {
         var submission = Submission();
-        var securityEvidence = SecurityEvidence(submission.Key);
+        var securityEvidence = SecurityEvidence(submission.ReleaseId);
         var securityProvider = new CountingProvider(securityEvidence);
         var securityPolicy = new CountingPolicy();
         await using var host = await ReadinessWorkflowTestHost.CreateWithSecurityAsync(
@@ -388,7 +388,7 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
         Assert.DoesNotContain(
             run.NewEvents.OfType<WorkflowOutputEvent>(),
             output => output.Data is EvaluationRound);
-        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
         var round = Assert.Single(detail!.EvaluationRounds);
         var securityResult = Assert.Single(
             round.Results,
@@ -400,13 +400,13 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
     }
 
     private static ReleaseSubmission Submission() => new(
-        new ReleaseRevisionKey("release-graph", 1),
+        new ReleaseId("release-graph"),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
         Utc(2026, 8, 17, 7));
 
-    private static SecurityEvidenceRecord SecurityEvidence(ReleaseRevisionKey releaseRevision) => new(
+    private static SecurityEvidenceRecord SecurityEvidence(ReleaseId releaseRevision) => new(
         Guid.NewGuid(),
         releaseRevision,
         1,
@@ -426,7 +426,7 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
         public int CallCount { get; private set; }
 
         public ValueTask<SecurityEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;

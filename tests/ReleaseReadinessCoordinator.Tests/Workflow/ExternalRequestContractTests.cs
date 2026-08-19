@@ -53,7 +53,7 @@ public sealed class ExternalRequestContractTests
             Assert.True(request.TryGetDataAs<ApprovalRequest>(out var approval));
             Assert.Equal(1, approval.RoundNumber);
             Assert.Equal(approval.Snapshot.Id, approval.Request.SnapshotId);
-            Assert.Equal(host.Submission.Key, approval.Snapshot.ReleaseRevision);
+            Assert.Equal(host.Submission.ReleaseId, approval.Snapshot.ReleaseId);
             Assert.Equal(3, approval.Snapshot.Sources.Length);
             Assert.False(string.IsNullOrWhiteSpace(approval.Snapshot.DecisionBrief));
             Assert.Throws<InvalidOperationException>(

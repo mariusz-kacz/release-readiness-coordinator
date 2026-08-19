@@ -6,7 +6,7 @@ public sealed record DecisionSnapshot
 {
     public DecisionSnapshot(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         Guid evaluationRoundId,
         int roundNumber,
         IEnumerable<BranchResult> sources,
@@ -21,7 +21,7 @@ public sealed record DecisionSnapshot
 
         var completeSources = EvaluationRound.RequireEveryCheck(sources, "A decision snapshot");
         if (completeSources.Any(result =>
-                result.ReleaseRevision != releaseRevision
+                result.ReleaseId != releaseId
                 || result.RoundNumber != roundNumber
                 || result.Outcome is not BranchOutcome.Passed))
         {
@@ -35,7 +35,7 @@ public sealed record DecisionSnapshot
         }
 
         Id = id;
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         EvaluationRoundId = evaluationRoundId;
         RoundNumber = roundNumber;
         Sources = completeSources;
@@ -46,7 +46,7 @@ public sealed record DecisionSnapshot
 
     public Guid Id { get; }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public Guid EvaluationRoundId { get; }
 
@@ -103,7 +103,7 @@ public sealed record HumanDecisionRequest
 {
     public HumanDecisionRequest(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         Guid snapshotId,
         UtcInstant createdAt)
     {
@@ -113,14 +113,14 @@ public sealed record HumanDecisionRequest
         }
 
         Id = id;
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         SnapshotId = snapshotId;
         CreatedAt = createdAt;
     }
 
     public Guid Id { get; }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public Guid SnapshotId { get; }
 
@@ -136,20 +136,20 @@ public enum WorkflowRequestKind
 public sealed record WorkflowCorrelationRecord
 {
     public WorkflowCorrelationRecord(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         string workflowSessionId,
         string pendingWorkflowRequestId,
         WorkflowRequestKind pendingRequestKind,
         UtcInstant correlatedAt)
     {
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         WorkflowSessionId = DomainGuard.Required(workflowSessionId, nameof(workflowSessionId));
         PendingWorkflowRequestId = DomainGuard.Required(pendingWorkflowRequestId, nameof(pendingWorkflowRequestId));
         PendingRequestKind = DomainGuard.Defined(pendingRequestKind, nameof(pendingRequestKind));
         CorrelatedAt = correlatedAt;
     }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public string WorkflowSessionId { get; }
 
@@ -176,7 +176,7 @@ public sealed record TimelineEntry
 {
     public TimelineEntry(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         long sequence,
         TimelineEntryKind kind,
         string summary,
@@ -193,7 +193,7 @@ public sealed record TimelineEntry
         }
 
         Id = id;
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         Sequence = sequence;
         Kind = DomainGuard.Defined(kind, nameof(kind));
         Summary = DomainGuard.Required(summary, nameof(summary));
@@ -202,7 +202,7 @@ public sealed record TimelineEntry
 
     public Guid Id { get; }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public long Sequence { get; }
 

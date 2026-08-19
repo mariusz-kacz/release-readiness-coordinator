@@ -31,10 +31,10 @@ internal sealed class SimulatedSecurityEvidenceProvider : ISecurityEvidenceProvi
     }
 
     public ValueTask<SecurityEvidenceRecord?> GetCurrentAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
         cancellationToken.ThrowIfCancellationRequested();
         _attempts++;
 

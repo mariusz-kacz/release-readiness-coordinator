@@ -4,7 +4,7 @@ using ReleaseReadinessCoordinator.Domain;
 namespace ReleaseReadinessCoordinator.Data;
 
 public sealed record ReleaseDetailProjection(
-    ReleaseRevision Release,
+    Release Release,
     ImmutableArray<EvidenceRecord> EvidenceHistory,
     ImmutableDictionary<EvidenceKind, EvidenceRecord> CurrentEvidence,
     ImmutableArray<EvaluationRound> EvaluationRounds,
@@ -17,6 +17,6 @@ public sealed record ReleaseDetailProjection(
     ImmutableArray<TimelineEntry> Timeline);
 
 public sealed record PersistedHumanResponse(
-    ReleaseRevisionKey ReleaseRevision,
+    ReleaseId ReleaseId,
     Guid ApprovalRequestId,
     HumanResponse Response);

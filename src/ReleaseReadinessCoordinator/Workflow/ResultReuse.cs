@@ -30,12 +30,12 @@ internal sealed class ResultReuse(TimeProvider timeProvider)
                 "The reuse work item does not identify the supplied source result.");
         }
 
-        if (source.ReleaseRevision != workItem.ReleaseRevision
+        if (source.ReleaseId != workItem.ReleaseId
             || source.Check != workItem.Check
             || source.RoundNumber >= workItem.RoundNumber)
         {
             throw new InvalidOperationException(
-                "The reuse source does not belong to this branch, release revision, and an earlier round.");
+                "The reuse source does not belong to this branch, release, and an earlier round.");
         }
 
         if (source.Outcome is not BranchOutcome.Passed
@@ -59,7 +59,7 @@ internal sealed class ResultReuse(TimeProvider timeProvider)
 
         return new DomainBranchResult(
             resultId,
-            workItem.ReleaseRevision,
+            workItem.ReleaseId,
             workItem.RoundNumber,
             workItem.Check,
             BranchOutcome.Passed,

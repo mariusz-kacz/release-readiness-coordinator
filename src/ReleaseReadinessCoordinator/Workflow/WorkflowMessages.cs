@@ -24,21 +24,21 @@ public sealed record ApprovalResponse(HumanResponse Response);
 internal sealed record RoundPlanningRequest
 {
     public RoundPlanningRequest(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int roundNumber,
         IEnumerable<DomainBranchResult> previousResults,
         IReadOnlyDictionary<ReadinessCheck, Guid> currentEvidenceIds,
         IEnumerable<ReadinessCheck> explicitlySelectedChecks)
     {
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
         if (roundNumber <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(roundNumber));
         }
 
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         RoundNumber = roundNumber;
-        PreviousResults = CopyPreviousResults(previousResults, releaseRevision, roundNumber);
+        PreviousResults = CopyPreviousResults(previousResults, releaseId, roundNumber);
         CurrentEvidenceIds = CopyCurrentEvidenceIds(currentEvidenceIds);
         ArgumentNullException.ThrowIfNull(explicitlySelectedChecks);
         ExplicitlySelectedChecks = explicitlySelectedChecks
@@ -46,7 +46,7 @@ internal sealed record RoundPlanningRequest
             .ToImmutableHashSet();
     }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public int RoundNumber { get; }
 
@@ -58,7 +58,7 @@ internal sealed record RoundPlanningRequest
 
     private static ImmutableDictionary<ReadinessCheck, DomainBranchResult> CopyPreviousResults(
         IEnumerable<DomainBranchResult> previousResults,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int roundNumber)
     {
         var results = DomainGuard.Copy(previousResults, nameof(previousResults));
@@ -69,11 +69,11 @@ internal sealed record RoundPlanningRequest
         }
 
         if (results.Any(result =>
-                result.ReleaseRevision != releaseRevision
+                result.ReleaseId != releaseId
                 || result.RoundNumber >= roundNumber))
         {
             throw new InvalidOperationException(
-                "Prior results must belong to this release revision and an earlier round.");
+                "Prior results must belong to this release and an earlier round.");
         }
 
         try

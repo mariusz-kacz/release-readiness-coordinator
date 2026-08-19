@@ -4,7 +4,7 @@ namespace ReleaseReadinessCoordinator.Tests.Domain;
 
 public sealed class DecisionContractTests
 {
-    private static readonly ReleaseRevisionKey RevisionKey = new("release-42", 3);
+    private static readonly ReleaseId Id = new("release-42");
     private static readonly UtcInstant ValidUntil = Utc(2026, 8, 15, 8);
 
     [Fact]
@@ -18,7 +18,7 @@ public sealed class DecisionContractTests
 
         var snapshot = new DecisionSnapshot(
             Guid.NewGuid(),
-            RevisionKey,
+            Id,
             Guid.NewGuid(),
             roundNumber: 2,
             sources,
@@ -62,7 +62,7 @@ public sealed class DecisionContractTests
         Guid evidenceId,
         UtcInstant validUntil) => new(
             Guid.NewGuid(),
-            RevisionKey,
+            Id,
             roundNumber: 2,
             check,
             BranchOutcome.Passed,

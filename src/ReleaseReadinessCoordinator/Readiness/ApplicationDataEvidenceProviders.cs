@@ -10,10 +10,10 @@ internal sealed class ApplicationDataTestEvidenceProvider(IApplicationDataServic
         dataService ?? throw new ArgumentNullException(nameof(dataService));
 
     public async ValueTask<TestEvidenceRecord?> GetCurrentAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken) =>
         (TestEvidenceRecord?)await _dataService.GetCurrentEvidenceAsync(
-            releaseRevision,
+            releaseId,
             EvidenceKind.Test,
             cancellationToken);
 }
@@ -25,10 +25,10 @@ internal sealed class ApplicationDataSecurityEvidenceProvider(IApplicationDataSe
         dataService ?? throw new ArgumentNullException(nameof(dataService));
 
     public async ValueTask<SecurityEvidenceRecord?> GetCurrentAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken) =>
         (SecurityEvidenceRecord?)await _dataService.GetCurrentEvidenceAsync(
-            releaseRevision,
+            releaseId,
             EvidenceKind.Security,
             cancellationToken);
 }
@@ -40,10 +40,10 @@ internal sealed class ApplicationDataChangeEvidenceProvider(IApplicationDataServ
         dataService ?? throw new ArgumentNullException(nameof(dataService));
 
     public async ValueTask<ChangeEvidenceRecord?> GetCurrentAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken) =>
         (ChangeEvidenceRecord?)await _dataService.GetCurrentEvidenceAsync(
-            releaseRevision,
+            releaseId,
             EvidenceKind.Change,
             cancellationToken);
 }

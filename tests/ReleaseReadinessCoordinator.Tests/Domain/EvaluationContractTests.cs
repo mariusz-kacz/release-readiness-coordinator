@@ -4,7 +4,7 @@ namespace ReleaseReadinessCoordinator.Tests.Domain;
 
 public sealed class EvaluationContractTests
 {
-    private static readonly ReleaseRevisionKey RevisionKey = new("release-42", 3);
+    private static readonly ReleaseId Id = new("release-42");
     private static readonly UtcInstant ValidUntil = Utc(2026, 8, 15, 8);
 
     [Fact]
@@ -23,7 +23,7 @@ public sealed class EvaluationContractTests
         Assert.Equal(
             [
                 "Attempts", "Check", "Disposition", "EvidenceId", "EvidenceKind", "Findings",
-                "Id", "Outcome", "PlanningDetail", "PlanningReason", "ReleaseRevision",
+                "Id", "Outcome", "PlanningDetail", "PlanningReason", "ReleaseId",
                 "ReuseSourceResultId", "ReuseSourceRound", "RoundNumber", "ValidUntil",
             ],
             typeof(BranchResult).GetProperties().Select(property => property.Name).Order());
@@ -38,7 +38,7 @@ public sealed class EvaluationContractTests
         PlanningReason planningReason)
     {
         Assert.Throws<ArgumentException>(() => new BranchWorkItem(
-            RevisionKey,
+            Id,
             roundNumber: 2,
             ReadinessCheck.Test,
             disposition,
@@ -51,7 +51,7 @@ public sealed class EvaluationContractTests
     public void Branch_work_item_reuse_requires_a_source_result()
     {
         Assert.Throws<ArgumentException>(() => new BranchWorkItem(
-            RevisionKey,
+            Id,
             roundNumber: 2,
             ReadinessCheck.Test,
             WorkDisposition.Reuse,
@@ -63,7 +63,7 @@ public sealed class EvaluationContractTests
     public void Reuse_source_identity_cannot_be_empty()
     {
         Assert.Throws<ArgumentException>(() => new BranchWorkItem(
-            RevisionKey,
+            Id,
             roundNumber: 2,
             ReadinessCheck.Test,
             WorkDisposition.Reuse,
@@ -148,7 +148,7 @@ public sealed class EvaluationContractTests
         Guid? reuseSourceResultId = null,
         int? sourceRound = null) => new(
             Guid.NewGuid(),
-            RevisionKey,
+            Id,
             roundNumber: 2,
             check,
             outcome,

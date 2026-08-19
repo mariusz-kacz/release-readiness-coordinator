@@ -18,7 +18,7 @@ internal sealed class ChangeReadinessPolicy : IChangeReadinessPolicy
     {
         ArgumentNullException.ThrowIfNull(submission);
         ArgumentNullException.ThrowIfNull(evidence);
-        if (evidence.ReleaseRevision != submission.Key)
+        if (evidence.ReleaseId != submission.ReleaseId)
         {
             throw new InvalidOperationException(
                 "Change evidence and release submission identify different revisions.");

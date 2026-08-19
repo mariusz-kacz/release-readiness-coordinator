@@ -21,7 +21,7 @@ internal sealed class SecurityReadinessPolicy(TimeProvider timeProvider) : ISecu
     {
         ArgumentNullException.ThrowIfNull(submission);
         ArgumentNullException.ThrowIfNull(evidence);
-        if (evidence.ReleaseRevision != submission.Key)
+        if (evidence.ReleaseId != submission.ReleaseId)
         {
             throw new InvalidOperationException(
                 "Security evidence and release submission identify different revisions.");

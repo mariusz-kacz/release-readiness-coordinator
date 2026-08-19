@@ -2,7 +2,7 @@
 
 **Status:** Approved input for implementation planning  
 **Document role:** Sole authoritative project specification  
-**Last updated:** 2026-08-18
+**Last updated:** 2026-08-19
 
 ## 1. Authority and change control
 
@@ -68,7 +68,7 @@ The MVP does not require production-grade identity or authorization. Actor names
 6. The coordinator supplies new versions of affected branch evidence.
 7. A new evaluation round executes only branches that are unsuccessful, use an evidence record that is no longer current, are expired, or are explicitly selected.
 8. Successful branch results whose evidence identity and deadline still match are reused without recomputation.
-9. When all three branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, locks evidence changes for that revision, and pauses for a human decision.
+9. When all three branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, locks evidence changes for that release, and pauses for a human decision.
 10. The application restores and verifies the active typed MAF approval request before sending the human response into the workflow.
 11. A response delivered through that request approves or rejects the immutable snapshot and is persisted once as a terminal decision.
 12. Mismatched, missing, corrupt, or incompatible continuation state is rejected before workflow resumption and creates no human-decision business record.
@@ -80,15 +80,15 @@ The UI and timeline must make every evaluation round understandable, especially 
 
 A release submission contains:
 
-- unique release identifier and revision;
+- globally unique release identifier;
 - service name;
 - release version;
 - requested deployment window;
 - initial Test, Security, and Change evidence or references to local simulated evidence.
 
-Service name, release version, and requested deployment window are immutable after submission. Remediation cannot edit them. A different value requires a separate release revision and does not supersede, cancel, migrate, or automatically terminate an earlier workflow in this constrained MVP.
+Service name, release version, and requested deployment window are immutable after submission. Remediation cannot edit them. Correcting any of these values requires a separate release submission with a new release identifier.
 
-Duplicate identifier/revision submissions return a conflict. Approved and rejected revisions are terminal and cannot be reopened. Active-revision supersession, withdrawal, and cancellation are out of scope.
+Duplicate release identifiers return a conflict. Approved and rejected releases are terminal and cannot be reopened. The MVP has no numeric release revision, release-family grouping, supersession link, evidence/history migration between releases, withdrawal, or cancellation.
 
 ## 6. Workflow semantics
 
@@ -168,7 +168,7 @@ A reused branch must:
 
 Each branch has zero or one current immutable/versioned evidence record. Initial submission may omit a branch record to exercise `MissingEvidence`. A response to the active remediation request may create or replace current evidence for one or more branches; doing so affects only those matching branches. A newly current record always counts as changed evidence even when its facts equal an older record. Evidence replacement is rejected in every other phase, including while approval is pending.
 
-Release metadata does not participate in change detection because it is immutable within the revision. Explicit branch selection and reaching a validity deadline affect the planner decision directly without changing evidence.
+Release metadata does not participate in change detection because it is immutable after submission. Explicit branch selection and reaching a validity deadline affect the planner decision directly without changing evidence.
 
 The bounded application data service must atomically persist a new evidence version, link it to the record it supersedes, and make it current. Do not compute input generations, content fingerprints, canonical payloads, or hashes for release, evidence, result, snapshot, or decision-brief change detection.
 
@@ -191,13 +191,13 @@ When all three branches pass, persist an immutable `DecisionSnapshot` containing
 - the earliest validity bound;
 - the deterministic decision brief as immutable snapshot content.
 
-The approval `RequestPort` exposes the immutable snapshot and brief. While that request is active, the release revision accepts no evidence replacement, remediation submission, or explicit rerun. This portfolio constraint makes the snapshot a closed decision package.
+The approval `RequestPort` exposes the immutable snapshot and brief. While that request is active, the release accepts no evidence replacement, remediation submission, or explicit rerun. This portfolio constraint makes the snapshot a closed decision package.
 
 MAF continuation state is the authority for response correlation. Before resuming, the application rebuilds the identical graph, restores the pending request, and verifies its request ID and response type. A missing, mismatched, corrupt, or incompatible request is rejected before any response enters the workflow and produces no human-response business record.
 
 The response contains the manager's `Approve` or `Reject` decision and audit fields. It does not submit a snapshot identity or a separate domain concurrency token; the restored typed request already identifies the snapshot being answered. An exact replay is idempotent, while reuse of a response identity with different content is a technical conflict.
 
-The decision brief is not regenerated or hashed when a response arrives. The handler does not compare current evidence IDs or revalidate result deadlines. A correctly resumed approval or rejection is persisted once and is terminal for that release revision.
+The decision brief is not regenerated or hashed when a response arrives. The handler does not compare current evidence IDs or revalidate result deadlines. A correctly resumed approval or rejection is persisted once and is terminal for that release.
 
 Human decision never routes back to the planner. Selective reevaluation is demonstrated only by the remediation path.
 
@@ -260,7 +260,7 @@ Changing the MAF version requires source-driven reverification of fan-out/fan-in
 
 Use SQLite for:
 
-- releases and revisions;
+- releases identified by one globally unique release identifier;
 - immutable/versioned evidence;
 - evaluation rounds and branch results;
 - remediation requests and submissions;
@@ -269,6 +269,8 @@ Use SQLite for:
 - append-only display timeline entries.
 
 Use MAF `FileSystemJsonCheckpointStore` in a dedicated application-data directory for workflow continuation. Keep MAF checkpoint data outside SQLite and store only stable correlation identifiers between the two stores.
+
+The revision-bearing pre-release SQLite database and filesystem checkpoints are disposable when the single-identifier contract is implemented. Delete and recreate both stores; do not add dual-read compatibility, a backfill, or a production data migration for this MVP correction.
 
 Use one application-lifetime checkpoint store and external synchronization around start/resume access because the store is process-exclusive and not thread-safe. This is a small critical section, not a queue or background execution architecture.
 
@@ -290,7 +292,7 @@ The MVP must demonstrate:
 
 The plan and implementation must preserve these concepts without turning them into a generic framework:
 
-- `ReleaseSubmission` / release revision;
+- `ReleaseSubmission` with one validated `ReleaseId` identity;
 - immutable or versioned `EvidenceRecord`;
 - `BranchWorkItem` with `Execute|Reuse`;
 - `BranchResult` with outcome, disposition, optional evidence ID and `ValidUntil`, attempts, findings, and optional reuse source; a passing result always has evidence and a deadline;
@@ -425,7 +427,7 @@ The implementation plan may choose exact solution, project, namespace, and folde
 
 The MVP is complete when all of the following are demonstrably true:
 
-1. A release can be submitted through the web UI.
+1. A release with one globally unique identifier can be submitted through the web UI without a revision field.
 2. MAF visibly fans out to Test, Security, and Change and aggregates one result from each.
 3. All four expected branch outcomes are represented without converting technical defects into domain results.
 4. Multiple branch problems create one post-fan-in remediation request.
@@ -449,7 +451,8 @@ The MVP is complete when all of the following are demonstrably true:
 - Simulated local evidence is authoritative for the MVP.
 - Actor names are entered rather than authenticated.
 - Evidence is intentionally locked while approval is pending, and human decisions approve or reject the immutable point-in-time snapshot without freshness revalidation. Production-grade continuously editable evidence is outside this portfolio MVP.
-- Release metadata is intentionally immutable within a revision. Correcting it requires a separate revision; active-revision supersession, withdrawal, cancellation, and migration are deliberately not implemented.
+- Release metadata is intentionally immutable after submission. Correcting it requires a separate release with a new identifier; release-family grouping, supersession, withdrawal, cancellation, and cross-release migration are deliberately not implemented.
+- Existing revision-bearing local SQLite and checkpoint data is pre-release and disposable; the identity correction resets those stores rather than preserving compatibility.
 - Safe reuse depends on routing every evidence replacement through the bounded application data service so that the new immutable version, supersession link, and current-evidence selection change atomically.
 
 ### Genuine open decisions for planning

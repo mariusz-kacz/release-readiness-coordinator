@@ -27,15 +27,15 @@ internal sealed class RoundAggregator(
         ArgumentNullException.ThrowIfNull(results);
         EnsureExplanationsAreComplete(results);
 
-        var releaseRevision = results.FirstOrDefault()?.ReleaseRevision
+        var releaseId = results.FirstOrDefault()?.ReleaseId
             ?? throw new InvalidOperationException("A round cannot be completed without branch results.");
-        var detail = await _dataService.GetReleaseDetailAsync(releaseRevision, cancellationToken)
+        var detail = await _dataService.GetReleaseDetailAsync(releaseId, cancellationToken)
             ?? throw new InvalidOperationException(
-                $"Release revision '{releaseRevision.ReleaseId}/{releaseRevision.Revision}' does not exist.");
+                $"Release '{releaseId}' does not exist.");
         var completedAt = new UtcInstant(_timeProvider.GetUtcNow());
         var round = new EvaluationRound(
             start.RoundId,
-            releaseRevision,
+            releaseId,
             start.RoundNumber,
             start.StartedAt,
             completedAt,
@@ -47,12 +47,12 @@ internal sealed class RoundAggregator(
             round,
             new TimelineEntry(
                 Guid.NewGuid(),
-                releaseRevision,
+                releaseId,
                 nextSequence,
                 TimelineEntryKind.EvaluationCompleted,
                 ExplainRound(round),
                 completedAt),
-            OperationKey(releaseRevision, $"round:{start.RoundNumber}"),
+            OperationKey(releaseId, $"round:{start.RoundNumber}"),
             cancellationToken);
 
         var problems = persistedRound.Results
@@ -65,7 +65,7 @@ internal sealed class RoundAggregator(
 
         var request = new DomainRemediationRequest(
             Guid.NewGuid(),
-            releaseRevision,
+            releaseId,
             start.RoundNumber,
             completedAt,
             problems);
@@ -73,12 +73,12 @@ internal sealed class RoundAggregator(
             request,
             new TimelineEntry(
                 Guid.NewGuid(),
-                releaseRevision,
+                releaseId,
                 nextSequence + 1,
                 TimelineEntryKind.RemediationRequested,
                 $"Round {start.RoundNumber} requires remediation for {string.Join(", ", problems.Select(result => result.Check))}.",
                 completedAt),
-            OperationKey(releaseRevision, $"round:{start.RoundNumber}:remediation-request"),
+            OperationKey(releaseId, $"round:{start.RoundNumber}:remediation-request"),
             cancellationToken);
         return new RoundAggregation(persistedRound, persistedRequest);
     }
@@ -108,6 +108,6 @@ internal sealed class RoundAggregator(
             " ",
             round.Results.Select(result => $"{result.Check}: {result.PlanningDetail}"));
 
-    internal static string OperationKey(ReleaseRevisionKey releaseRevision, string operation) =>
-        $"workflow:{releaseRevision.ReleaseId}:{releaseRevision.Revision}:{operation}";
+    internal static string OperationKey(ReleaseId releaseId, string operation) =>
+        $"workflow:{releaseId.Value}:{operation}";
 }

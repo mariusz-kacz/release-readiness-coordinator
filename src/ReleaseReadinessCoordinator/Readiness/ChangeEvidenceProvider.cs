@@ -31,10 +31,10 @@ internal sealed class SimulatedChangeEvidenceProvider : IChangeEvidenceProvider
     }
 
     public ValueTask<ChangeEvidenceRecord?> GetCurrentAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
         cancellationToken.ThrowIfCancellationRequested();
         _attempts++;
 

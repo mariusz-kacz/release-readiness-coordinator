@@ -16,14 +16,13 @@ public sealed partial class ApplicationDataService
         ArgumentNullException.ThrowIfNull(round);
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
-        ValidateTimeline(timelineEntry, round.ReleaseRevision, TimelineEntryKind.EvaluationCompleted);
+        ValidateTimeline(timelineEntry, round.ReleaseId, TimelineEntryKind.EvaluationCompleted);
 
         return ExecuteReplaySafeAsync(
             async token =>
             {
                 var row = await _dbContext.EvaluationRounds.AsNoTracking().SingleOrDefaultAsync(
-                    value => value.ReleaseId == round.ReleaseRevision.ReleaseId
-                        && value.Revision == round.ReleaseRevision.Revision
+                    value => value.ReleaseId == round.ReleaseId.Value
                         && value.RoundNumber == round.RoundNumber,
                     token);
                 if (row is null)
@@ -40,12 +39,11 @@ public sealed partial class ApplicationDataService
             },
             async token =>
             {
-                await RequireReleaseInPhase(round.ReleaseRevision, ProcessPhase.Evaluating, token);
+                await RequireReleaseInPhase(round.ReleaseId, ProcessPhase.Evaluating, token);
                 _dbContext.EvaluationRounds.Add(new EvaluationRoundRow
                 {
                     Id = round.Id,
-                    ReleaseId = round.ReleaseRevision.ReleaseId,
-                    Revision = round.ReleaseRevision.Revision,
+                    ReleaseId = round.ReleaseId.Value,
                     RoundNumber = round.RoundNumber,
                     StartedAtUtc = round.StartedAt.Value,
                     CompletedAtUtc = round.CompletedAt.Value,
@@ -71,14 +69,13 @@ public sealed partial class ApplicationDataService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
-        ValidateTimeline(timelineEntry, request.ReleaseRevision, TimelineEntryKind.RemediationRequested);
+        ValidateTimeline(timelineEntry, request.ReleaseId, TimelineEntryKind.RemediationRequested);
 
         return ExecuteReplaySafeAsync(
             async token =>
             {
                 var round = await _dbContext.EvaluationRounds.AsNoTracking().SingleOrDefaultAsync(
-                    value => value.ReleaseId == request.ReleaseRevision.ReleaseId
-                        && value.Revision == request.ReleaseRevision.Revision
+                    value => value.ReleaseId == request.ReleaseId.Value
                         && value.RoundNumber == request.RoundNumber,
                     token);
                 var row = round is null
@@ -102,12 +99,11 @@ public sealed partial class ApplicationDataService
             async token =>
             {
                 var release = await RequireReleaseInPhase(
-                    request.ReleaseRevision,
+                    request.ReleaseId,
                     ProcessPhase.Evaluating,
                     token);
                 var round = await _dbContext.EvaluationRounds.AsNoTracking().SingleAsync(
-                    value => value.ReleaseId == request.ReleaseRevision.ReleaseId
-                        && value.Revision == request.ReleaseRevision.Revision
+                    value => value.ReleaseId == request.ReleaseId.Value
                         && value.RoundNumber == request.RoundNumber,
                     token);
                 var durableRound = await ReadEvaluationRound(round, token);
@@ -125,20 +121,20 @@ public sealed partial class ApplicationDataService
     }
 
     public Task<RemediationSubmission> SaveRemediationSubmissionAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         RemediationSubmission submission,
         IReadOnlyCollection<EvidenceRecord> evidenceReplacements,
         TimelineEntry timelineEntry,
         string operationKey,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
         ArgumentNullException.ThrowIfNull(submission);
         ArgumentNullException.ThrowIfNull(evidenceReplacements);
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
-        ValidateTimeline(timelineEntry, releaseRevision, TimelineEntryKind.RemediationSubmitted);
-        if (evidenceReplacements.Any(item => item.ReleaseRevision != releaseRevision)
+        ValidateTimeline(timelineEntry, releaseId, TimelineEntryKind.RemediationSubmitted);
+        if (evidenceReplacements.Any(item => item.ReleaseId != releaseId)
             || !SameEvidenceUpdates(submission, evidenceReplacements))
         {
             throw new ArgumentException("Remediation evidence replacements must match the submission update map.", nameof(evidenceReplacements));
@@ -154,13 +150,12 @@ public sealed partial class ApplicationDataService
             async token =>
             {
                 var release = await RequireReleaseInPhase(
-                    releaseRevision,
+                    releaseId,
                     ProcessPhase.WaitingForRemediation,
                     token);
                 var request = await _dbContext.WorkflowRequests.SingleAsync(
                     value => value.Id == submission.RequestId
-                        && value.ReleaseId == releaseRevision.ReleaseId
-                        && value.Revision == releaseRevision.Revision
+                        && value.ReleaseId == releaseId.Value
                         && value.Kind == WorkflowRequestKind.Remediation
                         && value.IsActive,
                     token);
@@ -168,8 +163,7 @@ public sealed partial class ApplicationDataService
                 foreach (var evidence in evidenceReplacements)
                 {
                     var current = await _dbContext.CurrentEvidence.SingleOrDefaultAsync(
-                        value => value.ReleaseId == releaseRevision.ReleaseId
-                            && value.Revision == releaseRevision.Revision
+                        value => value.ReleaseId == releaseId.Value
                             && value.Kind == evidence.Kind,
                         token);
                     await ValidateReplacement(evidence, current, token);
@@ -206,8 +200,8 @@ public sealed partial class ApplicationDataService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
-        ValidateTimeline(timelineEntry, snapshot.ReleaseRevision, TimelineEntryKind.ApprovalRequested);
-        if (request.ReleaseRevision != snapshot.ReleaseRevision || request.SnapshotId != snapshot.Id)
+        ValidateTimeline(timelineEntry, snapshot.ReleaseId, TimelineEntryKind.ApprovalRequested);
+        if (request.ReleaseId != snapshot.ReleaseId || request.SnapshotId != snapshot.Id)
         {
             throw new ArgumentException("The approval request must reference the supplied snapshot.", nameof(request));
         }
@@ -229,7 +223,7 @@ public sealed partial class ApplicationDataService
             async token =>
             {
                 var release = await RequireReleaseInPhase(
-                    snapshot.ReleaseRevision,
+                    snapshot.ReleaseId,
                     ProcessPhase.Evaluating,
                     token);
                 var roundRow = await _dbContext.EvaluationRounds.AsNoTracking().SingleOrDefaultAsync(
@@ -240,7 +234,7 @@ public sealed partial class ApplicationDataService
                 }
 
                 var durableRound = await ReadEvaluationRound(roundRow, token);
-                if (durableRound.ReleaseRevision != snapshot.ReleaseRevision
+                if (durableRound.ReleaseId != snapshot.ReleaseId
                     || durableRound.RoundNumber != snapshot.RoundNumber
                     || !SameIds(durableRound.Results, snapshot.Sources))
                 {
@@ -264,14 +258,14 @@ public sealed partial class ApplicationDataService
     }
 
     public Task<PersistedHumanResponse> SaveHumanResponseAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         Guid approvalRequestId,
         HumanResponse response,
         TimelineEntry timelineEntry,
         string operationKey,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
         if (approvalRequestId == Guid.Empty)
         {
             throw new ArgumentException(
@@ -282,7 +276,7 @@ public sealed partial class ApplicationDataService
         ArgumentNullException.ThrowIfNull(response);
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
-        ValidateTimeline(timelineEntry, releaseRevision, TimelineEntryKind.HumanResponseAccepted);
+        ValidateTimeline(timelineEntry, releaseId, TimelineEntryKind.HumanResponseAccepted);
 
         return ExecuteReplaySafeAsync(
             async token =>
@@ -308,19 +302,18 @@ public sealed partial class ApplicationDataService
             async token =>
             {
                 var release = await RequireReleaseInPhase(
-                    releaseRevision,
+                    releaseId,
                     ProcessPhase.WaitingForApproval,
                     token);
                 var requestRow = await _dbContext.WorkflowRequests.SingleAsync(
                     value => value.Id == approvalRequestId
-                        && value.ReleaseId == releaseRevision.ReleaseId
-                        && value.Revision == releaseRevision.Revision
+                        && value.ReleaseId == releaseId.Value
                         && value.Kind == WorkflowRequestKind.Approval
                         && value.IsActive,
                     token);
 
                 _dbContext.HumanResponses.Add(ToRow(
-                    releaseRevision,
+                    releaseId,
                     approvalRequestId,
                     response,
                     operationKey));
@@ -331,7 +324,7 @@ public sealed partial class ApplicationDataService
                 Transition(release, phase, response.RespondedAt);
 
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, TimelineOperationKey(operationKey)));
-                return new PersistedHumanResponse(releaseRevision, approvalRequestId, response);
+                return new PersistedHumanResponse(releaseId, approvalRequestId, response);
             },
             cancellationToken);
     }
@@ -357,10 +350,9 @@ public sealed partial class ApplicationDataService
             },
             async token =>
             {
-                await RequireMutableRelease(correlation.ReleaseRevision, token);
+                await RequireMutableRelease(correlation.ReleaseId, token);
                 var row = await _dbContext.WorkflowCorrelations.SingleOrDefaultAsync(
-                    value => value.ReleaseId == correlation.ReleaseRevision.ReleaseId
-                        && value.Revision == correlation.ReleaseRevision.Revision,
+                    value => value.ReleaseId == correlation.ReleaseId.Value,
                     token);
                 if (row is null)
                 {
@@ -381,17 +373,18 @@ public sealed partial class ApplicationDataService
             cancellationToken);
     }
 
-    public Task<ReleaseRevision> MarkWorkflowFailedAsync(
-        ReleaseRevisionKey releaseRevision,
+    public Task<Release> MarkWorkflowFailedAsync(
+        ReleaseId releaseId,
         UtcInstant failedAt,
         TimelineEntry timelineEntry,
         string operationKey,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
         ArgumentNullException.ThrowIfNull(timelineEntry);
+        _dbContext.ChangeTracker.Clear();
         operationKey = RequireOperationKey(operationKey);
-        ValidateTimeline(timelineEntry, releaseRevision, TimelineEntryKind.WorkflowFailed);
+        ValidateTimeline(timelineEntry, releaseId, TimelineEntryKind.WorkflowFailed);
         return ExecuteReplaySafeAsync(
             async token =>
             {
@@ -402,14 +395,14 @@ public sealed partial class ApplicationDataService
                     return null;
                 }
 
-                var release = await _dbContext.ReleaseRevisions.AsNoTracking().SingleAsync(
-                    value => value.ReleaseId == releaseRevision.ReleaseId && value.Revision == releaseRevision.Revision,
+                var release = await _dbContext.Releases.AsNoTracking().SingleAsync(
+                    value => value.ReleaseId == releaseId.Value,
                     token);
                 return ToDomain(release);
             },
             async token =>
             {
-                var release = await RequireMutableRelease(releaseRevision, token);
+                var release = await RequireMutableRelease(releaseId, token);
                 Transition(release, ProcessPhase.Failed, failedAt);
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, operationKey));
                 return ToDomain(release);
@@ -438,7 +431,7 @@ public sealed partial class ApplicationDataService
             },
             async token =>
             {
-                await RequireMutableRelease(timelineEntry.ReleaseRevision, token);
+                await RequireMutableRelease(timelineEntry.ReleaseId, token);
                 _dbContext.TimelineEntries.Add(ToRow(timelineEntry, operationKey));
                 return timelineEntry;
             },
@@ -488,7 +481,7 @@ public sealed partial class ApplicationDataService
         }
     }
 
-    private static void Transition(ReleaseRevisionRow row, ProcessPhase phase, UtcInstant changedAt)
+    private static void Transition(ReleaseRow row, ProcessPhase phase, UtcInstant changedAt)
     {
         _ = ToDomain(row).TransitionTo(phase, changedAt);
         row.Phase = phase;
@@ -533,7 +526,7 @@ public sealed partial class ApplicationDataService
 
     private static BranchResult ToDomain(BranchResultRow row, EvaluationRoundRow round) => new(
         row.Id,
-        new ReleaseRevisionKey(round.ReleaseId, round.Revision),
+        new ReleaseId(round.ReleaseId),
         round.RoundNumber,
         row.Check,
         row.Outcome,
@@ -556,7 +549,7 @@ public sealed partial class ApplicationDataService
             .ToListAsync(token);
         return new EvaluationRound(
             row.Id,
-            new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+            new ReleaseId(row.ReleaseId),
             row.RoundNumber,
             new UtcInstant(row.StartedAtUtc),
             new UtcInstant(row.CompletedAtUtc!.Value),
@@ -564,11 +557,11 @@ public sealed partial class ApplicationDataService
     }
 
     private async Task<ImmutableArray<EvaluationRound>> ReadEvaluationRounds(
-        ReleaseRevisionKey key,
+        ReleaseId releaseId,
         CancellationToken token)
     {
         var rows = await _dbContext.EvaluationRounds.AsNoTracking()
-            .Where(value => value.ReleaseId == key.ReleaseId && value.Revision == key.Revision)
+            .Where(value => value.ReleaseId == releaseId.Value)
             .OrderBy(value => value.RoundNumber)
             .ToListAsync(token);
         var rounds = new List<EvaluationRound>(rows.Count);
@@ -583,8 +576,7 @@ public sealed partial class ApplicationDataService
     private static WorkflowRequestRow ToRow(RemediationRequest request, Guid roundId, string operationKey) => new()
     {
         Id = request.Id,
-        ReleaseId = request.ReleaseRevision.ReleaseId,
-        Revision = request.ReleaseRevision.Revision,
+        ReleaseId = request.ReleaseId.Value,
         Kind = WorkflowRequestKind.Remediation,
         EvaluationRoundId = roundId,
         CreatedAtUtc = request.CreatedAt.Value,
@@ -600,7 +592,7 @@ public sealed partial class ApplicationDataService
         var round = await ReadEvaluationRound(roundRow, token);
         return new RemediationRequest(
             row.Id,
-            new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+            new ReleaseId(row.ReleaseId),
             round.RoundNumber,
             new UtcInstant(row.CreatedAtUtc),
             round.Results.Where(value => value.Outcome != BranchOutcome.Passed));
@@ -628,8 +620,7 @@ public sealed partial class ApplicationDataService
         string operationKey) => new()
         {
             Id = snapshot.Id,
-            ReleaseId = snapshot.ReleaseRevision.ReleaseId,
-            Revision = snapshot.ReleaseRevision.Revision,
+            ReleaseId = snapshot.ReleaseId.Value,
             EvaluationRoundId = snapshot.EvaluationRoundId,
             RoundNumber = snapshot.RoundNumber,
             EarliestValidityBoundUtc = snapshot.EarliestValidityBound.Value,
@@ -649,8 +640,7 @@ public sealed partial class ApplicationDataService
     private static WorkflowRequestRow ToRow(HumanDecisionRequest request, string operationKey) => new()
     {
         Id = request.Id,
-        ReleaseId = request.ReleaseRevision.ReleaseId,
-        Revision = request.ReleaseRevision.Revision,
+        ReleaseId = request.ReleaseId.Value,
         Kind = WorkflowRequestKind.Approval,
         DecisionSnapshotId = request.SnapshotId,
         CreatedAtUtc = request.CreatedAt.Value,
@@ -661,19 +651,18 @@ public sealed partial class ApplicationDataService
 
     private static HumanDecisionRequest ToHumanDecisionRequest(WorkflowRequestRow row) => new(
         row.Id,
-        new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+        new ReleaseId(row.ReleaseId),
         row.DecisionSnapshotId!.Value,
         new UtcInstant(row.CreatedAtUtc));
 
     private static HumanResponseRow ToRow(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         Guid approvalRequestId,
         HumanResponse response,
         string operationKey) => new()
         {
             Id = response.Id,
-            ReleaseId = releaseRevision.ReleaseId,
-            Revision = releaseRevision.Revision,
+            ReleaseId = releaseId.Value,
             ApprovalRequestId = approvalRequestId,
             Decision = response.Decision,
             Responder = response.Responder,
@@ -691,15 +680,14 @@ public sealed partial class ApplicationDataService
             row.Comment,
             new UtcInstant(row.RespondedAtUtc));
         return new PersistedHumanResponse(
-            new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+            new ReleaseId(row.ReleaseId),
             row.ApprovalRequestId,
             response);
     }
 
     private static WorkflowCorrelationRow ToRow(WorkflowCorrelationRecord correlation, string operationKey) => new()
     {
-        ReleaseId = correlation.ReleaseRevision.ReleaseId,
-        Revision = correlation.ReleaseRevision.Revision,
+        ReleaseId = correlation.ReleaseId.Value,
         WorkflowSessionId = correlation.WorkflowSessionId,
         PendingWorkflowRequestId = correlation.PendingWorkflowRequestId,
         PendingRequestKind = correlation.PendingRequestKind,
@@ -709,15 +697,15 @@ public sealed partial class ApplicationDataService
     };
 
     private static WorkflowCorrelationRecord ToDomain(WorkflowCorrelationRow row) => new(
-        new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+        new ReleaseId(row.ReleaseId),
         row.WorkflowSessionId,
         row.PendingWorkflowRequestId,
         row.PendingRequestKind,
         new UtcInstant(row.CorrelatedAtUtc));
 
-    private async Task<ImmutableArray<RemediationRequest>> ReadRemediationRequests(ReleaseRevisionKey key, CancellationToken token)
+    private async Task<ImmutableArray<RemediationRequest>> ReadRemediationRequests(ReleaseId releaseId, CancellationToken token)
     {
-        var rows = await ReadRequests(key, WorkflowRequestKind.Remediation, token);
+        var rows = await ReadRequests(releaseId, WorkflowRequestKind.Remediation, token);
         var values = new List<RemediationRequest>(rows.Count);
         foreach (var row in rows)
         {
@@ -727,9 +715,9 @@ public sealed partial class ApplicationDataService
         return [.. values];
     }
 
-    private async Task<ImmutableArray<RemediationSubmission>> ReadRemediationSubmissions(ReleaseRevisionKey key, CancellationToken token)
+    private async Task<ImmutableArray<RemediationSubmission>> ReadRemediationSubmissions(ReleaseId releaseId, CancellationToken token)
     {
-        var requestIds = (await ReadRequests(key, WorkflowRequestKind.Remediation, token)).Select(value => value.Id).ToArray();
+        var requestIds = (await ReadRequests(releaseId, WorkflowRequestKind.Remediation, token)).Select(value => value.Id).ToArray();
         return [.. (await _dbContext.RemediationSubmissions.AsNoTracking()
             .Where(value => requestIds.Contains(value.RequestId))
             .ToListAsync(token))
@@ -737,17 +725,17 @@ public sealed partial class ApplicationDataService
             .Select(ToDomain)];
     }
 
-    private async Task<ImmutableArray<DecisionSnapshot>> ReadDecisionSnapshots(ReleaseRevisionKey key, CancellationToken token)
+    private async Task<ImmutableArray<DecisionSnapshot>> ReadDecisionSnapshots(ReleaseId releaseId, CancellationToken token)
     {
         var rows = (await _dbContext.DecisionSnapshots.AsNoTracking()
-            .Where(value => value.ReleaseId == key.ReleaseId && value.Revision == key.Revision)
+            .Where(value => value.ReleaseId == releaseId.Value)
             .ToListAsync(token))
             .OrderBy(value => value.CreatedAtUtc)
             .ToList();
-        var rounds = (await ReadEvaluationRounds(key, token)).ToDictionary(value => value.Id);
+        var rounds = (await ReadEvaluationRounds(releaseId, token)).ToDictionary(value => value.Id);
         return [.. rows.Select(row => new DecisionSnapshot(
             row.Id,
-            key,
+            releaseId,
             row.EvaluationRoundId,
             row.RoundNumber,
             rounds[row.EvaluationRoundId].Results,
@@ -756,32 +744,32 @@ public sealed partial class ApplicationDataService
             new UtcInstant(row.CreatedAtUtc)))];
     }
 
-    private async Task<ImmutableArray<HumanDecisionRequest>> ReadHumanDecisionRequests(ReleaseRevisionKey key, CancellationToken token) =>
-        [.. (await ReadRequests(key, WorkflowRequestKind.Approval, token)).Select(ToHumanDecisionRequest)];
+    private async Task<ImmutableArray<HumanDecisionRequest>> ReadHumanDecisionRequests(ReleaseId releaseId, CancellationToken token) =>
+        [.. (await ReadRequests(releaseId, WorkflowRequestKind.Approval, token)).Select(ToHumanDecisionRequest)];
 
     private async Task<PersistedHumanResponse?> ReadHumanResponse(
-        ReleaseRevisionKey key,
+        ReleaseId releaseId,
         CancellationToken token)
     {
         var row = await _dbContext.HumanResponses.AsNoTracking().SingleOrDefaultAsync(
-            value => value.ReleaseId == key.ReleaseId && value.Revision == key.Revision,
+            value => value.ReleaseId == releaseId.Value,
             token);
         return row is null ? null : ToDomain(row);
     }
 
-    private async Task<WorkflowCorrelationRecord?> ReadWorkflowCorrelation(ReleaseRevisionKey key, CancellationToken token)
+    private async Task<WorkflowCorrelationRecord?> ReadWorkflowCorrelation(ReleaseId releaseId, CancellationToken token)
     {
         var row = await _dbContext.WorkflowCorrelations.AsNoTracking().SingleOrDefaultAsync(
-            value => value.ReleaseId == key.ReleaseId && value.Revision == key.Revision, token);
+            value => value.ReleaseId == releaseId.Value, token);
         return row is null ? null : ToDomain(row);
     }
 
     private async Task<List<WorkflowRequestRow>> ReadRequests(
-        ReleaseRevisionKey key,
+        ReleaseId releaseId,
         WorkflowRequestKind kind,
         CancellationToken token) =>
         (await _dbContext.WorkflowRequests.AsNoTracking()
-            .Where(value => value.ReleaseId == key.ReleaseId && value.Revision == key.Revision && value.Kind == kind)
+            .Where(value => value.ReleaseId == releaseId.Value && value.Kind == kind)
             .ToListAsync(token))
             .OrderBy(value => value.CreatedAtUtc)
             .ToList();

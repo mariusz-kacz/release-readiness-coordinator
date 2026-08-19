@@ -8,7 +8,7 @@ namespace ReleaseReadinessCoordinator.Tests.Workflow;
 
 public sealed class SelectiveRerunPlanningTests
 {
-    private static readonly ReleaseRevisionKey Revision = new("release-42", 3);
+    private static readonly ReleaseId Id = new("release-42");
     private static readonly UtcInstant Now = Utc(2026, 8, 17, 10);
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class SelectiveRerunPlanningTests
         IEnumerable<BranchResult> previousResults,
         IReadOnlyDictionary<ReadinessCheck, Guid>? currentEvidence = null,
         IEnumerable<ReadinessCheck>? explicitlySelected = null) => new(
-        Revision,
+        Id,
         roundNumber: previousResults.Any() ? 2 : 1,
         previousResults,
         currentEvidence ?? CurrentEvidence(),
@@ -151,7 +151,7 @@ public sealed class SelectiveRerunPlanningTests
         Guid evidenceId,
         UtcInstant? validUntil) => new(
         Guid.NewGuid(),
-        Revision,
+        Id,
         roundNumber: 1,
         check,
         outcome,
@@ -189,7 +189,7 @@ public sealed class SelectiveRerunPlanningTests
 
 public sealed class SelectiveRerunReuseTests
 {
-    private static readonly ReleaseRevisionKey Revision = new("release-42", 3);
+    private static readonly ReleaseId Id = new("release-42");
     private static readonly UtcInstant Now = Utc(2026, 8, 17, 10);
     private static readonly UtcInstant ValidUntil = Utc(2026, 8, 17, 11);
 
@@ -204,7 +204,7 @@ public sealed class SelectiveRerunReuseTests
                 executedResultId,
                 Submission(),
                 new BranchWorkItem(
-                    Revision,
+                    Id,
                     roundNumber: 2,
                     ReadinessCheck.Test,
                     WorkDisposition.Execute,
@@ -279,7 +279,7 @@ public sealed class SelectiveRerunReuseTests
         Assert.Equal(0, policy.CallCount);
 
         var executeWork = new BranchWorkItem(
-            Revision,
+            Id,
             roundNumber: 2,
             ReadinessCheck.Test,
             WorkDisposition.Execute,
@@ -297,7 +297,7 @@ public sealed class SelectiveRerunReuseTests
     private static ResultReuse Reuse() => new(new FixedTimeProvider(Now.Value));
 
     private static BranchWorkItem ReuseWorkItem(BranchResult source) => new(
-        Revision,
+        Id,
         roundNumber: 2,
         ReadinessCheck.Test,
         WorkDisposition.Reuse,
@@ -309,7 +309,7 @@ public sealed class SelectiveRerunReuseTests
         Guid? evidenceId = null,
         UtcInstant? validUntil = null) => new(
         Guid.NewGuid(),
-        Revision,
+        Id,
         roundNumber: 1,
         ReadinessCheck.Test,
         BranchOutcome.Passed,
@@ -326,7 +326,7 @@ public sealed class SelectiveRerunReuseTests
 
     private static TestEvidenceRecord Evidence() => new(
         Guid.NewGuid(),
-        Revision,
+        Id,
         version: 1,
         recordedAt: Utc(2026, 8, 17, 9),
         supersedesEvidenceId: null,
@@ -336,7 +336,7 @@ public sealed class SelectiveRerunReuseTests
         criticalSuiteFailures: []);
 
     private static ReleaseSubmission Submission() => new(
-        Revision,
+        Id,
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
@@ -355,7 +355,7 @@ public sealed class SelectiveRerunReuseTests
         public int CallCount { get; private set; }
 
         public ValueTask<TestEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;

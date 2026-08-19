@@ -42,7 +42,7 @@ public sealed class CheckpointContractTests
         await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
             BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
-        const string SessionId = "release-42-revision-3";
+        const string SessionId = "release-42";
         PendingApprovalWait started;
 
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
@@ -79,7 +79,7 @@ public sealed class CheckpointContractTests
         await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
             BranchOutcome.Passed);
         using var directory = new TemporaryDirectory();
-        const string SessionId = "release-7-revision-1";
+        const string SessionId = "release-7";
         PendingApprovalWait started;
 
         using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))

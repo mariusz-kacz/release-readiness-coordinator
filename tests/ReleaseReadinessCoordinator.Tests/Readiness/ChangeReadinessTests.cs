@@ -84,7 +84,7 @@ public sealed class ChangeReadinessPolicyTests
     {
         var evidence = new ChangeEvidenceRecord(
             Guid.NewGuid(),
-            new ReleaseRevisionKey("another-release", 1),
+            new ReleaseId("another-release"),
             1,
             Utc(2026, 8, 17, 8),
             null,
@@ -97,7 +97,7 @@ public sealed class ChangeReadinessPolicyTests
     private static ChangeReadinessPolicy Policy() => new();
 
     private static ReleaseSubmission Submission(UtcInterval? requestedWindow = null) => new(
-        RevisionKey(),
+        Id(),
         "orders",
         "2.4.0",
         requestedWindow ?? new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
@@ -105,14 +105,14 @@ public sealed class ChangeReadinessPolicyTests
 
     private static ChangeEvidenceRecord Evidence(bool? isApproved, UtcInterval? approvedWindow) => new(
         Guid.NewGuid(),
-        RevisionKey(),
+        Id(),
         1,
         Utc(2026, 8, 17, 8),
         null,
         isApproved,
         approvedWindow);
 
-    private static ReleaseRevisionKey RevisionKey() => new("release-42", 3);
+    private static ReleaseId Id() => new("release-42");
 
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
@@ -132,8 +132,8 @@ public sealed class ChangeReadinessBranchExecutionTests
             knownTransientFailuresBeforeSuccess: 1);
 
         var exception = await Assert.ThrowsAsync<KnownTransientEvidenceProviderException>(
-            async () => await provider.GetCurrentAsync(RevisionKey(), CancellationToken.None));
-        var current = await provider.GetCurrentAsync(RevisionKey(), CancellationToken.None);
+            async () => await provider.GetCurrentAsync(Id(), CancellationToken.None));
+        var current = await provider.GetCurrentAsync(Id(), CancellationToken.None);
 
         Assert.Equal(evidence.Id, exception.EvidenceId);
         Assert.Same(evidence, current);
@@ -248,7 +248,7 @@ public sealed class ChangeReadinessBranchExecutionTests
         });
 
     private static ReleaseReadinessCoordinator.Domain.BranchWorkItem WorkItem() => new(
-        RevisionKey(),
+        Id(),
         roundNumber: 1,
         ReadinessCheck.Change,
         WorkDisposition.Execute,
@@ -256,7 +256,7 @@ public sealed class ChangeReadinessBranchExecutionTests
         "Executed because this is the initial evaluation.");
 
     private static ReleaseSubmission Submission() => new(
-        RevisionKey(),
+        Id(),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
@@ -264,14 +264,14 @@ public sealed class ChangeReadinessBranchExecutionTests
 
     private static ChangeEvidenceRecord Evidence() => new(
         Guid.NewGuid(),
-        RevisionKey(),
+        Id(),
         1,
         Utc(2026, 8, 17, 8),
         null,
         isApproved: true,
         new UtcInterval(ApprovedStart, ApprovedEnd));
 
-    private static ReleaseRevisionKey RevisionKey() => new("release-42", 3);
+    private static ReleaseId Id() => new("release-42");
 
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
@@ -284,7 +284,7 @@ public sealed class ChangeReadinessBranchExecutionTests
         public int CallCount { get; private set; }
 
         public ValueTask<ChangeEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;
@@ -337,7 +337,7 @@ public sealed class ChangeReadinessWorkflowIntegrationTests
     public async Task Real_graph_change_branch_uses_provider_and_policy_instead_of_simulated_outcome()
     {
         var submission = Submission();
-        var changeEvidence = ChangeEvidence(submission.Key);
+        var changeEvidence = ChangeEvidence(submission.ReleaseId);
         var changeProvider = new CountingProvider(changeEvidence);
         var changePolicy = new CountingPolicy();
         await using var host = await ReadinessWorkflowTestHost.CreateWithChangeAsync(
@@ -353,7 +353,7 @@ public sealed class ChangeReadinessWorkflowIntegrationTests
         Assert.DoesNotContain(
             run.NewEvents.OfType<WorkflowOutputEvent>(),
             output => output.Data is EvaluationRound);
-        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
         var round = Assert.Single(detail!.EvaluationRounds);
         var changeResult = Assert.Single(
             round.Results,
@@ -365,13 +365,13 @@ public sealed class ChangeReadinessWorkflowIntegrationTests
     }
 
     private static ReleaseSubmission Submission() => new(
-        new ReleaseRevisionKey("release-graph", 1),
+        new ReleaseId("release-graph"),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
         Utc(2026, 8, 17, 7));
 
-    private static ChangeEvidenceRecord ChangeEvidence(ReleaseRevisionKey releaseRevision) => new(
+    private static ChangeEvidenceRecord ChangeEvidence(ReleaseId releaseRevision) => new(
         Guid.NewGuid(),
         releaseRevision,
         1,
@@ -388,7 +388,7 @@ public sealed class ChangeReadinessWorkflowIntegrationTests
         public int CallCount { get; private set; }
 
         public ValueTask<ChangeEvidenceRecord?> GetCurrentAsync(
-            ReleaseRevisionKey releaseRevision,
+            ReleaseId releaseRevision,
             CancellationToken cancellationToken)
         {
             CallCount++;

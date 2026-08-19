@@ -4,7 +4,7 @@ namespace ReleaseReadinessCoordinator.Data;
 
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
-    internal DbSet<ReleaseRevisionRow> ReleaseRevisions => Set<ReleaseRevisionRow>();
+    internal DbSet<ReleaseRow> Releases => Set<ReleaseRow>();
 
     internal DbSet<EvidenceRecordRow> EvidenceRecords => Set<EvidenceRecordRow>();
 

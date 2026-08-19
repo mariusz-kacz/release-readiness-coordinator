@@ -1,10 +1,10 @@
-@page "/Releases/{releaseId}/{revision:int}"
+@page "/Releases/{releaseId}"
 @model ReleaseReadinessCoordinator.Pages.Releases.DetailModel
 @{
     ViewData["Title"] = "Release detail";
 }
 
-<h1>@Model.Detail.Release.Submission.Key.ReleaseId revision @Model.Detail.Release.Submission.Key.Revision</h1>
+<h1>@Model.Detail.Release.Submission.ReleaseId</h1>
 
 <dl class="row">
     <dt class="col-sm-3">Service</dt>
@@ -19,4 +19,4 @@
     <dd class="col-sm-9">@(Model.Detail.WorkflowCorrelation?.PendingRequestKind.ToString() ?? "Not correlated")</dd>
 </dl>
 
-<a asp-page="/Releases/New">Submit another release revision</a>
+<a asp-page="/Releases/New">Submit another release</a>

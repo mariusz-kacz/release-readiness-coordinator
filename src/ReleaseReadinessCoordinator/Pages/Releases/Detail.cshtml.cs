@@ -11,20 +11,19 @@ public sealed class DetailModel(IApplicationDataService dataService) : PageModel
 
     public async Task<IActionResult> OnGetAsync(
         string releaseId,
-        int revision,
         CancellationToken cancellationToken)
     {
-        ReleaseRevisionKey key;
+        ReleaseId id;
         try
         {
-            key = new ReleaseRevisionKey(releaseId, revision);
+            id = new ReleaseId(releaseId);
         }
         catch (ArgumentException)
         {
             return NotFound();
         }
 
-        var detail = await dataService.GetReleaseDetailAsync(key, cancellationToken);
+        var detail = await dataService.GetReleaseDetailAsync(id, cancellationToken);
         if (detail is null)
         {
             return NotFound();

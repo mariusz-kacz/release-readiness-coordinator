@@ -37,17 +37,17 @@ public static class ReleaseWorkflowPortIds
 
 internal sealed partial class ReadinessPlanner : Executor
 {
-    private readonly ReleaseRevisionKey _releaseRevision;
+    private readonly ReleaseId _releaseId;
     private readonly IApplicationDataService _dataService;
     private readonly RoundPlanner _planner;
 
     public ReadinessPlanner(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         IApplicationDataService dataService,
         TimeProvider timeProvider)
         : base(ReleaseWorkflowExecutorIds.Planner)
     {
-        _releaseRevision = releaseRevision ?? throw new ArgumentNullException(nameof(releaseRevision));
+        _releaseId = releaseId ?? throw new ArgumentNullException(nameof(releaseId));
         _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
         _planner = new RoundPlanner(timeProvider);
     }
@@ -58,9 +58,9 @@ internal sealed partial class ReadinessPlanner : Executor
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
-        var detail = await _dataService.GetReleaseDetailAsync(_releaseRevision, cancellationToken)
+        var detail = await _dataService.GetReleaseDetailAsync(_releaseId, cancellationToken)
             ?? throw new InvalidOperationException(
-                $"Release revision '{_releaseRevision.ReleaseId}/{_releaseRevision.Revision}' does not exist.");
+                $"Release '{_releaseId}' does not exist.");
         var previousRound = detail.EvaluationRounds.LastOrDefault();
         if ((start.RoundNumber == 1 && previousRound is not null)
             || (start.RoundNumber > 1 && previousRound?.RoundNumber != start.RoundNumber - 1))
@@ -74,7 +74,7 @@ internal sealed partial class ReadinessPlanner : Executor
             pair => CheckFor(pair.Key),
             pair => pair.Value.Id);
         var planned = _planner.Plan(new RoundPlanningRequest(
-            _releaseRevision,
+            _releaseId,
             start.RoundNumber,
             previousResults,
             currentEvidenceIds,
@@ -271,12 +271,12 @@ internal sealed partial class DecisionSnapshotWorkflowExecutor : Executor
     private readonly DecisionSnapshotBuilder _builder;
 
     public DecisionSnapshotWorkflowExecutor(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         IApplicationDataService dataService,
         TimeProvider timeProvider)
         : base(ReleaseWorkflowExecutorIds.DecisionSnapshotBuilder)
     {
-        _builder = new DecisionSnapshotBuilder(releaseRevision, dataService, timeProvider);
+        _builder = new DecisionSnapshotBuilder(releaseId, dataService, timeProvider);
     }
 
     [MessageHandler]
@@ -295,11 +295,11 @@ internal sealed partial class RemediationWorkflowExecutor : Executor
     private readonly RemediationHandler _handler;
 
     public RemediationWorkflowExecutor(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         IApplicationDataService dataService)
         : base(ReleaseWorkflowExecutorIds.RemediationHandler)
     {
-        _handler = new RemediationHandler(releaseRevision, dataService);
+        _handler = new RemediationHandler(releaseId, dataService);
     }
 
     [MessageHandler(Send = [typeof(EvaluationRoundStart)])]
@@ -315,11 +315,11 @@ internal sealed partial class HumanDecisionWorkflowExecutor : Executor
     private readonly HumanDecisionHandler _handler;
 
     public HumanDecisionWorkflowExecutor(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         IApplicationDataService dataService)
         : base(ReleaseWorkflowExecutorIds.HumanDecisionHandler)
     {
-        _handler = new HumanDecisionHandler(releaseRevision, dataService);
+        _handler = new HumanDecisionHandler(releaseId, dataService);
     }
 
     [MessageHandler]

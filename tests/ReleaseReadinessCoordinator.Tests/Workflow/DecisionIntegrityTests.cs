@@ -20,10 +20,10 @@ public sealed class DecisionIntegritySnapshotTests
         await using var context = database.CreateContext();
         var dataService = new ApplicationDataService(context);
         await SubmitAndSaveRoundAsync(dataService, submission, evidence);
-        var detail = await dataService.GetReleaseDetailAsync(submission.Key);
+        var detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         var round = Assert.Single(detail!.EvaluationRounds);
         var timeProvider = new FixedTimeProvider(Utc(2026, 8, 17, 10, 5).Value);
-        var builder = new DecisionSnapshotBuilder(submission.Key, dataService, timeProvider);
+        var builder = new DecisionSnapshotBuilder(submission.ReleaseId, dataService, timeProvider);
 
         var first = await builder.BuildAsync(round);
         var replay = await builder.BuildAsync(round);
@@ -37,7 +37,7 @@ public sealed class DecisionIntegritySnapshotTests
             Encoding.UTF8.GetBytes(DecisionSnapshotBuilder.BuildBrief(round)),
             Encoding.UTF8.GetBytes(first.Snapshot.DecisionBrief));
 
-        detail = await dataService.GetReleaseDetailAsync(submission.Key);
+        detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.Single(detail!.DecisionSnapshots);
         Assert.Single(detail.HumanDecisionRequests);
         Assert.Equal(ProcessPhase.WaitingForApproval, detail.Release.Phase);
@@ -51,20 +51,20 @@ public sealed class DecisionIntegritySnapshotTests
         await dataService.SubmitReleaseAsync(
             submission,
             evidence,
-            Timeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
-            $"decision:{submission.Key.ReleaseId}:submit");
+            Timeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            $"decision:{submission.ReleaseId.Value}:submit");
         var round = Round(submission, evidence);
         await dataService.SaveEvaluationRoundAsync(
             round,
-            Timeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
-            $"decision:{submission.Key.ReleaseId}:round:1");
+            Timeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
+            $"decision:{submission.ReleaseId.Value}:round:1");
     }
 
     private static EvaluationRound Round(
         ReleaseSubmission submission,
         IReadOnlyList<EvidenceRecord> evidence) => new(
         Guid.NewGuid(),
-        submission.Key,
+        submission.ReleaseId,
         1,
         Utc(2026, 8, 17, 10),
         Utc(2026, 8, 17, 10, 1),
@@ -79,7 +79,7 @@ public sealed class DecisionIntegritySnapshotTests
         EvidenceRecord evidence,
         UtcInstant validUntil) => new(
         Guid.NewGuid(),
-        evidence.ReleaseRevision,
+        evidence.ReleaseId,
         1,
         check,
         BranchOutcome.Passed,
@@ -95,7 +95,7 @@ public sealed class DecisionIntegritySnapshotTests
         null);
 
     private static ReleaseSubmission Submission(string releaseId) => new(
-        new ReleaseRevisionKey(releaseId, 1),
+        new ReleaseId(releaseId),
         "orders",
         "2.4.0",
         new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 11)),
@@ -104,19 +104,19 @@ public sealed class DecisionIntegritySnapshotTests
     private static EvidenceRecord[] Evidence(ReleaseSubmission submission) =>
     [
         new TestEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, 0.99m, []),
         new SecurityEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, [], [],
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
         new ChangeEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             true, submission.RequestedDeploymentWindow),
     ];
 
     private static TimelineEntry Timeline(
-        ReleaseRevisionKey key,
+        ReleaseId key,
         long sequence,
         TimelineEntryKind kind,
         string summary) => new(Guid.NewGuid(), key, sequence, kind, summary, Utc(2026, 8, 17, 10, 1));
@@ -141,13 +141,13 @@ public sealed class DecisionIntegrityResponseTests
     {
         await using var fixture = await DecisionFixture.CreateAsync($"current-{decision}");
         var response = fixture.Response(decision);
-        var handler = new HumanDecisionHandler(fixture.Submission.Key, fixture.DataService);
+        var handler = new HumanDecisionHandler(fixture.Submission.ReleaseId, fixture.DataService);
 
         var first = await handler.HandleAsync(response);
         var replay = await handler.HandleAsync(response);
 
         Assert.Equal(first, replay);
-        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.Key);
+        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
         Assert.Equal(expectedPhase, detail!.Release.Phase);
         Assert.Equal(first, detail.TerminalResponse);
         Assert.Equal(TimelineEntryKind.HumanResponseAccepted, detail.Timeline[^1].Kind);
@@ -158,7 +158,7 @@ public sealed class DecisionIntegrityResponseTests
     {
         await using var fixture = await DecisionFixture.CreateAsync("conflicting-response-id");
         var response = fixture.Response(HumanDecision.Approve);
-        var handler = new HumanDecisionHandler(fixture.Submission.Key, fixture.DataService);
+        var handler = new HumanDecisionHandler(fixture.Submission.ReleaseId, fixture.DataService);
         await handler.HandleAsync(response);
         var conflict = new HumanResponse(
             response.Id,
@@ -169,7 +169,7 @@ public sealed class DecisionIntegrityResponseTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(conflict));
 
-        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.Key);
+        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
         Assert.Equal(ProcessPhase.Approved, detail!.Release.Phase);
         Assert.Equal(response, detail.TerminalResponse!.Response);
     }
@@ -181,11 +181,11 @@ public sealed class DecisionIntegrityResponseTests
         var originalBrief = fixture.Snapshot.DecisionBrief;
         fixture.Clock.SetUtcNow(
             new DateTimeOffset(2026, 8, 18, 12, 0, 0, TimeSpan.Zero));
-        var handler = new HumanDecisionHandler(fixture.Submission.Key, fixture.DataService);
+        var handler = new HumanDecisionHandler(fixture.Submission.ReleaseId, fixture.DataService);
 
         await handler.HandleAsync(fixture.Response(HumanDecision.Approve));
 
-        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.Key);
+        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
         Assert.Equal(ProcessPhase.Approved, detail!.Release.Phase);
         Assert.Equal(originalBrief, Assert.Single(detail.DecisionSnapshots).DecisionBrief);
         Assert.Single(detail.EvaluationRounds);
@@ -206,7 +206,7 @@ public sealed class DecisionIntegrityResponseTests
         Assert.All(
             [evidenceConflict, remediationConflict, rerunConflict],
             conflict => Assert.Equal(ApplicationDataConflictKind.InvalidState, conflict.Kind));
-        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.Key);
+        var detail = await fixture.DataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
         Assert.Equal(ProcessPhase.WaitingForApproval, detail!.Release.Phase);
         Assert.Single(detail.EvaluationRounds);
         Assert.Empty(detail.RemediationSubmissions);
@@ -251,7 +251,7 @@ public sealed class DecisionIntegrityRealGraphTests
             Response(pending, decision));
 
         Assert.Equal(decision, continued.Response.Decision);
-        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
         Assert.Equal(expectedPhase, detail!.Release.Phase);
         Assert.Equal(continued, detail.TerminalResponse);
     }
@@ -272,7 +272,7 @@ public sealed class DecisionIntegrityRealGraphTests
                 host.CreateWorkflow(), SessionId, mismatch, Response(pending, HumanDecision.Approve)));
 
         Assert.Equal(ContinuationFailureKind.Mismatched, conflict.Kind);
-        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
         Assert.Equal(ProcessPhase.WaitingForApproval, detail!.Release.Phase);
         Assert.Null(detail.TerminalResponse);
     }
@@ -362,7 +362,7 @@ internal sealed class DecisionFixture : IAsyncDisposable
         var context = database.CreateContext();
         var dataService = new ApplicationDataService(context);
         var submission = new ReleaseSubmission(
-            new ReleaseRevisionKey(releaseId, 1),
+            new ReleaseId(releaseId),
             "orders",
             "2.4.0",
             new UtcInterval(Utc(2026, 8, 17, 10), Utc(2026, 8, 17, 13)),
@@ -371,11 +371,11 @@ internal sealed class DecisionFixture : IAsyncDisposable
         await dataService.SubmitReleaseAsync(
             submission,
             evidence,
-            Timeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            Timeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             $"fixture:{releaseId}:submit");
         var round = new EvaluationRound(
             Guid.NewGuid(),
-            submission.Key,
+            submission.ReleaseId,
             1,
             Utc(2026, 8, 17, 10),
             Utc(2026, 8, 17, 10, 1),
@@ -386,10 +386,10 @@ internal sealed class DecisionFixture : IAsyncDisposable
             ]);
         await dataService.SaveEvaluationRoundAsync(
             round,
-            Timeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
+            Timeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Round completed."),
             $"fixture:{releaseId}:round:1");
         var clock = new MutableTimeProvider(Utc(2026, 8, 17, 10, 5).Value);
-        var built = await new DecisionSnapshotBuilder(submission.Key, dataService, clock).BuildAsync(round);
+        var built = await new DecisionSnapshotBuilder(submission.ReleaseId, dataService, clock).BuildAsync(round);
         return new DecisionFixture(
             database,
             context,
@@ -410,19 +410,19 @@ internal sealed class DecisionFixture : IAsyncDisposable
     public async Task ReplaceTestEvidenceAsync()
     {
         var current = (TestEvidenceRecord)(await DataService.GetCurrentEvidenceAsync(
-            Submission.Key,
+            Submission.ReleaseId,
             EvidenceKind.Test))!;
         await DataService.ReplaceEvidenceAsync(
             new TestEvidenceRecord(
-                Guid.NewGuid(), Submission.Key, 2, Utc(2026, 8, 17, 10, 6), current.Id,
+                Guid.NewGuid(), Submission.ReleaseId, 2, Utc(2026, 8, 17, 10, 6), current.Id,
                 Submission.ReleaseVersion, Utc(2026, 8, 17, 10), 0.99m, []),
-            Timeline(Submission.Key, 4, TimelineEntryKind.RemediationSubmitted, "Evidence replaced."),
-            $"fixture:{Submission.Key.ReleaseId}:replace-test");
+            Timeline(Submission.ReleaseId, 4, TimelineEntryKind.RemediationSubmitted, "Evidence replaced."),
+            $"fixture:{Submission.ReleaseId.Value}:replace-test");
     }
 
     public Task<RemediationSubmission> SubmitRemediationAsync() =>
         DataService.SaveRemediationSubmissionAsync(
-            Submission.Key,
+            Submission.ReleaseId,
             new RemediationSubmission(
                 Guid.NewGuid(),
                 Request.Id,
@@ -430,21 +430,21 @@ internal sealed class DecisionFixture : IAsyncDisposable
                 new Dictionary<EvidenceKind, Guid>(),
                 [ReadinessCheck.Test]),
             [],
-            Timeline(Submission.Key, 4, TimelineEntryKind.RemediationSubmitted, "Remediation submitted."),
-            $"fixture:{Submission.Key.ReleaseId}:remediation");
+            Timeline(Submission.ReleaseId, 4, TimelineEntryKind.RemediationSubmitted, "Remediation submitted."),
+            $"fixture:{Submission.ReleaseId.Value}:remediation");
 
     public Task<EvaluationRound> SaveRerunAsync()
     {
         var startedAt = new UtcInstant(Clock.GetUtcNow());
         var round = new EvaluationRound(
             Guid.NewGuid(),
-            Submission.Key,
+            Submission.ReleaseId,
             2,
             startedAt,
             startedAt,
             Snapshot.Sources.Select(source => new BranchResult(
                 Guid.NewGuid(),
-                Submission.Key,
+                Submission.ReleaseId,
                 2,
                 source.Check,
                 source.Outcome,
@@ -460,8 +460,8 @@ internal sealed class DecisionFixture : IAsyncDisposable
                 source.ReuseSourceRound)));
         return DataService.SaveEvaluationRoundAsync(
             round,
-            Timeline(Submission.Key, 4, TimelineEntryKind.EvaluationCompleted, "Rerun completed."),
-            $"fixture:{Submission.Key.ReleaseId}:round:2");
+            Timeline(Submission.ReleaseId, 4, TimelineEntryKind.EvaluationCompleted, "Rerun completed."),
+            $"fixture:{Submission.ReleaseId.Value}:round:2");
     }
 
     public async ValueTask DisposeAsync()
@@ -473,14 +473,14 @@ internal sealed class DecisionFixture : IAsyncDisposable
     private static EvidenceRecord[] Evidence(ReleaseSubmission submission) =>
     [
         new TestEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, 0.99m, []),
         new SecurityEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             submission.ReleaseVersion, submission.SubmittedAt, [], [],
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>()),
         new ChangeEvidenceRecord(
-            Guid.NewGuid(), submission.Key, 1, submission.SubmittedAt, null,
+            Guid.NewGuid(), submission.ReleaseId, 1, submission.SubmittedAt, null,
             true, submission.RequestedDeploymentWindow),
     ];
 
@@ -488,14 +488,14 @@ internal sealed class DecisionFixture : IAsyncDisposable
         ReadinessCheck check,
         EvidenceRecord evidence,
         UtcInstant validUntil) => new(
-        Guid.NewGuid(), evidence.ReleaseRevision, 1, check, BranchOutcome.Passed,
+        Guid.NewGuid(), evidence.ReleaseId, 1, check, BranchOutcome.Passed,
         ExecutionDisposition.Executed, PlanningReason.InitialEvaluation,
         "Executed because no prior result exists.", evidence.Id, evidence.Kind, validUntil,
         ["Attempt 1 succeeded."],
         new Dictionary<string, string> { ["ready"] = "Passed." }, null, null);
 
     private static TimelineEntry Timeline(
-        ReleaseRevisionKey key,
+        ReleaseId key,
         long sequence,
         TimelineEntryKind kind,
         string summary) => new(Guid.NewGuid(), key, sequence, kind, summary, Utc(2026, 8, 17, 10, 1));

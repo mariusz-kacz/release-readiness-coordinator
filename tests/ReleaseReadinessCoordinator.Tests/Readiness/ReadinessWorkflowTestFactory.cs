@@ -167,12 +167,12 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
             initialEvidence,
             new TimelineEntry(
                 Guid.NewGuid(),
-                submission.Key,
+                submission.ReleaseId,
                 1,
                 TimelineEntryKind.ReleaseSubmitted,
                 "Release submitted.",
                 submission.SubmittedAt),
-            $"workflow-contract:{submission.Key.ReleaseId}:submit");
+            $"workflow-contract:{submission.ReleaseId.Value}:submit");
         var input = new EvaluationRoundStart(
             Guid.NewGuid(),
             1,
@@ -228,7 +228,7 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
         ReleaseSubmission submission,
         bool blocked = false) => new(
         TestEvidenceId,
-        submission.Key,
+        submission.ReleaseId,
         1,
         submission.SubmittedAt,
         null,
@@ -241,7 +241,7 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
         ReleaseSubmission submission,
         bool blocked = false) => new(
         SecurityEvidenceId,
-        submission.Key,
+        submission.ReleaseId,
         1,
         submission.SubmittedAt,
         null,
@@ -255,7 +255,7 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
         ReleaseSubmission submission,
         bool approved = true) => new(
         ChangeEvidenceId,
-        submission.Key,
+        submission.ReleaseId,
         1,
         submission.SubmittedAt,
         null,
@@ -263,7 +263,7 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
         submission.RequestedDeploymentWindow);
 
     private static ReleaseSubmission ContractSubmission() => new(
-        new ReleaseRevisionKey("workflow-contract", 1),
+        new ReleaseId("workflow-contract"),
         "orders",
         "2.4.0",
         new UtcInterval(

@@ -12,11 +12,11 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
     private readonly SemaphoreSlim _currentEvidenceGate = new(1, 1);
 
     public async Task<EvidenceRecord?> GetCurrentEvidenceAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         EvidenceKind kind,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
         DomainGuard.Defined(kind, nameof(kind));
 
         await _currentEvidenceGate.WaitAsync(cancellationToken);
@@ -25,8 +25,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             var current = await _dbContext.CurrentEvidence
                 .AsNoTracking()
                 .SingleOrDefaultAsync(
-                    row => row.ReleaseId == releaseRevision.ReleaseId
-                        && row.Revision == releaseRevision.Revision
+                    row => row.ReleaseId == releaseId.Value
                         && row.Kind == kind,
                     cancellationToken);
             if (current is null)
@@ -45,7 +44,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         }
     }
 
-    public Task<ReleaseRevision> SubmitReleaseAsync(
+    public Task<Release> SubmitReleaseAsync(
         ReleaseSubmission submission,
         IReadOnlyCollection<EvidenceRecord> initialEvidence,
         TimelineEntry timelineEntry,
@@ -56,13 +55,13 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         ArgumentNullException.ThrowIfNull(initialEvidence);
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
-        ValidateInitialEvidence(submission.Key, initialEvidence);
-        ValidateTimeline(timelineEntry, submission.Key, TimelineEntryKind.ReleaseSubmitted);
+        ValidateInitialEvidence(submission.ReleaseId, initialEvidence);
+        ValidateTimeline(timelineEntry, submission.ReleaseId, TimelineEntryKind.ReleaseSubmitted);
 
         return ExecuteReplaySafeAsync(
             async token =>
             {
-                var existing = await _dbContext.ReleaseRevisions
+                var existing = await _dbContext.Releases
                     .AsNoTracking()
                     .SingleOrDefaultAsync(row => row.OperationKey == operationKey, token);
                 if (existing is null)
@@ -76,20 +75,19 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             },
             async token =>
             {
-                var duplicate = await _dbContext.ReleaseRevisions
+                var duplicate = await _dbContext.Releases
                     .AsNoTracking()
                     .AnyAsync(
-                        row => row.ReleaseId == submission.Key.ReleaseId
-                            && row.Revision == submission.Key.Revision,
+                        row => row.ReleaseId == submission.ReleaseId.Value,
                         token);
                 if (duplicate)
                 {
                     throw Conflict(
-                        ApplicationDataConflictKind.DuplicateReleaseRevision,
-                        $"Release revision '{submission.Key.ReleaseId}/{submission.Key.Revision}' already exists.");
+                        ApplicationDataConflictKind.DuplicateReleaseId,
+                        $"Release '{submission.ReleaseId}' already exists.");
                 }
 
-                _dbContext.ReleaseRevisions.Add(ToRow(submission, operationKey));
+                _dbContext.Releases.Add(ToRow(submission, operationKey));
                 foreach (var evidence in initialEvidence)
                 {
                     _dbContext.EvidenceRecords.Add(ToRow(
@@ -101,7 +99,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
                 _dbContext.TimelineEntries.Add(ToRow(
                     timelineEntry,
                     TimelineOperationKey(operationKey)));
-                return ReleaseRevision.Create(submission);
+                return Release.Create(submission);
             },
             cancellationToken);
     }
@@ -115,7 +113,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         ArgumentNullException.ThrowIfNull(evidence);
         ArgumentNullException.ThrowIfNull(timelineEntry);
         operationKey = RequireOperationKey(operationKey);
-        ValidateTimeline(timelineEntry, evidence.ReleaseRevision);
+        ValidateTimeline(timelineEntry, evidence.ReleaseId);
 
         return ExecuteReplaySafeAsync(
             async token =>
@@ -141,7 +139,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             },
             async token =>
             {
-                var release = await RequireMutableRelease(evidence.ReleaseRevision, token);
+                var release = await RequireMutableRelease(evidence.ReleaseId, token);
                 if (release.Phase is ProcessPhase.WaitingForApproval)
                 {
                     throw Conflict(
@@ -149,8 +147,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
                         "Evidence cannot be replaced while human approval is pending.");
                 }
                 var current = await _dbContext.CurrentEvidence.SingleOrDefaultAsync(
-                    row => row.ReleaseId == evidence.ReleaseRevision.ReleaseId
-                        && row.Revision == evidence.ReleaseRevision.Revision
+                    row => row.ReleaseId == evidence.ReleaseId.Value
                         && row.Kind == evidence.Kind,
                     token);
                 await ValidateReplacement(evidence, current, token);
@@ -176,16 +173,15 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
     }
 
     public async Task<ReleaseDetailProjection?> GetReleaseDetailAsync(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(releaseRevision);
+        ArgumentNullException.ThrowIfNull(releaseId);
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var releaseRow = await _dbContext.ReleaseRevisions
+        var releaseRow = await _dbContext.Releases
             .AsNoTracking()
             .SingleOrDefaultAsync(
-                row => row.ReleaseId == releaseRevision.ReleaseId
-                    && row.Revision == releaseRevision.Revision,
+                row => row.ReleaseId == releaseId.Value,
                 cancellationToken);
         if (releaseRow is null)
         {
@@ -195,17 +191,17 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
 
         var evidenceRows = await _dbContext.EvidenceRecords
             .AsNoTracking()
-            .Where(row => row.ReleaseId == releaseRevision.ReleaseId && row.Revision == releaseRevision.Revision)
+            .Where(row => row.ReleaseId == releaseId.Value)
             .OrderBy(row => row.Kind)
             .ThenBy(row => row.Version)
             .ToListAsync(cancellationToken);
         var currentRows = await _dbContext.CurrentEvidence
             .AsNoTracking()
-            .Where(row => row.ReleaseId == releaseRevision.ReleaseId && row.Revision == releaseRevision.Revision)
+            .Where(row => row.ReleaseId == releaseId.Value)
             .ToListAsync(cancellationToken);
         var timelineRows = await _dbContext.TimelineEntries
             .AsNoTracking()
-            .Where(row => row.ReleaseId == releaseRevision.ReleaseId && row.Revision == releaseRevision.Revision)
+            .Where(row => row.ReleaseId == releaseId.Value)
             .OrderBy(row => row.Sequence)
             .ToListAsync(cancellationToken);
 
@@ -221,13 +217,13 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
             ToDomain(releaseRow),
             [.. evidenceRows.Select(row => evidenceById[row.Id])],
             currentEvidence,
-            await ReadEvaluationRounds(releaseRevision, cancellationToken),
-            await ReadRemediationRequests(releaseRevision, cancellationToken),
-            await ReadRemediationSubmissions(releaseRevision, cancellationToken),
-            await ReadDecisionSnapshots(releaseRevision, cancellationToken),
-            await ReadHumanDecisionRequests(releaseRevision, cancellationToken),
-            await ReadHumanResponse(releaseRevision, cancellationToken),
-            await ReadWorkflowCorrelation(releaseRevision, cancellationToken),
+            await ReadEvaluationRounds(releaseId, cancellationToken),
+            await ReadRemediationRequests(releaseId, cancellationToken),
+            await ReadRemediationSubmissions(releaseId, cancellationToken),
+            await ReadDecisionSnapshots(releaseId, cancellationToken),
+            await ReadHumanDecisionRequests(releaseId, cancellationToken),
+            await ReadHumanResponse(releaseId, cancellationToken),
+            await ReadWorkflowCorrelation(releaseId, cancellationToken),
             [.. timelineRows.Select(ToDomain)]);
         await transaction.CommitAsync(cancellationToken);
         return projection;
@@ -250,36 +246,36 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         return result;
     }
 
-    private async Task<ReleaseRevisionRow> RequireMutableRelease(
-        ReleaseRevisionKey key,
+    private async Task<ReleaseRow> RequireMutableRelease(
+        ReleaseId releaseId,
         CancellationToken cancellationToken)
     {
-        var row = await _dbContext.ReleaseRevisions.SingleOrDefaultAsync(
-            value => value.ReleaseId == key.ReleaseId && value.Revision == key.Revision,
+        var row = await _dbContext.Releases.SingleOrDefaultAsync(
+            value => value.ReleaseId == releaseId.Value,
             cancellationToken)
             ?? throw new InvalidOperationException(
-                $"Release revision '{key.ReleaseId}/{key.Revision}' does not exist.");
+                $"Release '{releaseId}' does not exist.");
         if (row.Phase is ProcessPhase.Approved or ProcessPhase.Rejected)
         {
             throw Conflict(
                 ApplicationDataConflictKind.TerminalRelease,
-                $"Release revision '{key.ReleaseId}/{key.Revision}' is terminal and cannot be reopened.");
+                $"Release '{releaseId}' is terminal and cannot be reopened.");
         }
 
         return row;
     }
 
-    private async Task<ReleaseRevisionRow> RequireReleaseInPhase(
-        ReleaseRevisionKey key,
+    private async Task<ReleaseRow> RequireReleaseInPhase(
+        ReleaseId releaseId,
         ProcessPhase requiredPhase,
         CancellationToken cancellationToken)
     {
-        var row = await RequireMutableRelease(key, cancellationToken);
+        var row = await RequireMutableRelease(releaseId, cancellationToken);
         if (row.Phase != requiredPhase)
         {
             throw Conflict(
                 ApplicationDataConflictKind.InvalidState,
-                $"Release revision '{key.ReleaseId}/{key.Revision}' must be in phase "
+                $"Release '{releaseId}' must be in phase "
                     + $"'{requiredPhase}' instead of '{row.Phase}'.");
         }
 
@@ -316,7 +312,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
     }
 
     private async Task EnsureSubmissionReplayMatches(
-        ReleaseRevisionRow existing,
+        ReleaseRow existing,
         ReleaseSubmission submission,
         IReadOnlyCollection<EvidenceRecord> initialEvidence,
         TimelineEntry timelineEntry,
@@ -357,7 +353,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
     }
 
     private static void ValidateInitialEvidence(
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         IReadOnlyCollection<EvidenceRecord> evidence)
     {
         if (evidence.Select(item => item.Kind).Distinct().Count() != evidence.Count)
@@ -366,32 +362,31 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         }
 
         if (evidence.Any(item =>
-                item.ReleaseRevision != releaseRevision
+                item.ReleaseId != releaseId
                 || item.Version != 1
                 || item.SupersedesEvidenceId.HasValue))
         {
             throw new ArgumentException(
-                "Initial evidence must belong to the release revision, use version 1, and have no supersession link.",
+                "Initial evidence must belong to the release, use version 1, and have no supersession link.",
                 nameof(evidence));
         }
     }
 
     private static void ValidateTimeline(
         TimelineEntry timeline,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         TimelineEntryKind? requiredKind = null)
     {
-        if (timeline.ReleaseRevision != releaseRevision
+        if (timeline.ReleaseId != releaseId
             || requiredKind.HasValue && timeline.Kind != requiredKind.Value)
         {
             throw new ArgumentException("The timeline entry does not match the durable operation.", nameof(timeline));
         }
     }
 
-    private static ReleaseRevisionRow ToRow(ReleaseSubmission submission, string operationKey) => new()
+    private static ReleaseRow ToRow(ReleaseSubmission submission, string operationKey) => new()
     {
-        ReleaseId = submission.Key.ReleaseId,
-        Revision = submission.Key.Revision,
+        ReleaseId = submission.ReleaseId.Value,
         ServiceName = submission.ServiceName,
         ReleaseVersion = submission.ReleaseVersion,
         RequestedWindowStartUtc = submission.RequestedDeploymentWindow.Start.Value,
@@ -406,8 +401,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
     private static EvidenceRecordRow ToRow(EvidenceRecord evidence, string operationKey) => new()
     {
         Id = evidence.Id,
-        ReleaseId = evidence.ReleaseRevision.ReleaseId,
-        Revision = evidence.ReleaseRevision.Revision,
+        ReleaseId = evidence.ReleaseId.Value,
         Kind = evidence.Kind,
         Version = evidence.Version,
         RecordedAtUtc = evidence.RecordedAt.Value,
@@ -418,8 +412,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
 
     private static CurrentEvidenceRow ToCurrentRow(EvidenceRecord evidence) => new()
     {
-        ReleaseId = evidence.ReleaseRevision.ReleaseId,
-        Revision = evidence.ReleaseRevision.Revision,
+        ReleaseId = evidence.ReleaseId.Value,
         Kind = evidence.Kind,
         EvidenceId = evidence.Id,
         SelectedAtUtc = evidence.RecordedAt.Value,
@@ -429,8 +422,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
     private static TimelineEntryRow ToRow(TimelineEntry timeline, string operationKey) => new()
     {
         Id = timeline.Id,
-        ReleaseId = timeline.ReleaseRevision.ReleaseId,
-        Revision = timeline.ReleaseRevision.Revision,
+        ReleaseId = timeline.ReleaseId.Value,
         Sequence = timeline.Sequence,
         Kind = timeline.Kind,
         Summary = timeline.Summary,
@@ -438,10 +430,10 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         OperationKey = operationKey,
     };
 
-    private static ReleaseRevision ToDomain(ReleaseRevisionRow row)
+    private static Release ToDomain(ReleaseRow row)
     {
         var submission = new ReleaseSubmission(
-            new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+            new ReleaseId(row.ReleaseId),
             row.ServiceName,
             row.ReleaseVersion,
             new UtcInterval(new UtcInstant(row.RequestedWindowStartUtc), new UtcInstant(row.RequestedWindowEndUtc)),
@@ -449,9 +441,9 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         return RehydrateRelease(row, submission);
     }
 
-    private static ReleaseRevision RehydrateRelease(ReleaseRevisionRow row, ReleaseSubmission submission)
+    private static Release RehydrateRelease(ReleaseRow row, ReleaseSubmission submission)
     {
-        var release = ReleaseRevision.Create(submission);
+        var release = Release.Create(submission);
         return row.Phase == ProcessPhase.Evaluating
             ? release
             : release.TransitionTo(row.Phase, new UtcInstant(row.PhaseChangedAtUtc));
@@ -467,7 +459,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
 
     private static TestEvidenceRecord ToTestEvidence(EvidenceRecordRow row, TestEvidencePayload payload) => new(
         row.Id,
-        new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+        new ReleaseId(row.ReleaseId),
         row.Version,
         new UtcInstant(row.RecordedAtUtc),
         row.SupersedesEvidenceId,
@@ -480,7 +472,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         EvidenceRecordRow row,
         SecurityEvidencePayload payload) => new(
             row.Id,
-            new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+            new ReleaseId(row.ReleaseId),
             row.Version,
             new UtcInstant(row.RecordedAtUtc),
             row.SupersedesEvidenceId,
@@ -497,7 +489,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         EvidenceRecordRow row,
         ChangeEvidencePayload payload) => new(
             row.Id,
-            new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+            new ReleaseId(row.ReleaseId),
             row.Version,
             new UtcInstant(row.RecordedAtUtc),
             row.SupersedesEvidenceId,
@@ -506,7 +498,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
 
     private static TimelineEntry ToDomain(TimelineEntryRow row) => new(
         row.Id,
-        new ReleaseRevisionKey(row.ReleaseId, row.Revision),
+        new ReleaseId(row.ReleaseId),
         row.Sequence,
         row.Kind,
         row.Summary,
@@ -545,18 +537,17 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         _ => throw new ArgumentOutOfRangeException(nameof(evidence)),
     };
 
-    private static bool SubmissionEquals(ReleaseRevisionRow row, ReleaseSubmission submission) =>
-        row.ReleaseId == submission.Key.ReleaseId
-        && row.Revision == submission.Key.Revision
+    private static bool SubmissionEquals(ReleaseRow row, ReleaseSubmission submission) =>
+        row.ReleaseId == submission.ReleaseId.Value
         && row.ServiceName == submission.ServiceName
         && row.ReleaseVersion == submission.ReleaseVersion
         && row.RequestedWindowStartUtc == submission.RequestedDeploymentWindow.Start.Value
         && row.RequestedWindowEndUtc == submission.RequestedDeploymentWindow.End.Value
         && row.SubmittedAtUtc == submission.SubmittedAt.Value;
 
-    private static bool EvidenceEquals(EvidenceRecord left, EvidenceRecord right) =>
+    internal static bool EvidenceEquals(EvidenceRecord left, EvidenceRecord right) =>
         left.Id == right.Id
-        && left.ReleaseRevision == right.ReleaseRevision
+        && left.ReleaseId == right.ReleaseId
         && left.Version == right.Version
         && left.RecordedAt == right.RecordedAt
         && left.SupersedesEvidenceId == right.SupersedesEvidenceId
@@ -564,7 +555,7 @@ public sealed partial class ApplicationDataService(AppDbContext dbContext) : IAp
         && SerializeEvidence(left) == SerializeEvidence(right);
 
     private static bool TimelineEquals(TimelineEntry left, TimelineEntry right) =>
-        left.ReleaseRevision == right.ReleaseRevision
+        left.ReleaseId == right.ReleaseId
         && left.Sequence == right.Sequence
         && left.Kind == right.Kind
         && left.Summary == right.Summary

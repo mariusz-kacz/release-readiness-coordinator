@@ -21,7 +21,7 @@ public sealed class DatabaseSchemaTests
         Assert.Subset(
             new HashSet<string>(StringComparer.Ordinal)
             {
-                "ReleaseRevisions",
+                "Releases",
                 "EvidenceRecords",
                 "CurrentEvidence",
                 "EvaluationRounds",
@@ -42,21 +42,20 @@ public sealed class DatabaseSchemaTests
     {
         using var context = CreateContext("Data Source=:memory:");
 
-        var release = context.Model.FindEntityType(typeof(ReleaseRevisionRow))!;
+        var release = context.Model.FindEntityType(typeof(ReleaseRow))!;
         Assert.Equal(
-            [nameof(ReleaseRevisionRow.ReleaseId), nameof(ReleaseRevisionRow.Revision)],
+            [nameof(ReleaseRow.ReleaseId)],
             release.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.Equal(
             PropertySaveBehavior.Throw,
-            release.FindProperty(nameof(ReleaseRevisionRow.ServiceName))!.GetAfterSaveBehavior());
+            release.FindProperty(nameof(ReleaseRow.ServiceName))!.GetAfterSaveBehavior());
         Assert.Equal(
             PropertySaveBehavior.Throw,
-            release.FindProperty(nameof(ReleaseRevisionRow.ReleaseVersion))!.GetAfterSaveBehavior());
+            release.FindProperty(nameof(ReleaseRow.ReleaseVersion))!.GetAfterSaveBehavior());
 
         AssertUniqueIndex<EvidenceRecordRow>(
             context,
             nameof(EvidenceRecordRow.ReleaseId),
-            nameof(EvidenceRecordRow.Revision),
             nameof(EvidenceRecordRow.Kind),
             nameof(EvidenceRecordRow.Version));
         AssertUniqueIndex<BranchResultRow>(
@@ -66,7 +65,6 @@ public sealed class DatabaseSchemaTests
         AssertUniqueIndex<EvaluationRoundRow>(
             context,
             nameof(EvaluationRoundRow.ReleaseId),
-            nameof(EvaluationRoundRow.Revision),
             nameof(EvaluationRoundRow.RoundNumber));
         AssertUniqueIndex<WorkflowRequestRow>(
             context,
@@ -74,13 +72,11 @@ public sealed class DatabaseSchemaTests
             nameof(WorkflowRequestRow.Kind));
         var activeRequestIndex = AssertUniqueIndex<WorkflowRequestRow>(
             context,
-            nameof(WorkflowRequestRow.ReleaseId),
-            nameof(WorkflowRequestRow.Revision));
+            nameof(WorkflowRequestRow.ReleaseId));
         Assert.Equal("IsActive = 1", activeRequestIndex.GetFilter());
         var terminalResponseIndex = AssertUniqueIndex<HumanResponseRow>(
             context,
-            nameof(HumanResponseRow.ReleaseId),
-            nameof(HumanResponseRow.Revision));
+            nameof(HumanResponseRow.ReleaseId));
         Assert.Null(terminalResponseIndex.GetFilter());
         AssertUniqueIndex<HumanResponseRow>(context, nameof(HumanResponseRow.ApprovalRequestId));
         var responseType = context.Model.FindEntityType(typeof(HumanResponseRow))!;
@@ -98,10 +94,25 @@ public sealed class DatabaseSchemaTests
         Assert.Equal(
             [
                 nameof(CurrentEvidenceRow.ReleaseId),
-                nameof(CurrentEvidenceRow.Revision),
                 nameof(CurrentEvidenceRow.Kind),
             ],
             currentEvidence.FindPrimaryKey()!.Properties.Select(property => property.Name));
+
+        Assert.All(
+            new[]
+            {
+                typeof(ReleaseRow),
+                typeof(EvidenceRecordRow),
+                typeof(CurrentEvidenceRow),
+                typeof(EvaluationRoundRow),
+                typeof(WorkflowRequestRow),
+                typeof(DecisionSnapshotRow),
+                typeof(HumanResponseRow),
+                typeof(WorkflowCorrelationRow),
+                typeof(TimelineEntryRow),
+            },
+            rowType => Assert.Null(
+                context.Model.FindEntityType(rowType)!.FindProperty(string.Concat("Re", "vision"))));
 
         Assert.True(
             context.Model.FindEntityType(typeof(WorkflowRequestRow))!
@@ -154,7 +165,7 @@ public sealed class DatabaseSchemaTests
 
                 var tables = await ReadSchemaObjectNames(verification, "table");
                 Assert.DoesNotContain("__EFMigrationsHistory", tables);
-                Assert.Contains("ReleaseRevisions", tables);
+                Assert.Contains("Releases", tables);
                 Assert.Contains("EvidenceRecords", tables);
                 Assert.Contains("BranchResults", tables);
                 Assert.Contains("DecisionSnapshots", tables);
@@ -180,7 +191,7 @@ public sealed class DatabaseSchemaTests
                     await ReadColumnNames(verification, "DecisionSnapshotSources"));
                 Assert.Equal(
                     [
-                        "Id", "ReleaseId", "Revision", "ApprovalRequestId", "Decision",
+                        "Id", "ReleaseId", "ApprovalRequestId", "Decision",
                         "Responder", "Comment", "RespondedAtUtc", "OperationKey",
                     ],
                     await ReadColumnNames(verification, "HumanResponses"));
@@ -204,10 +215,9 @@ public sealed class DatabaseSchemaTests
             await using (var setup = CreateContext($"Data Source={databasePath};Pooling=False"))
             {
                 await setup.Database.EnsureCreatedAsync();
-                setup.ReleaseRevisions.Add(new ReleaseRevisionRow
+                setup.Releases.Add(new ReleaseRow
                 {
                     ReleaseId = releaseId,
-                    Revision = 1,
                     ServiceName = "orders",
                     ReleaseVersion = "1.0.0",
                     RequestedWindowStartUtc = new DateTimeOffset(2026, 8, 17, 8, 0, 0, TimeSpan.Zero),
@@ -215,14 +225,13 @@ public sealed class DatabaseSchemaTests
                     SubmittedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 0, 0, TimeSpan.Zero),
                     Phase = ProcessPhase.WaitingForRemediation,
                     PhaseChangedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 1, 0, TimeSpan.Zero),
-                    OperationKey = $"submit:{releaseId}:1",
+                    OperationKey = $"submit:{releaseId}",
                     ConcurrencyToken = "release-token-1",
                 });
                 setup.WorkflowRequests.Add(new WorkflowRequestRow
                 {
                     Id = requestId,
                     ReleaseId = releaseId,
-                    Revision = 1,
                     Kind = WorkflowRequestKind.Remediation,
                     CreatedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 1, 0, TimeSpan.Zero),
                     IsActive = true,

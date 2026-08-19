@@ -13,7 +13,7 @@ public abstract record EvidenceRecord
 {
     protected EvidenceRecord(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int version,
         UtcInstant recordedAt,
         Guid? supersedesEvidenceId)
@@ -34,7 +34,7 @@ public abstract record EvidenceRecord
         }
 
         Id = id;
-        ReleaseRevision = releaseRevision;
+        ReleaseId = releaseId;
         Version = version;
         RecordedAt = recordedAt;
         SupersedesEvidenceId = supersedesEvidenceId;
@@ -42,7 +42,7 @@ public abstract record EvidenceRecord
 
     public Guid Id { get; }
 
-    public ReleaseRevisionKey ReleaseRevision { get; }
+    public ReleaseId ReleaseId { get; }
 
     public int Version { get; }
 
@@ -57,7 +57,7 @@ public sealed record TestEvidenceRecord : EvidenceRecord
 {
     public TestEvidenceRecord(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int version,
         UtcInstant recordedAt,
         Guid? supersedesEvidenceId,
@@ -65,7 +65,7 @@ public sealed record TestEvidenceRecord : EvidenceRecord
         UtcInstant? completedAt,
         decimal? passRate,
         IEnumerable<string>? criticalSuiteFailures)
-        : base(id, releaseRevision, version, recordedAt, supersedesEvidenceId)
+        : base(id, releaseId, version, recordedAt, supersedesEvidenceId)
     {
         if (passRate is < 0 or > 1)
         {
@@ -95,7 +95,7 @@ public sealed record SecurityEvidenceRecord : EvidenceRecord
 {
     public SecurityEvidenceRecord(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int version,
         UtcInstant recordedAt,
         Guid? supersedesEvidenceId,
@@ -104,7 +104,7 @@ public sealed record SecurityEvidenceRecord : EvidenceRecord
         IEnumerable<string>? unresolvedCriticalFindingIds,
         IEnumerable<string>? unresolvedHighFindingIds,
         IReadOnlyDictionary<string, (string Scope, UtcInstant ExpiresAt)>? approvedExceptions)
-        : base(id, releaseRevision, version, recordedAt, supersedesEvidenceId)
+        : base(id, releaseId, version, recordedAt, supersedesEvidenceId)
     {
         ScanVersion = scanVersion?.Trim();
         ScannedAt = scannedAt;
@@ -138,13 +138,13 @@ public sealed record ChangeEvidenceRecord : EvidenceRecord
 {
     public ChangeEvidenceRecord(
         Guid id,
-        ReleaseRevisionKey releaseRevision,
+        ReleaseId releaseId,
         int version,
         UtcInstant recordedAt,
         Guid? supersedesEvidenceId,
         bool? isApproved,
         UtcInterval? approvedWindow)
-        : base(id, releaseRevision, version, recordedAt, supersedesEvidenceId)
+        : base(id, releaseId, version, recordedAt, supersedesEvidenceId)
     {
         IsApproved = isApproved;
         ApprovedWindow = approvedWindow;

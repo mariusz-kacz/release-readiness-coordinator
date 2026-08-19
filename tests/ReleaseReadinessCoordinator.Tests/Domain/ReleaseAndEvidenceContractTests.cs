@@ -4,14 +4,14 @@ namespace ReleaseReadinessCoordinator.Tests.Domain;
 
 public sealed class ReleaseAndEvidenceContractTests
 {
-    private static readonly ReleaseRevisionKey RevisionKey = new("release-42", 3);
+    private static readonly ReleaseId Id = new("release-42");
     private static readonly UtcInstant RecordedAt = Utc(2026, 8, 14, 8);
 
     [Fact]
     public void Change_evidence_contains_approval_and_approved_window()
     {
         var submission = new ReleaseSubmission(
-            RevisionKey,
+            Id,
             "checkout",
             "2.4.0",
             new UtcInterval(Utc(2026, 8, 14, 9), Utc(2026, 8, 14, 10)),
@@ -20,7 +20,7 @@ public sealed class ReleaseAndEvidenceContractTests
         var previousEvidenceId = Guid.NewGuid();
         var evidence = new ChangeEvidenceRecord(
             evidenceId,
-            RevisionKey,
+            Id,
             version: 2,
             RecordedAt,
             previousEvidenceId,

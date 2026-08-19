@@ -11,8 +11,8 @@ public sealed class ApplicationDataServiceTests
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-replay");
-        var evidence = CreateTestEvidence(submission.Key, Guid.NewGuid(), 1, null, 0.98m);
-        var timeline = CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted.");
+        var evidence = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 1, null, 0.98m);
+        var timeline = CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted.");
 
         await using (var firstContext = database.CreateContext())
         {
@@ -37,14 +37,14 @@ public sealed class ApplicationDataServiceTests
         }
 
         await using var verification = database.CreateContext();
-        Assert.Equal(1, await verification.ReleaseRevisions.CountAsync());
+        Assert.Equal(1, await verification.Releases.CountAsync());
         Assert.Equal(1, await verification.EvidenceRecords.CountAsync());
         Assert.Equal(1, await verification.CurrentEvidence.CountAsync());
         Assert.Equal(1, await verification.TimelineEntries.CountAsync());
     }
 
     [Fact]
-    public async Task Duplicate_release_revision_with_a_different_operation_is_a_conflict()
+    public async Task Duplicate_release_id_with_a_different_operation_is_a_conflict()
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-duplicate");
@@ -54,17 +54,46 @@ public sealed class ApplicationDataServiceTests
         await service.SubmitReleaseAsync(
             submission,
             [],
-            CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             "submit:first");
 
         var conflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(() =>
             service.SubmitReleaseAsync(
                 submission,
                 [],
-                CreateTimeline(submission.Key, 2, TimelineEntryKind.ReleaseSubmitted, "Submitted again."),
+                CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.ReleaseSubmitted, "Submitted again."),
                 "submit:second"));
 
-        Assert.Equal(ApplicationDataConflictKind.DuplicateReleaseRevision, conflict.Kind);
+        Assert.Equal(ApplicationDataConflictKind.DuplicateReleaseId, conflict.Kind);
+    }
+
+    [Fact]
+    public async Task Corrected_metadata_is_submitted_under_a_different_release_id()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync();
+        var original = CreateSubmission("release-original");
+        var corrected = new ReleaseSubmission(
+            new ReleaseId("release-corrected"),
+            "corrected-service",
+            original.ReleaseVersion,
+            original.RequestedDeploymentWindow,
+            original.SubmittedAt);
+
+        await using var context = database.CreateContext();
+        var service = new ApplicationDataService(context);
+        await service.SubmitReleaseAsync(
+            original,
+            [],
+            CreateTimeline(original.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Original release submitted."),
+            "submit:original");
+        await service.SubmitReleaseAsync(
+            corrected,
+            [],
+            CreateTimeline(corrected.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Corrected release submitted."),
+            "submit:corrected");
+
+        Assert.Equal(2, await context.Releases.CountAsync());
+        Assert.Equal("corrected-service", (await service.GetReleaseDetailAsync(corrected.ReleaseId))!.Release.Submission.ServiceName);
     }
 
     [Fact]
@@ -78,11 +107,11 @@ public sealed class ApplicationDataServiceTests
         await service.SubmitReleaseAsync(
             submission,
             [],
-            CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             "submit:payload-guard");
 
         var changedSubmission = new ReleaseSubmission(
-            submission.Key,
+            submission.ReleaseId,
             "different-service",
             submission.ReleaseVersion,
             submission.RequestedDeploymentWindow,
@@ -92,7 +121,7 @@ public sealed class ApplicationDataServiceTests
             service.SubmitReleaseAsync(
                 changedSubmission,
                 [],
-                CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+                CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
                 "submit:payload-guard"));
 
         Assert.Equal(ApplicationDataConflictKind.OperationKeyReused, conflict.Kind);
@@ -103,32 +132,32 @@ public sealed class ApplicationDataServiceTests
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-evidence");
-        var original = CreateTestEvidence(submission.Key, Guid.NewGuid(), 1, null, 0.96m);
+        var original = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 1, null, 0.96m);
 
         await using var context = database.CreateContext();
         var service = new ApplicationDataService(context);
         await service.SubmitReleaseAsync(
             submission,
             [original],
-            CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             "submit:evidence");
 
-        var replacement = CreateTestEvidence(submission.Key, Guid.NewGuid(), 2, original.Id, 0.99m);
+        var replacement = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 2, original.Id, 0.99m);
         var persisted = await service.ReplaceEvidenceAsync(
             replacement,
-            CreateTimeline(submission.Key, 2, TimelineEntryKind.RemediationSubmitted, "Test evidence replaced."),
+            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.RemediationSubmitted, "Test evidence replaced."),
             "evidence:test:2");
         var replayed = await service.ReplaceEvidenceAsync(
             replacement,
-            CreateTimeline(submission.Key, 2, TimelineEntryKind.RemediationSubmitted, "Test evidence replaced."),
+            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.RemediationSubmitted, "Test evidence replaced."),
             "evidence:test:2");
 
         Assert.Equal(replacement, persisted);
         Assert.Equal(replacement, replayed);
 
-        var detail = await service.GetReleaseDetailAsync(submission.Key);
+        var detail = await service.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.NotNull(detail);
-        Assert.Equal(submission.Key, detail.Release.Submission.Key);
+        Assert.Equal(submission.ReleaseId, detail.Release.Submission.ReleaseId);
         Assert.Equal(submission.ServiceName, detail.Release.Submission.ServiceName);
         Assert.Equal(submission.ReleaseVersion, detail.Release.Submission.ReleaseVersion);
         Assert.Equal(submission.RequestedDeploymentWindow, detail.Release.Submission.RequestedDeploymentWindow);
@@ -154,7 +183,7 @@ public sealed class ApplicationDataServiceTests
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-terminal");
-        var original = CreateTestEvidence(submission.Key, Guid.NewGuid(), 1, null, 0.96m);
+        var original = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 1, null, 0.96m);
 
         await using (var setup = database.CreateContext())
         {
@@ -162,9 +191,9 @@ public sealed class ApplicationDataServiceTests
             await service.SubmitReleaseAsync(
                 submission,
                 [original],
-                CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+                CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
                 "submit:terminal");
-            var release = await setup.ReleaseRevisions.SingleAsync();
+            var release = await setup.Releases.SingleAsync();
             release.Phase = ProcessPhase.Approved;
             release.PhaseChangedAtUtc = new DateTimeOffset(2026, 8, 16, 10, 0, 0, TimeSpan.Zero);
             release.ConcurrencyToken = "release-approved";
@@ -173,12 +202,12 @@ public sealed class ApplicationDataServiceTests
 
         await using var context = database.CreateContext();
         var dataService = new ApplicationDataService(context);
-        var replacement = CreateTestEvidence(submission.Key, Guid.NewGuid(), 2, original.Id, 0.99m);
+        var replacement = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 2, original.Id, 0.99m);
 
         var conflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(() =>
             dataService.ReplaceEvidenceAsync(
                 replacement,
-                CreateTimeline(submission.Key, 2, TimelineEntryKind.RemediationSubmitted, "Should not persist."),
+                CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.RemediationSubmitted, "Should not persist."),
                 "evidence:terminal"));
 
         Assert.Equal(ApplicationDataConflictKind.TerminalRelease, conflict.Kind);
@@ -191,35 +220,35 @@ public sealed class ApplicationDataServiceTests
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-history");
-        var testEvidence = CreateTestEvidence(submission.Key, Guid.NewGuid(), 1, null, 0.75m);
-        var changeEvidence = CreateChangeEvidence(submission.Key, Guid.NewGuid());
+        var testEvidence = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 1, null, 0.75m);
+        var changeEvidence = CreateChangeEvidence(submission.ReleaseId, Guid.NewGuid());
 
         await using var context = database.CreateContext();
         var service = new ApplicationDataService(context);
         await service.SubmitReleaseAsync(
             submission,
             [testEvidence, changeEvidence],
-            CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             "history:submit");
 
-        var round = CreateRound(submission.Key, 1, testEvidence, changeEvidence, passed: false);
+        var round = CreateRound(submission.ReleaseId, 1, testEvidence, changeEvidence, passed: false);
         await service.SaveEvaluationRoundAsync(
             round,
-            CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
+            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
             "history:round:1");
         await service.SaveEvaluationRoundAsync(
             round,
-            CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
+            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
             "history:round:1");
 
         var request = new RemediationRequest(
-            Guid.NewGuid(), submission.Key, round.RoundNumber, Utc(2026, 8, 16, 10), round.Results);
+            Guid.NewGuid(), submission.ReleaseId, round.RoundNumber, Utc(2026, 8, 16, 10), round.Results);
         await service.OpenRemediationRequestAsync(
             request,
-            CreateTimeline(submission.Key, 3, TimelineEntryKind.RemediationRequested, "Remediation requested."),
+            CreateTimeline(submission.ReleaseId, 3, TimelineEntryKind.RemediationRequested, "Remediation requested."),
             "history:request");
 
-        var replacement = CreateTestEvidence(submission.Key, Guid.NewGuid(), 2, testEvidence.Id, 0.99m);
+        var replacement = CreateTestEvidence(submission.ReleaseId, Guid.NewGuid(), 2, testEvidence.Id, 0.99m);
         var remediation = new RemediationSubmission(
             Guid.NewGuid(),
             request.Id,
@@ -227,32 +256,32 @@ public sealed class ApplicationDataServiceTests
             new Dictionary<EvidenceKind, Guid> { [EvidenceKind.Test] = replacement.Id },
             [ReadinessCheck.Test]);
         await service.SaveRemediationSubmissionAsync(
-            submission.Key,
+            submission.ReleaseId,
             remediation,
             [replacement],
-            CreateTimeline(submission.Key, 4, TimelineEntryKind.RemediationSubmitted, "Remediation submitted."),
+            CreateTimeline(submission.ReleaseId, 4, TimelineEntryKind.RemediationSubmitted, "Remediation submitted."),
             "history:remediation");
         await service.SaveRemediationSubmissionAsync(
-            submission.Key,
+            submission.ReleaseId,
             remediation,
             [replacement],
-            CreateTimeline(submission.Key, 4, TimelineEntryKind.RemediationSubmitted, "Remediation submitted."),
+            CreateTimeline(submission.ReleaseId, 4, TimelineEntryKind.RemediationSubmitted, "Remediation submitted."),
             "history:remediation");
 
         var correlation = new WorkflowCorrelationRecord(
-            submission.Key, "session-history", "request-history", WorkflowRequestKind.Remediation, Utc(2026, 8, 16, 11));
+            submission.ReleaseId, "session-history", "request-history", WorkflowRequestKind.Remediation, Utc(2026, 8, 16, 11));
         await service.SaveWorkflowCorrelationAsync(correlation, "history:correlation");
         await service.SaveWorkflowCorrelationAsync(correlation, "history:correlation");
 
-        var extraTimeline = CreateTimeline(submission.Key, 5, TimelineEntryKind.EvaluationStarted, "Evaluation restarted.");
+        var extraTimeline = CreateTimeline(submission.ReleaseId, 5, TimelineEntryKind.EvaluationStarted, "Evaluation restarted.");
         await service.AppendTimelineEntryAsync(extraTimeline, "history:timeline:5");
         await service.AppendTimelineEntryAsync(extraTimeline, "history:timeline:5");
 
-        var failureTimeline = CreateTimeline(submission.Key, 6, TimelineEntryKind.WorkflowFailed, "Workflow failed.");
-        await service.MarkWorkflowFailedAsync(submission.Key, Utc(2026, 8, 16, 12), failureTimeline, "history:failure");
-        await service.MarkWorkflowFailedAsync(submission.Key, Utc(2026, 8, 16, 12), failureTimeline, "history:failure");
+        var failureTimeline = CreateTimeline(submission.ReleaseId, 6, TimelineEntryKind.WorkflowFailed, "Workflow failed.");
+        await service.MarkWorkflowFailedAsync(submission.ReleaseId, Utc(2026, 8, 16, 12), failureTimeline, "history:failure");
+        await service.MarkWorkflowFailedAsync(submission.ReleaseId, Utc(2026, 8, 16, 12), failureTimeline, "history:failure");
 
-        var detail = await service.GetReleaseDetailAsync(submission.Key);
+        var detail = await service.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.NotNull(detail);
         Assert.Equal(ProcessPhase.Failed, detail.Release.Phase);
         Assert.Single(detail.EvaluationRounds);
@@ -273,24 +302,24 @@ public sealed class ApplicationDataServiceTests
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-approval");
-        var evidence = CreateEveryEvidence(submission.Key);
+        var evidence = CreateEveryEvidence(submission.ReleaseId);
 
         await using var context = database.CreateContext();
         var service = new ApplicationDataService(context);
         await service.SubmitReleaseAsync(
             submission,
             evidence,
-            CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             "approval:submit");
-        var round = CreateRound(submission.Key, 1, evidence, passed: true);
+        var round = CreateRound(submission.ReleaseId, 1, evidence, passed: true);
         await service.SaveEvaluationRoundAsync(
             round,
-            CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "All checks passed."),
+            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "All checks passed."),
             "approval:round");
 
         var snapshot = new DecisionSnapshot(
             Guid.NewGuid(),
-            submission.Key,
+            submission.ReleaseId,
             round.Id,
             round.RoundNumber,
             round.Results,
@@ -298,35 +327,35 @@ public sealed class ApplicationDataServiceTests
             "All readiness checks passed.",
             Utc(2026, 8, 16, 10));
         var request = new HumanDecisionRequest(
-            Guid.NewGuid(), submission.Key, snapshot.Id, Utc(2026, 8, 16, 10));
+            Guid.NewGuid(), submission.ReleaseId, snapshot.Id, Utc(2026, 8, 16, 10));
         await service.OpenHumanDecisionRequestAsync(
             snapshot,
             request,
-            CreateTimeline(submission.Key, 3, TimelineEntryKind.ApprovalRequested, "Approval requested."),
+            CreateTimeline(submission.ReleaseId, 3, TimelineEntryKind.ApprovalRequested, "Approval requested."),
             "approval:request");
         await service.OpenHumanDecisionRequestAsync(
             snapshot,
             request,
-            CreateTimeline(submission.Key, 3, TimelineEntryKind.ApprovalRequested, "Approval requested."),
+            CreateTimeline(submission.ReleaseId, 3, TimelineEntryKind.ApprovalRequested, "Approval requested."),
             "approval:request");
 
         var response = new HumanResponse(
             Guid.NewGuid(), HumanDecision.Approve, "coordinator", "Approved for release.",
             Utc(2026, 8, 16, 11));
         await service.SaveHumanResponseAsync(
-            submission.Key,
+            submission.ReleaseId,
             request.Id,
             response,
-            CreateTimeline(submission.Key, 4, TimelineEntryKind.HumanResponseAccepted, "Release approved."),
+            CreateTimeline(submission.ReleaseId, 4, TimelineEntryKind.HumanResponseAccepted, "Release approved."),
             "approval:response");
         await service.SaveHumanResponseAsync(
-            submission.Key,
+            submission.ReleaseId,
             request.Id,
             response,
-            CreateTimeline(submission.Key, 4, TimelineEntryKind.HumanResponseAccepted, "Release approved."),
+            CreateTimeline(submission.ReleaseId, 4, TimelineEntryKind.HumanResponseAccepted, "Release approved."),
             "approval:response");
 
-        var detail = await service.GetReleaseDetailAsync(submission.Key);
+        var detail = await service.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.NotNull(detail);
         Assert.Equal(ProcessPhase.Approved, detail.Release.Phase);
         Assert.Single(detail.DecisionSnapshots);
@@ -344,25 +373,25 @@ public sealed class ApplicationDataServiceTests
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-workflow-payload");
-        var evidence = CreateEveryEvidence(submission.Key);
+        var evidence = CreateEveryEvidence(submission.ReleaseId);
 
         await using var context = database.CreateContext();
         var service = new ApplicationDataService(context);
         await service.SubmitReleaseAsync(
             submission,
             evidence,
-            CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             "workflow-payload:submit");
-        var round = CreateRound(submission.Key, 1, evidence, passed: true);
+        var round = CreateRound(submission.ReleaseId, 1, evidence, passed: true);
         await service.SaveEvaluationRoundAsync(
             round,
-            CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
+            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
             "workflow-payload:round");
 
-        var replayAttempt = CreateRound(submission.Key, 1, evidence, passed: true);
+        var replayAttempt = CreateRound(submission.ReleaseId, 1, evidence, passed: true);
         var replayed = await service.SaveEvaluationRoundAsync(
             replayAttempt,
-            CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
+            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Evaluation completed."),
             "workflow-payload:round");
 
         Assert.Equal(round.Id, replayed.Id);
@@ -380,32 +409,32 @@ public sealed class ApplicationDataServiceTests
     {
         await using var database = await TemporaryDatabase.CreateAsync();
         var submission = CreateSubmission("release-workflow-composite-conflict");
-        var evidence = CreateEveryEvidence(submission.Key);
+        var evidence = CreateEveryEvidence(submission.ReleaseId);
 
         await using var context = database.CreateContext();
         var service = new ApplicationDataService(context);
         await service.SubmitReleaseAsync(
             submission,
             evidence,
-            CreateTimeline(submission.Key, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
+            CreateTimeline(submission.ReleaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted."),
             "workflow-composite-conflict:submit");
-        var firstRound = CreateRound(submission.Key, 1, evidence, passed: true);
+        var firstRound = CreateRound(submission.ReleaseId, 1, evidence, passed: true);
         await service.SaveEvaluationRoundAsync(
             firstRound,
-            CreateTimeline(submission.Key, 2, TimelineEntryKind.EvaluationCompleted, "Round 1 completed."),
+            CreateTimeline(submission.ReleaseId, 2, TimelineEntryKind.EvaluationCompleted, "Round 1 completed."),
             "workflow-composite-conflict:round");
 
-        var secondRound = CreateRound(submission.Key, 2, evidence, passed: true);
+        var secondRound = CreateRound(submission.ReleaseId, 2, evidence, passed: true);
         var conflict = await Assert.ThrowsAsync<ApplicationDataConflictException>(() =>
             service.SaveEvaluationRoundAsync(
                 secondRound,
-                CreateTimeline(submission.Key, 3, TimelineEntryKind.EvaluationCompleted, "Round 2 completed."),
+                CreateTimeline(submission.ReleaseId, 3, TimelineEntryKind.EvaluationCompleted, "Round 2 completed."),
                 "workflow-composite-conflict:round"));
 
         Assert.Equal(ApplicationDataConflictKind.OperationKeyReused, conflict.Kind);
     }
 
-    private static ChangeEvidenceRecord CreateChangeEvidence(ReleaseRevisionKey key, Guid id) => new(
+    private static ChangeEvidenceRecord CreateChangeEvidence(ReleaseId key, Guid id) => new(
         id,
         key,
         1,
@@ -414,7 +443,7 @@ public sealed class ApplicationDataServiceTests
         false,
         null);
 
-    private static EvidenceRecord[] CreateEveryEvidence(ReleaseRevisionKey key) =>
+    private static EvidenceRecord[] CreateEveryEvidence(ReleaseId key) =>
     [
         CreateTestEvidence(key, Guid.NewGuid(), 1, null, 0.99m),
         new SecurityEvidenceRecord(
@@ -427,7 +456,7 @@ public sealed class ApplicationDataServiceTests
     ];
 
     private static EvaluationRound CreateRound(
-        ReleaseRevisionKey key,
+        ReleaseId key,
         int number,
         TestEvidenceRecord testEvidence,
         ChangeEvidenceRecord changeEvidence,
@@ -435,7 +464,7 @@ public sealed class ApplicationDataServiceTests
         CreateRound(key, number, [testEvidence, changeEvidence], passed);
 
     private static EvaluationRound CreateRound(
-        ReleaseRevisionKey key,
+        ReleaseId key,
         int number,
         IReadOnlyCollection<EvidenceRecord> evidence,
         bool passed)
@@ -476,7 +505,7 @@ public sealed class ApplicationDataServiceTests
     }
 
     private static ReleaseSubmission CreateSubmission(string releaseId) => new(
-        new ReleaseRevisionKey(releaseId, 1),
+        new ReleaseId(releaseId),
         "orders",
         "1.0.0",
         new UtcInterval(
@@ -485,7 +514,7 @@ public sealed class ApplicationDataServiceTests
         Utc(2026, 8, 16, 8));
 
     private static TestEvidenceRecord CreateTestEvidence(
-        ReleaseRevisionKey key,
+        ReleaseId key,
         Guid id,
         int version,
         Guid? supersedes,
@@ -501,7 +530,7 @@ public sealed class ApplicationDataServiceTests
             []);
 
     private static TimelineEntry CreateTimeline(
-        ReleaseRevisionKey key,
+        ReleaseId key,
         long sequence,
         TimelineEntryKind kind,
         string summary) => new(

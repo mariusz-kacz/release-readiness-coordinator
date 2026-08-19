@@ -128,7 +128,7 @@ public sealed class WorkflowTopologyTests
         Assert.DoesNotContain(
             events.OfType<WorkflowOutputEvent>(),
             output => output.Data is EvaluationRound);
-        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.Key);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
         var round = Assert.Single(detail!.EvaluationRounds);
         Assert.Equal(host.Input.RoundId, round.Id);
         Assert.Equal(1, round.RoundNumber);
@@ -144,7 +144,7 @@ public sealed class WorkflowTopologyTests
 
     private static EvaluationRound Round(IEnumerable<BranchResult> results) => new(
         Guid.NewGuid(),
-        new ReleaseRevisionKey("topology-contract", 1),
+        new ReleaseId("topology-contract"),
         1,
         Utc(10),
         Utc(10, 5),
@@ -159,7 +159,7 @@ public sealed class WorkflowTopologyTests
 
     private static BranchResult Result(ReadinessCheck check) => new(
         Guid.NewGuid(),
-        new ReleaseRevisionKey("topology-contract", 1),
+        new ReleaseId("topology-contract"),
         1,
         check,
         BranchOutcome.Passed,

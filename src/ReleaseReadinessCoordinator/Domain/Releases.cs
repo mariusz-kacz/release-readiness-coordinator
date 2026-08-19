@@ -41,44 +41,38 @@ public sealed record UtcInterval
     public UtcInstant End { get; }
 }
 
-public sealed record ReleaseRevisionKey
+public sealed record ReleaseId
 {
-    public ReleaseRevisionKey(string releaseId, int revision)
+    public ReleaseId(string value)
     {
-        if (revision <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(revision), "A release revision must be positive.");
-        }
-
-        ReleaseId = DomainGuard.Required(releaseId, nameof(releaseId));
-        Revision = revision;
+        Value = DomainGuard.Required(value, nameof(value));
     }
 
-    public string ReleaseId { get; }
+    public string Value { get; }
 
-    public int Revision { get; }
+    public override string ToString() => Value;
 }
 
 public sealed record ReleaseSubmission
 {
     public ReleaseSubmission(
-        ReleaseRevisionKey key,
+        ReleaseId releaseId,
         string serviceName,
         string releaseVersion,
         UtcInterval requestedDeploymentWindow,
         UtcInstant submittedAt)
     {
-        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(releaseId);
         ArgumentNullException.ThrowIfNull(requestedDeploymentWindow);
 
-        Key = key;
+        ReleaseId = releaseId;
         ServiceName = DomainGuard.Required(serviceName, nameof(serviceName));
         ReleaseVersion = DomainGuard.Required(releaseVersion, nameof(releaseVersion));
         RequestedDeploymentWindow = requestedDeploymentWindow;
         SubmittedAt = submittedAt;
     }
 
-    public ReleaseRevisionKey Key { get; }
+    public ReleaseId ReleaseId { get; }
 
     public string ServiceName { get; }
 
@@ -99,9 +93,9 @@ public enum ProcessPhase
     Failed = 6,
 }
 
-public sealed record ReleaseRevision
+public sealed record Release
 {
-    private ReleaseRevision(ReleaseSubmission submission, ProcessPhase phase, UtcInstant phaseChangedAt)
+    private Release(ReleaseSubmission submission, ProcessPhase phase, UtcInstant phaseChangedAt)
     {
         Submission = submission;
         Phase = phase;
@@ -116,13 +110,13 @@ public sealed record ReleaseRevision
 
     public bool IsTerminal => Phase is ProcessPhase.Approved or ProcessPhase.Rejected;
 
-    public static ReleaseRevision Create(ReleaseSubmission submission)
+    public static Release Create(ReleaseSubmission submission)
     {
         ArgumentNullException.ThrowIfNull(submission);
-        return new ReleaseRevision(submission, ProcessPhase.Evaluating, submission.SubmittedAt);
+        return new Release(submission, ProcessPhase.Evaluating, submission.SubmittedAt);
     }
 
-    public ReleaseRevision TransitionTo(ProcessPhase nextPhase, UtcInstant changedAt)
+    public Release TransitionTo(ProcessPhase nextPhase, UtcInstant changedAt)
     {
         DomainGuard.Defined(nextPhase, nameof(nextPhase));
         if (changedAt < PhaseChangedAt)
@@ -138,10 +132,10 @@ public sealed record ReleaseRevision
         if (IsTerminal)
         {
             throw new InvalidOperationException(
-                $"Release revision '{Submission.Key.ReleaseId}/{Submission.Key.Revision}' is terminal and cannot be reopened.");
+                $"Release '{Submission.ReleaseId}' is terminal and cannot be reopened.");
         }
 
-        return new ReleaseRevision(Submission, nextPhase, changedAt);
+        return new Release(Submission, nextPhase, changedAt);
     }
 }
 
