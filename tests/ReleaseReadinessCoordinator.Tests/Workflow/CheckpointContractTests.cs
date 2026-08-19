@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Tests.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
@@ -7,6 +9,90 @@ namespace ReleaseReadinessCoordinator.Tests.Workflow;
 
 public sealed class CheckpointContractTests
 {
+    [Fact]
+    public async Task Restored_approval_wait_contains_the_checkpoint_carried_payload()
+    {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Passed);
+        using var directory = new TemporaryDirectory();
+        const string SessionId = "release-payload";
+        PendingApprovalWait started;
+
+        using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
+        {
+            started = Assert.IsType<PendingApprovalWait>(
+                await firstProcess.StartAsync(
+                    host.CreateWorkflow(),
+                    host.Input,
+                    SessionId));
+        }
+
+        var approval = Assert.IsType<ApprovalRequest>(started.Approval);
+        var checkpointText = Directory
+            .EnumerateFiles(directory.Info.FullName, "*", SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .Single(text => text.Contains(started.WorkflowRequestId, StringComparison.Ordinal));
+        Assert.Contains(typeof(ApprovalRequest).FullName!, checkpointText, StringComparison.Ordinal);
+        using var checkpoint = JsonDocument.Parse(checkpointText);
+        var storedPayload = checkpoint.RootElement
+            .GetProperty("runnerData")
+            .GetProperty("outstandingRequests")[0]
+            .GetProperty("data")
+            .GetProperty("value");
+        Assert.Equivalent(
+            approval,
+            storedPayload.Deserialize<ApprovalRequest>(
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            strict: true);
+
+        using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
+        var restored = Assert.IsType<PendingApprovalWait>(
+            await secondProcess.RestoreAsync(host.CreateWorkflow(), SessionId));
+
+        Assert.Equal(started.WorkflowRequestId, restored.WorkflowRequestId);
+        Assert.Equivalent(
+            approval,
+            Assert.IsType<ApprovalRequest>(restored.Approval),
+            strict: true);
+    }
+
+    [Theory]
+    [InlineData("missing", (int)ContinuationFailureKind.Incompatible)]
+    [InlineData("unreadable", (int)ContinuationFailureKind.Corrupt)]
+    [InlineData("wrong-type", (int)ContinuationFailureKind.Mismatched)]
+    public async Task Invalid_checkpoint_approval_payload_fails_closed(
+        string corruption,
+        int expectedKindValue)
+    {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Passed);
+        using var directory = new TemporaryDirectory();
+        var sessionId = $"release-payload-{corruption}";
+        PendingApprovalWait started;
+
+        using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
+        {
+            started = Assert.IsType<PendingApprovalWait>(
+                await firstProcess.StartAsync(
+                    host.CreateWorkflow(),
+                    host.Input,
+                    sessionId));
+        }
+
+        directory.CorruptApprovalPayload(started.WorkflowRequestId, corruption);
+        using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
+
+        var exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
+            () => secondProcess.RestoreAsync(host.CreateWorkflow(), sessionId));
+
+        Assert.Equal((ContinuationFailureKind)expectedKindValue, exception.Kind);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
+        Assert.Null(detail!.TerminalResponse);
+        Assert.DoesNotContain(
+            detail.Timeline,
+            entry => entry.Kind is TimelineEntryKind.HumanResponseAccepted);
+    }
+
     [Fact]
     public async Task Pending_wait_is_rehydrated_after_process_boundary_and_accepts_correlated_response()
     {
@@ -91,6 +177,36 @@ public sealed class CheckpointContractTests
         }
 
         public DirectoryInfo Info { get; }
+
+        public void CorruptApprovalPayload(string workflowRequestId, string corruption)
+        {
+            var checkpointPath = Directory
+                .EnumerateFiles(Info.FullName, "*", SearchOption.AllDirectories)
+                .Single(path => File.ReadAllText(path).Contains(workflowRequestId, StringComparison.Ordinal));
+            var checkpoint = JsonNode.Parse(File.ReadAllText(checkpointPath))!.AsObject();
+            var request = checkpoint["runnerData"]!["outstandingRequests"]!
+                .AsArray()
+                .Single()!
+                .AsObject();
+            var data = request["data"]!.AsObject();
+
+            switch (corruption)
+            {
+                case "missing":
+                    data.Remove("value");
+                    break;
+                case "unreadable":
+                    data["value"]!["snapshot"]!["decisionBrief"] = "";
+                    break;
+                case "wrong-type":
+                    data["typeId"]!["typeName"] = typeof(ApprovalResponse).FullName;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(corruption));
+            }
+
+            File.WriteAllText(checkpointPath, checkpoint.ToJsonString());
+        }
 
         public void Dispose()
         {

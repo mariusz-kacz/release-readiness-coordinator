@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace ReleaseReadinessCoordinator.Domain;
 
@@ -107,6 +108,42 @@ public sealed record BranchWorkItem
 
 public sealed record BranchResult
 {
+    [JsonConstructor]
+    private BranchResult(
+        Guid id,
+        ReleaseId releaseId,
+        int roundNumber,
+        ReadinessCheck check,
+        BranchOutcome outcome,
+        ExecutionDisposition disposition,
+        PlanningReason planningReason,
+        string planningDetail,
+        Guid? evidenceId,
+        EvidenceKind evidenceKind,
+        UtcInstant? validUntil,
+        ImmutableArray<string> attempts,
+        ImmutableDictionary<string, string> findings,
+        Guid? reuseSourceResultId,
+        int? reuseSourceRound)
+        : this(
+            id,
+            releaseId,
+            roundNumber,
+            check,
+            outcome,
+            disposition,
+            planningReason,
+            planningDetail,
+            evidenceId,
+            evidenceKind,
+            validUntil,
+            (IEnumerable<string>)attempts,
+            findings,
+            reuseSourceResultId,
+            reuseSourceRound)
+    {
+    }
+
     public BranchResult(
         Guid id,
         ReleaseId releaseId,

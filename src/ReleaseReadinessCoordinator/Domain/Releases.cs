@@ -1,9 +1,11 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace ReleaseReadinessCoordinator.Domain;
 
 public readonly record struct UtcInstant : IComparable<UtcInstant>
 {
+    [JsonConstructor]
     public UtcInstant(DateTimeOffset value)
     {
         if (value.Offset != TimeSpan.Zero)

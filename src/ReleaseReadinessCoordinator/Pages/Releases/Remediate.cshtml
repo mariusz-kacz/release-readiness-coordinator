@@ -1,0 +1,124 @@
+@page "/Releases/{releaseId}/Remediate"
+@model ReleaseReadinessCoordinator.Pages.Releases.RemediateModel
+@using ReleaseReadinessCoordinator.Domain
+@{
+    var submission = Model.State.Release.Submission;
+    ViewData["Title"] = $"Remediate release {submission.ReleaseId}";
+}
+
+<header class="detail-header mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-semibold mb-1">Release readiness remediation</p>
+        <h1>Remediate release @submission.ReleaseId</h1>
+        <p class="lead mb-0">Resolve the active problems or explicitly select checks to run again.</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Releases/Detail" asp-route-releaseId="@submission.ReleaseId.Value">Back to release detail</a>
+</header>
+
+<section class="detail-section" aria-labelledby="release-metadata-heading">
+    <h2 id="release-metadata-heading">Immutable release metadata</h2>
+    <p class="text-secondary">These values are display-only. Correcting them requires a different release ID.</p>
+    <dl class="detail-facts">
+        <div><dt>Service</dt><dd>@submission.ServiceName</dd></div>
+        <div><dt>Release version</dt><dd>@submission.ReleaseVersion</dd></div>
+        <div>
+            <dt>Deployment window</dt>
+            <dd>@DetailModel.FormatInstant(submission.RequestedDeploymentWindow.Start) &ndash; @DetailModel.FormatInstant(submission.RequestedDeploymentWindow.End)</dd>
+        </div>
+        <div><dt>Blocked round</dt><dd>Round @Model.State.Request.RoundNumber</dd></div>
+    </dl>
+</section>
+
+<section class="detail-section" aria-labelledby="active-problems-heading">
+    <h2 id="active-problems-heading">Active problems</h2>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <caption class="visually-hidden">Problems from evaluation round @Model.State.Request.RoundNumber</caption>
+            <thead>
+                <tr><th scope="col">Check</th><th scope="col">Outcome</th><th scope="col">Findings</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var problem in Model.State.Request.Problems)
+                {
+                    <tr>
+                        <th scope="row">@problem.Check</th>
+                        <td>@problem.Outcome</td>
+                        <td>
+                            <dl class="finding-list mb-0">
+                                @foreach (var finding in problem.Findings)
+                                {
+                                    <dt>@finding.Key</dt><dd>@finding.Value</dd>
+                                }
+                            </dl>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<form method="post" asp-route-releaseId="@submission.ReleaseId.Value" class="detail-section">
+    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+    <input asp-for="Input.CorrelationToken" type="hidden" />
+
+    <section aria-labelledby="correlation-heading">
+        <h2 id="correlation-heading">Active request correlation</h2>
+        <p>This response is valid only for request <code class="text-break">@Model.State.CorrelationToken</code>.</p>
+    </section>
+
+    <fieldset class="border rounded p-3 mb-4">
+        <legend class="float-none w-auto px-2 fs-5">New evidence versions</legend>
+        <p class="text-secondary">Select a branch to append an immutable version. Unselected branch fields are ignored.</p>
+
+        <section class="mb-4" aria-labelledby="test-evidence-heading">
+            <h3 id="test-evidence-heading" class="h6">Test evidence</h3>
+            <p class="small text-secondary">@(Model.State.CurrentEvidence.TryGetValue(EvidenceKind.Test, out var currentTest) ? $"Current version: {currentTest.Version}. The replacement will be version {currentTest.Version + 1}." : "No current record. The new record will be version 1.")</p>
+            <div class="form-check mb-3"><input asp-for="Input.ReplaceTestEvidence" class="form-check-input" /><label asp-for="Input.ReplaceTestEvidence" class="form-check-label">Create a new Test evidence version</label></div>
+            <div class="row g-3">
+                <div class="col-md-4"><label asp-for="Input.TestRunVersion" class="form-label">Test run version</label><input asp-for="Input.TestRunVersion" class="form-control" /><span asp-validation-for="Input.TestRunVersion" class="text-danger"></span></div>
+                <div class="col-md-4"><label asp-for="Input.TestCompletedAt" class="form-label">Completed at</label><input asp-for="Input.TestCompletedAt" class="form-control" /><span asp-validation-for="Input.TestCompletedAt" class="text-danger"></span></div>
+                <div class="col-md-4"><label asp-for="Input.TestPassRatePercent" class="form-label">Pass rate (%)</label><input asp-for="Input.TestPassRatePercent" class="form-control" /><span asp-validation-for="Input.TestPassRatePercent" class="text-danger"></span></div>
+                <div class="col-12"><label asp-for="Input.CriticalSuiteFailures" class="form-label">Critical suite failures</label><textarea asp-for="Input.CriticalSuiteFailures" class="form-control" rows="2"></textarea><div class="form-text">Comma-separated suite names; leave blank for none.</div><span asp-validation-for="Input.CriticalSuiteFailures" class="text-danger"></span></div>
+            </div>
+        </section>
+
+        <section class="mb-4" aria-labelledby="security-evidence-heading">
+            <h3 id="security-evidence-heading" class="h6">Security evidence</h3>
+            <p class="small text-secondary">@(Model.State.CurrentEvidence.TryGetValue(EvidenceKind.Security, out var currentSecurity) ? $"Current version: {currentSecurity.Version}. The replacement will be version {currentSecurity.Version + 1}." : "No current record. The new record will be version 1.")</p>
+            <div class="form-check mb-3"><input asp-for="Input.ReplaceSecurityEvidence" class="form-check-input" /><label asp-for="Input.ReplaceSecurityEvidence" class="form-check-label">Create a new Security evidence version</label></div>
+            <div class="row g-3">
+                <div class="col-md-6"><label asp-for="Input.SecurityScanVersion" class="form-label">Scan version</label><input asp-for="Input.SecurityScanVersion" class="form-control" /><span asp-validation-for="Input.SecurityScanVersion" class="text-danger"></span></div>
+                <div class="col-md-6"><label asp-for="Input.SecurityScannedAt" class="form-label">Scanned at</label><input asp-for="Input.SecurityScannedAt" class="form-control" /><span asp-validation-for="Input.SecurityScannedAt" class="text-danger"></span></div>
+                <div class="col-md-6"><label asp-for="Input.CriticalFindingIds" class="form-label">Unresolved critical finding IDs</label><textarea asp-for="Input.CriticalFindingIds" class="form-control" rows="2"></textarea><div class="form-text">Comma-separated IDs; leave blank for none.</div><span asp-validation-for="Input.CriticalFindingIds" class="text-danger"></span></div>
+                <div class="col-md-6"><label asp-for="Input.HighFindingIds" class="form-label">Unresolved high finding IDs</label><textarea asp-for="Input.HighFindingIds" class="form-control" rows="2"></textarea><div class="form-text">Comma-separated IDs; leave blank for none.</div><span asp-validation-for="Input.HighFindingIds" class="text-danger"></span></div>
+                <div class="col-12"><label asp-for="Input.SecurityExceptions" class="form-label">Approved exceptions</label><textarea asp-for="Input.SecurityExceptions" class="form-control" rows="2"></textarea><div class="form-text">One per line: <code>finding-id|scope|expiry-with-offset</code>. Leave blank for none.</div><span asp-validation-for="Input.SecurityExceptions" class="text-danger"></span></div>
+            </div>
+        </section>
+
+        <section aria-labelledby="change-evidence-heading">
+            <h3 id="change-evidence-heading" class="h6">Change evidence</h3>
+            <p class="small text-secondary">@(Model.State.CurrentEvidence.TryGetValue(EvidenceKind.Change, out var currentChange) ? $"Current version: {currentChange.Version}. The replacement will be version {currentChange.Version + 1}." : "No current record. The new record will be version 1.")</p>
+            <div class="form-check mb-3"><input asp-for="Input.ReplaceChangeEvidence" class="form-check-input" /><label asp-for="Input.ReplaceChangeEvidence" class="form-check-label">Create a new Change evidence version</label></div>
+            <div class="row g-3">
+                <div class="col-md-4 form-check ms-2 mt-5"><input asp-for="Input.ChangeApproved" class="form-check-input" /><label asp-for="Input.ChangeApproved" class="form-check-label">Approved</label></div>
+                <div class="col-md-4"><label asp-for="Input.ChangeWindowStart" class="form-label">Approved window start</label><input asp-for="Input.ChangeWindowStart" class="form-control" /><span asp-validation-for="Input.ChangeWindowStart" class="text-danger"></span></div>
+                <div class="col-md-4"><label asp-for="Input.ChangeWindowEnd" class="form-label">Approved window end</label><input asp-for="Input.ChangeWindowEnd" class="form-control" /><span asp-validation-for="Input.ChangeWindowEnd" class="text-danger"></span></div>
+            </div>
+        </section>
+    </fieldset>
+
+    <fieldset class="border rounded p-3 mb-4">
+        <legend class="float-none w-auto px-2 fs-5">Explicit rerun selections</legend>
+        <p class="text-secondary">Selected checks execute even when their passing result would otherwise be reusable.</p>
+        <div class="form-check"><input asp-for="Input.RerunTest" class="form-check-input" /><label asp-for="Input.RerunTest" class="form-check-label">Rerun Test</label></div>
+        <div class="form-check"><input asp-for="Input.RerunSecurity" class="form-check-input" /><label asp-for="Input.RerunSecurity" class="form-check-label">Rerun Security</label></div>
+        <div class="form-check"><input asp-for="Input.RerunChange" class="form-check-input" /><label asp-for="Input.RerunChange" class="form-check-label">Rerun Change</label></div>
+    </fieldset>
+
+    <button type="submit" class="btn btn-primary">Submit remediation</button>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

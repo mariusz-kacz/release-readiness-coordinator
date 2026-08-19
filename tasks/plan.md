@@ -143,16 +143,17 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 - [x] Task 20: Add restart recovery, synchronization, and reconciliation
 - [x] Task 21: Remove numeric release revisions across the application
-- [ ] Task 22: Build release detail and timeline UI
+- [x] Task 22: Build release detail and timeline UI
 
 ### Checkpoint E1: Recovery and Read Model
 
 - [x] Stop/restart/resume works for remediation and approval waits
 - [x] Release identity, persistence, workflow sessions, and routes use only `ReleaseId`
-- [ ] The detail page explains current state and immutable history
+- [x] The detail page explains current state and immutable history
 
-- [ ] Task 23: Build remediation interaction UI
-- [ ] Task 24: Build decision interaction UI
+- [x] Task 23: Build remediation interaction UI
+- [x] Task 24 prerequisite: Restore the typed approval payload from the MAF checkpoint
+- [x] Task 24: Build decision interaction UI
 
 ### Checkpoint E2: Demonstrable MVP
 
@@ -189,6 +190,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 | Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate release ID without adding grouping, supersession, or cancellation behavior to the MVP. |
 | Removing revision changes established domain, persisted, route, and checkpoint identities | High | Land Task 21 before further UI work, reset disposable pre-release SQLite/checkpoint stores, update all contracts and tests together, and add no compatibility layer. |
 | An approval response resumes the wrong external request | High | Rebuild the identical graph, restore the pending request, and verify its MAF request ID and response type before sending the response. Invalid continuation has no business effect. |
+| A restored MAF request retains its contract but cannot materialize the custom approval payload | High | Characterize the pinned 1.17.0 `PortableValue` round trip first, use only its supported typed conversion/JSON configuration surface, and fail closed without a database or sidecar fallback. |
 | Mutable release/evidence data erases audit history | Medium | Append immutable/versioned records and expose current projections without updating historical facts. |
 | Checkpoint store is accessed concurrently or from multiple instances | Medium | Register one application-lifetime store, guard all start/resume access, document the single-process constraint, and test concurrent response handling. |
 | UI scope expands beyond the portfolio MVP | Medium | Implement only four Razor routes, PRG interactions, manual refresh, and the exact fields/views in `SPEC.md`. |

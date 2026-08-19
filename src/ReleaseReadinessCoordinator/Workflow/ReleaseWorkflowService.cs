@@ -78,7 +78,7 @@ internal sealed class ReleaseWorkflowService
             detail.WorkflowCorrelation!.WorkflowSessionId,
             cancellationToken);
         EnsureSameWait(expectedWait, restoredWait);
-        return expectedWait;
+        return restoredWait is PendingApprovalWait ? restoredWait : expectedWait;
     }
 
     public async Task<PendingWorkflowWait> ResumeRemediationAsync(
@@ -320,8 +320,19 @@ internal sealed class ReleaseWorkflowService
         PendingWorkflowWait expected,
         PendingWorkflowWait restored)
     {
-        var matches = expected.GetType() == restored.GetType()
-            && expected.WorkflowRequestId == restored.WorkflowRequestId;
+        var matches = (expected, restored) switch
+        {
+            (PendingApprovalWait { Approval: { } expectedApproval } expectedWait,
+                PendingApprovalWait { Approval: { } restoredApproval } restoredWait) =>
+                expectedWait.WorkflowRequestId == restoredWait.WorkflowRequestId
+                && expectedApproval.Request.Id == restoredApproval.Request.Id
+                && expectedApproval.Request.ReleaseId == restoredApproval.Request.ReleaseId
+                && expectedApproval.Request.SnapshotId == restoredApproval.Request.SnapshotId
+                && expectedApproval.Snapshot.Id == restoredApproval.Snapshot.Id,
+            (PendingRemediationWait expectedWait, PendingRemediationWait restoredWait) =>
+                expectedWait.WorkflowRequestId == restoredWait.WorkflowRequestId,
+            _ => false,
+        };
         if (!matches)
         {
             throw new WorkflowContinuationException(

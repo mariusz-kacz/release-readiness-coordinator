@@ -1,9 +1,32 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace ReleaseReadinessCoordinator.Domain;
 
 public sealed record DecisionSnapshot
 {
+    [JsonConstructor]
+    private DecisionSnapshot(
+        Guid id,
+        ReleaseId releaseId,
+        Guid evaluationRoundId,
+        int roundNumber,
+        ImmutableArray<BranchResult> sources,
+        UtcInstant earliestValidityBound,
+        string decisionBrief,
+        UtcInstant createdAt)
+        : this(
+            id,
+            releaseId,
+            evaluationRoundId,
+            roundNumber,
+            (IEnumerable<BranchResult>)sources,
+            earliestValidityBound,
+            decisionBrief,
+            createdAt)
+    {
+    }
+
     public DecisionSnapshot(
         Guid id,
         ReleaseId releaseId,

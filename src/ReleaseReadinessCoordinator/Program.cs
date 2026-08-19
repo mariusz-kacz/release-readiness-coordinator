@@ -33,6 +33,16 @@ builder.Services.AddScoped(serviceProvider => new ReleaseSubmissionApplicationSe
     serviceProvider.GetRequiredService<IApplicationDataService>(),
     serviceProvider.GetRequiredService<ReleaseWorkflowService>(),
     serviceProvider.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped<IRemediationInteractionService>(serviceProvider =>
+    new RemediationInteractionService(
+        serviceProvider.GetRequiredService<IApplicationDataService>(),
+        serviceProvider.GetRequiredService<ReleaseWorkflowService>(),
+        serviceProvider.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped<IDecisionInteractionService>(serviceProvider =>
+    new DecisionInteractionService(
+        serviceProvider.GetRequiredService<IApplicationDataService>(),
+        serviceProvider.GetRequiredService<ReleaseWorkflowService>(),
+        serviceProvider.GetRequiredService<TimeProvider>()));
 
 var app = builder.Build();
 

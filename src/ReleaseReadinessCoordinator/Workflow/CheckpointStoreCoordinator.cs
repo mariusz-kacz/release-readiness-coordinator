@@ -534,11 +534,33 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
             ReleaseWorkflowPortIds.Remediation when HasPortContract<DomainRemediationRequest, RemediationWorkflowResponse>(request) =>
                 new PendingRemediationWait(request.RequestId, null),
             ReleaseWorkflowPortIds.Approval when HasPortContract<ApprovalRequest, ApprovalResponse>(request) =>
-                new PendingApprovalWait(request.RequestId),
+                RestoreApprovalWait(request),
             _ => throw new WorkflowContinuationException(
                 ContinuationFailureKind.Mismatched,
                 $"Restored external request '{request.RequestId}' has an unknown port or request type."),
         };
+    }
+
+    private static PendingApprovalWait RestoreApprovalWait(ExternalRequest request)
+    {
+        if (!request.Data.TypeId.IsMatch<ApprovalRequest>())
+        {
+            throw new WorkflowContinuationException(
+                ContinuationFailureKind.Mismatched,
+                $"Restored approval request '{request.RequestId}' has the wrong payload type.");
+        }
+
+        if (!request.TryGetDataAs<ApprovalRequest>(out var approval)
+            || approval is null
+            || approval.Snapshot.ReleaseId != approval.Request.ReleaseId
+            || approval.Snapshot.Id != approval.Request.SnapshotId)
+        {
+            throw new WorkflowContinuationException(
+                ContinuationFailureKind.Corrupt,
+                $"Restored approval request '{request.RequestId}' has an unreadable or inconsistent payload.");
+        }
+
+        return new PendingApprovalWait(request.RequestId, approval);
     }
 
     private static bool HasPortContract<TRequest, TResponse>(ExternalRequest request) =>
@@ -557,8 +579,13 @@ internal sealed class CheckpointStoreCoordinator : IDisposable
                 && (!expectedRemediation.RemediationRequestId.HasValue
                     || !actualRemediation.RemediationRequestId.HasValue
                     || expectedRemediation.RemediationRequestId == actualRemediation.RemediationRequestId),
-            (PendingApprovalWait expectedApproval, PendingApprovalWait actualApproval) =>
-                expectedApproval.WorkflowRequestId == actualApproval.WorkflowRequestId,
+            (PendingApprovalWait { Approval: { } expectedRequest } expectedApproval,
+                PendingApprovalWait { Approval: { } actualRequest } actualApproval) =>
+                expectedApproval.WorkflowRequestId == actualApproval.WorkflowRequestId
+                && expectedRequest.Request.Id == actualRequest.Request.Id
+                && expectedRequest.Request.ReleaseId == actualRequest.Request.ReleaseId
+                && expectedRequest.Request.SnapshotId == actualRequest.Request.SnapshotId
+                && expectedRequest.Snapshot.Id == actualRequest.Snapshot.Id,
             _ => false,
         };
         if (sameWait)

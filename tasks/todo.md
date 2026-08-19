@@ -638,15 +638,15 @@ no migration or existing-data preservation is provided.
 
 **Acceptance criteria:**
 
-- [ ] The page shows phase, three current results, evidence/findings, round history, planning reasons, `ValidUntil`, attempts, deterministic brief, active wait, and chronological timeline.
-- [ ] Every round labels `Executed because ...` or `Reused from round N because ...` and links a reused result to its source.
-- [ ] Technical and continuation failures are visible without exposing secrets or raw checkpoint contents.
+- [x] The page shows phase, three current results, evidence/findings, round history, planning reasons, `ValidUntil`, attempts, deterministic brief, active wait, and chronological timeline.
+- [x] Every round labels `Executed because ...` or `Reused from round N because ...` and links a reused result to its source.
+- [x] Technical and continuation failures are visible without exposing secrets or raw checkpoint contents.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~ReleaseDetailPage"`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~ReleaseDetailPage"`
 - [ ] Manually inspect empty, evaluating, remediation, approval, terminal, and failed states at narrow and desktop widths.
-- [ ] Keyboard navigation and heading/table semantics are coherent.
+- [x] Keyboard navigation and heading/table semantics are coherent.
 
 **Dependencies:** Tasks 10, 20, and 21
 
@@ -661,9 +661,9 @@ no migration or existing-data preservation is provided.
 
 ## Checkpoint E1: Recovery and read model
 
-- [ ] Tasks 20-22 acceptance criteria are met.
+- [x] Tasks 20-22 acceptance criteria are met.
 - [ ] Remediation and approval waits survive host replacement with no duplicate history.
-- [ ] The detail page explains current state, immutable round history, reuse sources, active waits, and failures.
+- [x] The detail page explains current state, immutable round history, reuse sources, active waits, and failures.
 
 ## Task 23: Build remediation interaction UI
 
@@ -671,15 +671,15 @@ no migration or existing-data preservation is provided.
 
 **Acceptance criteria:**
 
-- [ ] Only the active request can render/submit, and its correlation token is round-tripped and verified.
-- [ ] The form exposes all current problems, permits only new branch evidence and rerun selections, and cannot post edits to release metadata.
-- [ ] Success redirects to detail after workflow continuation; stale/duplicate/mismatched submissions show safe feedback and never resume the wrong workflow.
+- [x] Only the active request can render/submit, and its correlation token is round-tripped and verified.
+- [x] The form exposes all current problems, permits only new branch evidence and rerun selections, and cannot post edits to release metadata.
+- [x] Success redirects to detail after workflow continuation; stale/duplicate/mismatched submissions show safe feedback and never resume the wrong workflow.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~RemediationPage"`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~RemediationPage"`
 - [ ] Manual blocker -> remediation -> selective rerun confirms correct Execute/Reused display.
-- [ ] Invalid model state and double-submit behavior are checked.
+- [x] Invalid model state and double-submit behavior are checked.
 
 **Dependencies:** Tasks 15 and 20-22
 
@@ -692,23 +692,59 @@ no migration or existing-data preservation is provided.
 
 **Estimated scope:** Medium (4 files)
 
+## Task 24 prerequisite: Correct typed checkpoint restoration
+
+**Description:** Correct the checkpoint/restoration adapter so a process-boundary restore returns the immutable `ApprovalRequest` payload carried by the active MAF request. The MAF checkpoint remains the sole continuation source; SQLite is used only to reconcile release state and correlation, never to reconstruct the payload shown by the decision page.
+
+**Acceptance criteria:**
+
+- [x] After a real process boundary, `RestoreAsync` returns a `PendingApprovalWait` containing the exact checkpoint-carried `ApprovalRequest`, and verifies the workflow request ID plus approval request/response port contract.
+- [x] Missing, unreadable, or wrongly typed request payloads fail closed with the established continuation classification, create no human-response record, and are never replaced from SQLite or a second checkpoint store.
+- [x] Fresh waits, remediation restoration/resumption, approval resumption, checkpoint corruption handling, and replay behavior remain unchanged; no schema, deployable, sidecar format, or package-version change is introduced.
+
+**Implementation sequence:**
+
+1. Add pinned-1.17.0 characterization tests for fresh and process-boundary `ExternalRequest.Data`/`PortableValue` conversion, including the concrete type identifier and deserialization failure behavior.
+2. Add the failing service regression proving the restored snapshot remains the checkpoint value even when the SQLite projection differs, plus missing/wrong/unreadable payload cases.
+3. Make the smallest supported serialization-contract correction: configure MAF JSON conversion or make the existing approval payload graph JSON-round-trippable, then require typed payload recovery in `ToRestoredPendingWorkflowWait`.
+4. Return the verified restored wait from `ReleaseWorkflowService.RestoreAsync`; keep database-derived state only for phase/request reconciliation and reject any identity mismatch.
+5. If MAF 1.17.0 cannot round-trip the payload through its documented `PortableValue` surface, stop and report the version-specific conflict rather than parsing checkpoint JSON or adding parallel persistence.
+
+**Verification:**
+
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~CheckpointContract|FullyQualifiedName~RestartRecovery"`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~DecisionIntegrity|FullyQualifiedName~RemediationWorkflow"`
+- [x] Repository restore, build, full test suite, and formatting verification pass.
+
+**Dependencies:** Tasks 3, 16, and 20
+
+**Files likely touched:**
+
+- `src/ReleaseReadinessCoordinator/Workflow/CheckpointStoreCoordinator.cs`
+- `src/ReleaseReadinessCoordinator/Workflow/ReleaseWorkflowService.cs`
+- Existing approval payload/domain types only if required for supported JSON round-tripping
+- `tests/ReleaseReadinessCoordinator.Tests/Workflow/CheckpointContractTests.cs`
+- `tests/ReleaseReadinessCoordinator.Tests/Workflow/RestartRecoveryTests.cs`
+
+**Estimated scope:** Medium (4-5 files)
+
 ## Task 24: Build decision interaction UI
 
 **Description:** Add the typed human-decision page and PRG handler, displaying the immutable snapshot/brief and active MAF request identity, then accepting Approve/Reject, actor, and comment.
 
 **Acceptance criteria:**
 
-- [ ] The page renders only the snapshot carried by the restored active approval request; snapshot identity and a separate concurrency token are not accepted from the form.
-- [ ] Approve/Reject requires actor and comment, resumes the matching typed request, persists one terminal decision, and redirects to terminal detail.
-- [ ] Missing, mismatched, corrupt, or incompatible continuation displays safe feedback, creates no human-response record, and leaves the workflow unresumed; exact double-submit has one terminal effect.
+- [x] The page renders only the snapshot carried by the restored active approval request; snapshot identity and a separate concurrency token are not accepted from the form.
+- [x] Approve/Reject requires actor and comment, resumes the matching typed request, persists one terminal decision, and redirects to terminal detail.
+- [x] Missing, mismatched, corrupt, or incompatible continuation displays safe feedback, creates no human-response record, and leaves the workflow unresumed; exact double-submit has one terminal effect.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~DecisionPage"`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~DecisionPage"`
 - [ ] Manual approval, rejection, and invalid-continuation journeys succeed.
-- [ ] Double-submit produces one terminal decision.
+- [x] Double-submit produces one terminal decision.
 
-**Dependencies:** Tasks 16 and 20-22
+**Dependencies:** Tasks 16, 20-22, and the Task 24 checkpoint-restoration prerequisite
 
 **Files likely touched:**
 

@@ -297,6 +297,96 @@ public sealed class RestartRecoveryTests
         Assert.Single(detail.HumanDecisionRequests);
     }
 
+    [Fact]
+    public async Task Approval_restore_returns_the_checkpoint_snapshot_instead_of_the_database_projection()
+    {
+        await using var fixture = await RestartFixture.CreateAsync("restart-checkpoint-snapshot");
+        PendingApprovalWait started;
+
+        await using (var firstContext = fixture.CreateContext())
+        using (var firstCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory))
+        {
+            var dataService = new ApplicationDataService(firstContext);
+            await fixture.SubmitAsync(dataService);
+            var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
+            started = Assert.IsType<PendingApprovalWait>(await service.StartAsync(
+                fixture.Submission,
+                new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
+                fixture.SessionId));
+        }
+
+        var checkpointApproval = Assert.IsType<ApprovalRequest>(started.Approval);
+        await using (var mutationContext = fixture.CreateContext())
+        {
+            await mutationContext.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE DecisionSnapshots SET DecisionBrief = {"database projection changed"} WHERE Id = {checkpointApproval.Snapshot.Id}");
+        }
+
+        using var secondCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory);
+        await using var secondContext = fixture.CreateContext();
+        var serviceAfterRestart = new ReleaseWorkflowService(
+            new ApplicationDataService(secondContext),
+            secondCoordinator,
+            fixture.Clock);
+
+        var restored = Assert.IsType<PendingApprovalWait>(
+            await serviceAfterRestart.RestoreAsync(fixture.Submission.ReleaseId));
+        var restoredApproval = Assert.IsType<ApprovalRequest>(restored.Approval);
+
+        Assert.Equivalent(checkpointApproval, restoredApproval, strict: true);
+        Assert.NotEqual("database projection changed", restoredApproval.Snapshot.DecisionBrief);
+    }
+
+    [Fact]
+    public async Task Approval_resume_rejects_a_database_request_identity_mismatch_before_responding()
+    {
+        await using var fixture = await RestartFixture.CreateAsync("restart-request-mismatch");
+        PendingApprovalWait started;
+
+        await using (var firstContext = fixture.CreateContext())
+        using (var firstCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory))
+        {
+            var dataService = new ApplicationDataService(firstContext);
+            await fixture.SubmitAsync(dataService);
+            var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
+            started = Assert.IsType<PendingApprovalWait>(await service.StartAsync(
+                fixture.Submission,
+                new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
+                fixture.SessionId));
+        }
+
+        var checkpointApproval = Assert.IsType<ApprovalRequest>(started.Approval);
+        await using (var mutationContext = fixture.CreateContext())
+        {
+            await mutationContext.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE WorkflowRequests SET Id = {Guid.NewGuid()} WHERE Id = {checkpointApproval.Request.Id}");
+        }
+
+        using var secondCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory);
+        await using var secondContext = fixture.CreateContext();
+        var dataAfterRestart = new ApplicationDataService(secondContext);
+        var serviceAfterRestart = new ReleaseWorkflowService(
+            dataAfterRestart,
+            secondCoordinator,
+            fixture.Clock);
+        var response = new ApprovalResponse(new HumanResponse(
+            Guid.NewGuid(),
+            HumanDecision.Approve,
+            "release-manager",
+            "Reviewed mismatched request.",
+            fixture.Now));
+
+        var exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
+            () => serviceAfterRestart.ResumeApprovalAsync(fixture.Submission.ReleaseId, response));
+
+        Assert.Equal(ContinuationFailureKind.Mismatched, exception.Kind);
+        var detail = await dataAfterRestart.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
+        Assert.Null(detail!.TerminalResponse);
+        Assert.DoesNotContain(
+            detail.Timeline,
+            entry => entry.Kind is TimelineEntryKind.HumanResponseAccepted);
+    }
+
     private sealed class RestartFixture : IAsyncDisposable
     {
         private readonly string _rootPath;
