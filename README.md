@@ -1,142 +1,75 @@
 # Release Readiness Coordinator
 
-Release Readiness Coordinator is a presenter-led ASP.NET Core Razor Pages demo of a durable release-readiness workflow built with Microsoft Agent Framework (MAF). One bounded web application submits immutable release facts, fans evaluation out to Test, Security, and Change checks, aggregates all three results, supports evidence-only remediation with selective reuse, and records one terminal human approval or rejection.
+A durable, human-in-the-loop release governance workflow built with .NET 10 and Microsoft Agent Framework.
 
-The project deliberately uses server-rendered pages, POST/Redirect/GET, and manual refresh. It does not include a SPA, real-time messaging, authentication, notifications, deployment execution, or a second deployable component.
+Release Readiness Coordinator gathers simulated Test, Security, and Change evidence, evaluates the three checks in parallel, and waits for remediation when something blocks a release. On the next round, it runs only the checks affected by new evidence and safely reuses results that are still valid. Once every check passes, a release manager can approve or reject an immutable decision snapshot.
 
-## Prerequisites
+The result is a focused portfolio project that makes workflow orchestration, selective execution, recovery, and audit history visible in one server-rendered application.
 
-- .NET 10 SDK
-- A writable local directory for SQLite, MAF checkpoints, and data-protection keys
+## What this project demonstrates
 
-No database server, queue, worker, or cloud service is required.
+- Real Microsoft Agent Framework fan-out and complete fan-in across three readiness checks.
+- Deterministic release policies with explicit `Passed`, `Blocked`, `MissingEvidence`, and `TransientFailure` outcomes.
+- Evidence-only remediation and selective reruns instead of reevaluating everything.
+- Durable human waits that survive an application restart.
+- Immutable evidence, evaluation rounds, decision snapshots, and an explainable audit timeline.
+- Safe correlation between MAF checkpoint state and SQLite business records.
 
-## Quick start
-
-From the repository root:
-
-```text
-dotnet restore
-dotnet build --no-restore
-dotnet run --project src/ReleaseReadinessCoordinator/ReleaseReadinessCoordinator.csproj --launch-profile http
+```mermaid
+flowchart LR
+    S[Submit release] --> E[Test + Security + Change]
+    E --> A{All pass?}
+    A -->|No| R[Remediation wait]
+    R -->|New evidence| E
+    A -->|Yes| D[Human decision]
+    D --> OK[Approved]
+    D --> NO[Rejected]
 ```
 
-Open `http://localhost:5247`. The application creates its local stores on first start.
+## Selective execution in action
 
-To isolate a demonstration from the default data, set an absolute application-data directory before starting. For example, in PowerShell:
+Here, Test and Security run again after receiving evidence, while the still-current Change result is reused from round 1. Each result explains its planning reason and links reused work to its source round.
 
-```powershell
-$env:ApplicationData__Directory = Join-Path $PWD "artifacts/demo-data"
-dotnet run --project src/ReleaseReadinessCoordinator/ReleaseReadinessCoordinator.csproj --launch-profile http
-```
-
-Use a new directory or a new release ID when repeating a journey because release IDs and submitted metadata are immutable.
-
-## Built-in fixtures
-
-| Fixture | Intended use |
-|---|---|
-| **Complete evidence** | Starts from passing Test, Security, and Change facts; edit individual fields to demonstrate deterministic blockers. |
-| **No initial evidence** | Omits all three evidence records and demonstrates one remediation wait created after complete fan-in. |
-
-Loading a fixture only fills the form. Review or edit its values before submitting.
-
-## Demo journey: passing release and human decision
-
-1. On **Submit release**, select **Load Complete evidence**.
-2. Change the release ID to a unique value and submit the release.
-3. On the release detail page, confirm the phase is `WaitingForApproval`, all three current results are `Passed` and `Executed`, and the deterministic decision brief is present.
-4. Select **Open decision form**.
-5. Enter the reviewer and comment, then select **Approve release** or **Reject release**.
-6. Confirm the terminal detail shows `Approved` or `Rejected`, the audited response, and no active workflow wait.
-
-The workflow advances during form requests. Use **Refresh status** when observing a page from another tab; the application intentionally has no live-update channel.
-
-## Demo journey: blockers, remediation, and selective reuse
-
-1. Select **Load Complete evidence** and choose a unique release ID.
-2. Make Test block by setting its pass rate below 95%, for example `90`.
-3. Make Security block by entering `CRITICAL-1` as an unresolved critical finding.
-4. Leave Change approved with an approved window that contains the requested deployment window, then submit.
-5. Confirm the detail page reaches `WaitingForRemediation` only after showing one result for each check: Test and Security blocked, Change passed.
-6. Select **Open remediation form**, then **Load ready demo evidence**. This updates only the branches with active problems.
-7. Select **Save evidence and run next evaluation**.
-8. On round 2, confirm Test and Security are `Executed`; Change is `Reused`, links to its source round, and has no execution attempts.
-9. Complete the resulting human decision if desired.
+![Two evaluation rounds showing Test and Security executed while Change is safely reused](docs/img/3.png)
 
 <details>
-<summary><strong>Manual walkthrough evidence</strong></summary>
+<summary><strong>More screenshots</strong></summary>
 
-These captures record the manually verified remediation journey. Visible dates and times use the application host's local timezone without timezone text.
-
-### Remediation wait and current results
+### Current readiness results and active remediation wait
 
 ![Release detail showing a remediation wait and the latest result for each readiness check](docs/img/1.png)
 
-### Versioned evidence history
+### Immutable, versioned evidence history
 
 ![Release detail showing versioned Test, Security, and Change evidence](docs/img/2.png)
 
-### Selective execution and reuse history
-
-![Evaluation history showing executed Test and Security checks and a Change result reused from round 1](docs/img/3.png)
-
 </details>
 
-## Restart demonstration
+## Try it locally
 
-Use one stable `ApplicationData__Directory` for the entire demonstration.
+You need the .NET 10 SDK. No database server, queue, cloud account, or other infrastructure is required.
 
-1. Progress a release to either `WaitingForRemediation` or `WaitingForApproval`.
-2. Stop the host with Ctrl+C. Do not delete or edit the application-data directory.
-3. Restart with the same command, configuration, and application-data directory.
-4. On the home page, enter the release ID under **Continue existing workflow**.
-5. Open the active remediation or decision form. Loading that interaction uses the SQLite session ID to restore the complete MAF runtime state from the latest checkpoint. The application then reconciles the restored wait's minimal typed request reference with SQLite and renders the durable SQLite business data.
-6. Submit the response once and confirm the workflow continues or terminates without duplicate rounds, requests, timeline entries, or human responses.
+```text
+dotnet restore
+dotnet run --project src/ReleaseReadinessCoordinator/ReleaseReadinessCoordinator.csproj --launch-profile http
+```
 
-Repeat this procedure once at each wait type to demonstrate both recovery paths. Changing workflow topology, stable executor/port identity, or checkpoint contents can make continuation incompatible; such state fails closed and is shown as a workflow failure.
+Open [http://localhost:5247](http://localhost:5247), load one of the built-in fixtures, give the release a unique ID, and submit it. The **Complete evidence** fixture takes the shortest path to a human decision; edit its Test and Security facts to demonstrate selective reuse. **No initial evidence** demonstrates complete fan-in before remediation.
 
-## Application data and trust boundary
+For isolated data, detailed walkthroughs, restart recovery, and test commands, see the [technical guide](docs/technical-guide.md).
 
-By default, state is written below `src/ReleaseReadinessCoordinator/app-data/`:
+## Project scope
 
-| Path | Purpose |
-|---|---|
-| `release-readiness.db` | SQLite business records and append-only audit history |
-| `workflow-checkpoints/` | MAF continuation state and pending external requests |
-| `data-protection-keys/` | ASP.NET Core data-protection keys used by the server-rendered forms |
+This is intentionally one bounded ASP.NET Core Razor Pages application. It simulates evidence produced by external systems; it does not run tests or scans, integrate with change-management services, execute deployments, or provide production authentication. Interactions use normal server-rendered requests and manual refresh so the workflow behavior remains easy to inspect.
 
-The whole `app-data/` tree is ignored by Git. `ApplicationData__Directory` overrides the root and may be absolute or relative to the web project content root.
+## Documentation
 
-Checkpoint files are trusted, private MAF runtime infrastructure: MAF deserializes and restores their complete workflow state before application-level reconciliation, so arbitrary or tampered checkpoint files are not safe input. Within that runtime state, the application's pending-request payload contains only a typed durable request reference. SQLite supplies the session ID used to locate the checkpoint, the expected wait identity, and all displayed and persisted business content. Exact identity reconciliation prevents checkpoint state from replacing SQLite domain facts; it does not make an untrusted checkpoint safe to load.
+- [Technical guide](docs/technical-guide.md) — setup, demo journeys, recovery, persistence, architecture, and commands
+- [Architecture](docs/architecture.md) — code structure, workflow topology, persistence model, and continuation lifecycle
+- [Project specification](SPEC.md) — authoritative requirements and design boundaries
+- [Acceptance matrix](docs/acceptance-matrix.md) — the 13 MVP criteria mapped to automated and manual evidence
+- [Architecture decisions](docs/decisions/) — checkpointing and domain-data authority decisions
 
-Never let multiple application processes or instances share one checkpoint directory. The selected filesystem checkpoint store is process-exclusive and not thread-safe; the app protects it with one application-wide async gate. SQLite and checkpoint writes are not one atomic transaction, so stable operation keys, idempotent writes, and exact identity reconciliation bound the recovery gap.
+## Technology
 
-This is a single-machine demo design, not a horizontally scalable or highly available deployment. See [ADR-001](docs/decisions/ADR-001-use-process-exclusive-filesystem-checkpointing.md) for the store/concurrency decision and [ADR-002](docs/decisions/ADR-002-keep-domain-content-authoritative-in-sqlite.md) for the checkpoint/SQLite trust boundary.
-
-Persisted instants remain UTC. Visible and editable date/time values use the application host's local timezone and omit timezone text.
-
-## Commands
-
-| Command | Purpose |
-|---|---|
-| `dotnet restore` | Restore pinned dependencies |
-| `dotnet build --no-restore` | Build the app and focused test project |
-| `dotnet test --no-build` | Run the complete automated suite |
-| `dotnet test --no-build --filter "FullyQualifiedName~WorkflowScenario"` | Run the real-graph orchestration scenarios |
-| `dotnet test --no-build --filter "FullyQualifiedName~ReleaseReadinessCoordinator.Tests.Web"` | Run Razor/Kestrel UI integration tests |
-| `dotnet test --no-build --filter "FullyQualifiedName~RestartRecovery|FullyQualifiedName~CheckpointContract"` | Run recovery and checkpoint contract tests |
-| `dotnet format --verify-no-changes` | Verify repository formatting |
-
-UI verification uses focused Razor/Kestrel integration tests plus the two documented presenter walkthroughs. The test project intentionally has no browser-automation runtime.
-
-## Architecture
-
-- `src/ReleaseReadinessCoordinator/` is the only deployable application.
-- `tests/ReleaseReadinessCoordinator.Tests/` is the only test project.
-- SQLite is accessed through one bounded application data service; there are no generic repositories or CQRS/event-sourcing layers.
-- MAF owns workflow execution and typed external waits; deterministic C# owns readiness policy and selective-reuse decisions.
-- Release metadata and evidence history are immutable. Remediation appends new evidence versions; it does not edit the release.
-- The four Razor routes are `/`, `/Releases/{releaseId}`, `/Releases/{releaseId}/Remediate`, and `/Releases/{releaseId}/Decision`.
-
-The complete requirements are in [SPEC.md](SPEC.md), and [the acceptance matrix](docs/acceptance-matrix.md) maps all 13 MVP criteria to executable or manual evidence.
+.NET 10 · ASP.NET Core Razor Pages · Microsoft Agent Framework 1.17.0 · Entity Framework Core · SQLite · xUnit
