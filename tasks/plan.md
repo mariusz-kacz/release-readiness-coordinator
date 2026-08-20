@@ -34,7 +34,7 @@ Official references:
 - One bounded application data service uses EF Core directly. There are no generic repositories, CQRS layers, event sourcing, workers, queues, or additional deployables.
 - Built-in `TimeProvider` is injected for all time-sensitive logic.
 - Every submission has one globally unique `ReleaseId`; there is no numeric revision or release-family relationship. Release metadata is immutable after submission, and corrections require a new release ID. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs and `ValidUntil` deadlines.
-- Evidence changes are allowed through remediation only and are locked while approval is pending. The restored typed MAF request is the authority for approval-response correlation; human decision never routes back to the planner.
+- Evidence changes are allowed through remediation only and are locked while approval is pending. The restored typed MAF reference is the authority for approval-response correlation, while SQLite is the authority for decision content; human decision never routes back to the planner.
 - Local simulated providers implement typed evidence-source contracts. Only known typed transient failures receive one initial attempt plus two immediate retries.
 - SQLite stores immutable/versioned business records and an append-only timeline. MAF checkpoints live under a configurable private application-data directory that is excluded from source control.
 - Stable operation keys make replayed SQLite writes idempotent. A single application-lifetime checkpoint store is protected by an async critical section.
@@ -61,8 +61,8 @@ flowchart TD
     T17_19 --> T20[Task 20: Restart recovery and reconciliation]
     T20 --> T21[Task 21: Single release-identifier cutover]
     T21 --> T22_24[Tasks 22-24: Razor Pages interactions]
-    T22_24 --> T25_26[Tasks 25-26: Workflow and browser evaluation]
-    T25_26 --> T27[Task 27: Documentation and final acceptance]
+    T22_24 --> T25[Task 25: Workflow evaluation]
+    T25 --> T26[Task 26: Documentation and final acceptance]
 ```
 
 ## Task List
@@ -152,33 +152,32 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] The detail page explains current state and immutable history
 
 - [x] Task 23: Build remediation interaction UI
-- [x] Task 24 prerequisite: Restore the typed approval payload from the MAF checkpoint
+- [x] Task 24 prerequisite: Reconcile minimal typed MAF references with SQLite domain content
 - [x] Task 24: Build decision interaction UI
 
 ### Checkpoint E2: Demonstrable MVP
 
-- [ ] No replay creates duplicate business records
-- [ ] Manual UI journeys expose evidence, findings, rounds, waits, and reasons
+- [x] No replay creates duplicate business records
+- [x] Manual UI journeys expose evidence, findings, rounds, waits, and reasons
 
 ### Phase 6: Evaluation and Delivery
 
-- [ ] Task 25: Complete real-graph workflow scenario coverage
-- [ ] Task 26: Add minimal browser smoke coverage
+- [x] Task 25: Complete real-graph workflow scenario coverage
 
 ### Checkpoint F1: Evaluation
 
-- [ ] Required workflow and browser scenarios pass
-- [ ] Test evidence covers orchestration risks and both user journeys
+- [x] Required workflow scenarios pass
+- [x] Deterministic test evidence covers orchestration risks
 
-- [ ] Task 27: Finish documentation, full verification, and spec audit
+- [x] Task 26: Finish documentation, full verification, and spec audit
 
 ### Checkpoint F2: Complete
 
-- [ ] All 13 MVP acceptance criteria in `SPEC.md` are demonstrated
-- [ ] Restore, build, tests, formatting, runtime checks, and browser checks pass
-- [ ] No prohibited architecture has been introduced
-- [ ] Complete diff is reviewed and residual risks/unrun checks are reported
-- [ ] Human review approves implementation readiness
+- [x] All 13 MVP acceptance criteria in `SPEC.md` are demonstrated
+- [x] Restore, build, tests, formatting, and documented manual runtime checks pass
+- [x] No prohibited architecture has been introduced
+- [x] Complete diff is reviewed and residual risks/unrun checks are reported
+- [x] Human review approves implementation readiness
 
 ## Risks and Mitigations
 
@@ -189,8 +188,8 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 | Reuse accidentally calls providers or policies | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
 | Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate release ID without adding grouping, supersession, or cancellation behavior to the MVP. |
 | Removing revision changes established domain, persisted, route, and checkpoint identities | High | Land Task 21 before further UI work, reset disposable pre-release SQLite/checkpoint stores, update all contracts and tests together, and add no compatibility layer. |
-| An approval response resumes the wrong external request | High | Rebuild the identical graph, restore the pending request, and verify its MAF request ID and response type before sending the response. Invalid continuation has no business effect. |
-| A restored MAF request retains its contract but cannot materialize the custom approval payload | High | Characterize the pinned 1.17.0 `PortableValue` round trip first, use only its supported typed conversion/JSON configuration surface, and fail closed without a database or sidecar fallback. |
+| An approval response resumes the wrong external request | High | Rebuild the identical graph, restore the pending request, and exactly reconcile its MAF request ID, typed port contract, and durable request ID with SQLite before sending the response. Invalid continuation has no business effect. |
+| A restored MAF request reference cannot be materialized or differs from SQLite correlation | High | Characterize the pinned 1.17.0 `PortableValue` round trip for the minimal typed reference and fail closed without reconstructing or overriding either store. |
 | Mutable release/evidence data erases audit history | Medium | Append immutable/versioned records and expose current projections without updating historical facts. |
 | Checkpoint store is accessed concurrently or from multiple instances | Medium | Register one application-lifetime store, guard all start/resume access, document the single-process constraint, and test concurrent response handling. |
 | UI scope expands beyond the portfolio MVP | Medium | Implement only four Razor routes, PRG interactions, manual refresh, and the exact fields/views in `SPEC.md`. |

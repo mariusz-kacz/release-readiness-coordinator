@@ -260,9 +260,14 @@ internal static class EntityConfiguration
         builder.Property(row => row.PendingRequestKind).HasConversion<int>();
         builder.HasIndex(row => row.WorkflowSessionId).IsUnique();
         builder.HasIndex(row => row.PendingWorkflowRequestId).IsUnique();
+        builder.HasIndex(row => row.PendingDomainRequestId).IsUnique();
         builder.HasOne<ReleaseRow>()
             .WithMany()
             .HasForeignKey(row => row.ReleaseId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<WorkflowRequestRow>()
+            .WithMany()
+            .HasForeignKey(row => row.PendingDomainRequestId)
             .OnDelete(DeleteBehavior.Restrict);
         ConfigureConcurrencyToken(builder.Property(row => row.ConcurrencyToken));
         ConfigureOperationKey(builder, "UX_WorkflowCorrelations_OperationKey");

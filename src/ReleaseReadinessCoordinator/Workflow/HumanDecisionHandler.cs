@@ -49,11 +49,18 @@ internal sealed class DecisionInteractionService(
             }
 
             var restored = await workflowService.RestoreAsync(releaseId, cancellationToken);
-            if (restored is not PendingApprovalWait { Approval: { } approval } approvalWait
-                || approval.Request.ReleaseId != releaseId)
+            if (restored is not PendingApprovalWait approvalWait)
             {
                 throw new InvalidOperationException(
                     "The restored workflow did not contain the active approval request.");
+            }
+
+            var approval = WorkflowWaitResolver.RequireApproval(detail);
+            if (approval.Request.Id != approvalWait.ApprovalRequestId
+                || approval.Request.ReleaseId != releaseId)
+            {
+                throw new InvalidOperationException(
+                    "The restored workflow did not match the active approval request.");
             }
 
             return new ActiveDecisionInteraction(

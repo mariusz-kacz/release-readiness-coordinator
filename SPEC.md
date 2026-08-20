@@ -2,7 +2,7 @@
 
 **Status:** Approved input for implementation planning  
 **Document role:** Sole authoritative project specification  
-**Last updated:** 2026-08-19
+**Last updated:** 2026-08-20
 
 ## 1. Authority and change control
 
@@ -191,11 +191,11 @@ When all three branches pass, persist an immutable `DecisionSnapshot` containing
 - the earliest validity bound;
 - the deterministic decision brief as immutable snapshot content.
 
-The approval `RequestPort` exposes the immutable snapshot and brief. While that request is active, the release accepts no evidence replacement, remediation submission, or explicit rerun. This portfolio constraint makes the snapshot a closed decision package.
+The approval `RequestPort` exposes only a typed reference to the durable human-decision request. SQLite remains the authority for the immutable snapshot and brief displayed to the manager. While that request is active, the release accepts no evidence replacement, remediation submission, or explicit rerun. This portfolio constraint makes the database snapshot a closed decision package without duplicating it into workflow-continuation state.
 
-MAF continuation state is the authority for response correlation. Before resuming, the application rebuilds the identical graph, restores the pending request, and verifies its request ID and response type. A missing, mismatched, corrupt, or incompatible request is rejected before any response enters the workflow and produces no human-response business record.
+MAF continuation state is the authority for response correlation; SQLite is the authority for domain content. Before rendering or resuming, the application rebuilds the identical graph, restores the pending request, and exactly reconciles its workflow request ID, typed request/response contract, and durable domain request ID with the correlation and active request stored in SQLite. A missing, mismatched, corrupt, or incompatible request is rejected before any response enters the workflow and produces no human-response business record. Checkpoint storage must remain trusted private infrastructure because MAF restores complete runtime state before this application-level check. The application's checkpoint-carried wait payload supplies only correlation identity and never supplies domain content to the UI or business handlers.
 
-The response contains the manager's `Approve` or `Reject` decision and audit fields. It does not submit a snapshot identity or a separate domain concurrency token; the restored typed request already identifies the snapshot being answered. An exact replay is idempotent, while reuse of a response identity with different content is a technical conflict.
+The response contains the manager's `Approve` or `Reject` decision and audit fields. It does not submit a snapshot identity or a separate domain concurrency token; the reconciled durable request reference identifies the snapshot being answered. An exact replay is idempotent, while reuse of a response identity with different content is a technical conflict.
 
 The decision brief is not regenerated or hashed when a response arrives. The handler does not compare current evidence IDs or revalidate result deadlines. A correctly resumed approval or rejection is persisted once and is terminal for that release.
 
@@ -252,7 +252,7 @@ flowchart TD
 
 The planner emits exactly three `BranchWorkItem`s each round, one per readiness check, with disposition `Execute` or `Reuse`. Every branch emits exactly one `BranchResult`, allowing a deterministic fixed three-source fan-in while still ensuring reused checks perform no real work.
 
-Represent remediation and approval with typed MAF external calls/`RequestPort`s. External requests occur only after fan-in. Pending requests must survive checkpoint restoration and resume through their correlated response.
+Represent remediation and approval with typed MAF external calls/`RequestPort`s whose request payloads contain only the corresponding durable request ID. External requests occur only after fan-in. Pending requests must survive checkpoint restoration, reconcile exactly with SQLite, and resume through their correlated response.
 
 Changing the MAF version requires source-driven reverification of fan-out/fan-in behavior, external-request restoration, checkpoint rehydration, and stable executor-ID compatibility before implementation continues.
 
@@ -265,18 +265,20 @@ Use SQLite for:
 - evaluation rounds and branch results;
 - remediation requests and submissions;
 - decision snapshots and human responses;
-- workflow correlation metadata;
+- workflow correlation metadata, including the active durable request ID;
 - append-only display timeline entries.
 
 Use MAF `FileSystemJsonCheckpointStore` in a dedicated application-data directory for workflow continuation. Keep MAF checkpoint data outside SQLite and store only stable correlation identifiers between the two stores.
+
+SQLite supplies the workflow session ID used to select the latest checkpoint and the expected pending-wait tuple. MAF then restores its complete runtime state, including execution position, pending messages, and the external-request envelope. Only the application-defined request payload is restricted to the durable request reference; SQLite does not reconstruct MAF runner state.
 
 The revision-bearing pre-release SQLite database and filesystem checkpoints are disposable when the single-identifier contract is implemented. Delete and recreate both stores; do not add dual-read compatibility, a backfill, or a production data migration for this MVP correction.
 
 Use one application-lifetime checkpoint store and external synchronization around start/resume access because the store is process-exclusive and not thread-safe. This is a small critical section, not a queue or background execution architecture.
 
-The checkpoint store is workflow-continuation truth; idempotent SQLite records are business-history truth. Their writes are not atomic. Use stable operation keys and reconciliation to make replayed business writes harmless.
+The checkpoint store is workflow-continuation truth; idempotent SQLite records are business-history and domain-content truth. Their writes are not atomic. Use stable operation keys and exact identity reconciliation to make replayed business writes harmless. A checkpoint may authorize continuation only when its typed wait identity equals the SQLite correlation tuple; it may never replace, repair, or override SQLite domain content.
 
-On release-detail or response requests, reconstruct the identical graph with stable executor IDs, restore the latest valid checkpoint, verify the re-emitted request ID and type, and send the correlated response. Missing, corrupt, or incompatible continuation state becomes a visible technical failure; never silently start a fresh workflow.
+On release-detail or response requests, reconstruct the identical graph with stable executor IDs, restore the latest valid checkpoint, verify the re-emitted workflow request ID, typed port contract, and durable request ID against SQLite, and only then render SQLite content or send the correlated response. This application deliberately uses the durable rehydration path for every HTTP continuation because it does not retain live `StreamingRun` instances between requests; MAF also supports responding directly through a retained live run, but that is not this application's lifecycle. Missing, corrupt, mismatched, or incompatible continuation state becomes a visible technical failure; never silently start a fresh workflow.
 
 The MVP must demonstrate:
 
@@ -343,10 +345,14 @@ Use a small set of real-graph scenarios covering:
 
 ### UI verification
 
-Use minimal browser smoke coverage for:
+Use focused Razor/Kestrel integration tests and presenter-led manual verification for:
 
 - submit → passing round → human decision;
 - blocker → remediation → selective rerun.
+
+Do not add a browser-automation dependency. Verify server-rendered output, PRG handlers,
+request correlation, and continuation safety in the focused test project; keep the two
+complete UI journeys as documented manual checks.
 
 Do not test DTO properties, constructors, obvious EF mappings, framework DI wiring, or redundant permutations.
 

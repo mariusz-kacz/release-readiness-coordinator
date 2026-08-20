@@ -26,7 +26,7 @@ This deliberately serializes checkpointed workflow turns across all releases in 
 
 Keep SQLite operations outside the checkpoint gate. Use stable operation keys and reconciliation to make replayed business writes harmless instead of attempting a cross-store transaction.
 
-Treat the checkpoint directory as trusted application state and restrict write access to the application identity in any hosted environment.
+Restrict checkpoint-directory read and write access to the application identity in any hosted environment. MAF restores complete runtime state from this store before application-level reconciliation, so the store is trusted private infrastructure rather than a safe ingestion boundary for arbitrary files. ADR-002 defines the narrower rule that checkpoint state is not authoritative for application domain content.
 
 ## Rationale
 
@@ -94,5 +94,6 @@ At that point, replace the filesystem store with a checkpoint backend whose docu
 - [CheckpointStoreCoordinator](../../src/ReleaseReadinessCoordinator/Workflow/CheckpointStoreCoordinator.cs)
 - [Application registration and data paths](../../src/ReleaseReadinessCoordinator/Program.cs)
 - [Project architecture specification](../../SPEC.md#123-persistence-and-restart-recovery)
+- [ADR-002: Keep domain content authoritative in SQLite](ADR-002-keep-domain-content-authoritative-in-sqlite.md)
 
 The Microsoft API reference currently displays an older package label than the application's pinned 1.17.0 package. The repository's compiled checkpoint contract tests remain the version-specific verification of start, restore, pending-request re-emission, request correlation, and incompatible-graph failure behavior.

@@ -100,15 +100,13 @@ internal sealed class RemediationInteractionService(
 
     private static ActiveRemediationInteraction? ToActive(ReleaseDetailProjection detail)
     {
-        if (WorkflowWaitResolver.Resolve(detail) is not PendingRemediationWait
-            {
-                RemediationRequestId: { } requestId,
-            } pendingWait)
+        if (WorkflowWaitResolver.Resolve(detail) is not PendingRemediationWait pendingWait)
         {
             return null;
         }
 
-        var activeRequest = detail.RemediationRequests.Single(request => request.Id == requestId);
+        var activeRequest = detail.RemediationRequests.Single(
+            request => request.Id == pendingWait.RemediationRequestId);
         return new ActiveRemediationInteraction(
             detail.Release,
             activeRequest,

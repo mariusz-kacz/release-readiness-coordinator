@@ -172,7 +172,14 @@ public sealed class DomainInvariantTests
         Assert.Throws<ArgumentException>(
             () => new WorkflowCorrelationRecord(
                 Id, workflowSessionId: " ", pendingWorkflowRequestId: "approval-request-1",
-                WorkflowRequestKind.Approval, Utc(2026, 8, 14, 9)));
+                pendingDomainRequestId: Guid.NewGuid(), WorkflowRequestKind.Approval,
+                Utc(2026, 8, 14, 9)));
+        Assert.Throws<ArgumentException>(
+            () => new WorkflowCorrelationRecord(
+                Id, workflowSessionId: "workflow-session-1",
+                pendingWorkflowRequestId: "approval-request-1",
+                pendingDomainRequestId: Guid.Empty, WorkflowRequestKind.Approval,
+                Utc(2026, 8, 14, 9)));
 
         Assert.Throws<ArgumentOutOfRangeException>(
             () => new TimelineEntry(

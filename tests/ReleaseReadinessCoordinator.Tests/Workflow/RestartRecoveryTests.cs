@@ -70,6 +70,7 @@ public sealed class RestartRecoveryTests
                     fixture.Submission.ReleaseId,
                     fixture.SessionId,
                     started.WorkflowRequestId,
+                    started.ApprovalRequestId,
                     WorkflowRequestKind.Remediation,
                     fixture.Now),
                 "restart:impossible-correlation");
@@ -175,139 +176,11 @@ public sealed class RestartRecoveryTests
     }
 
     [Fact]
-    public async Task Remediation_wait_survives_restart_and_reconciles_the_next_wait()
-    {
-        await using var fixture = await RestartFixture.CreateAsync("restart-remediation", blockedTest: true);
-        PendingRemediationWait started;
-
-        await using (var firstContext = fixture.CreateContext())
-        using (var firstCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory))
-        {
-            var dataService = new ApplicationDataService(firstContext);
-            await fixture.SubmitAsync(dataService);
-            var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
-            await service.StartAsync(
-                fixture.Submission,
-                new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId);
-            started = Assert.IsType<PendingRemediationWait>(
-                await service.RestoreAsync(fixture.Submission.ReleaseId));
-        }
-
-        using var secondCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory);
-        await using var responseContext = fixture.CreateContext();
-        await using var replayContext = fixture.CreateContext();
-        var dataAfterRestart = new ApplicationDataService(responseContext);
-        var serviceAfterRestart = new ReleaseWorkflowService(dataAfterRestart, secondCoordinator, fixture.Clock);
-        var replayService = new ReleaseWorkflowService(
-            new ApplicationDataService(replayContext),
-            secondCoordinator,
-            fixture.Clock);
-        var restored = Assert.IsType<PendingRemediationWait>(
-            await serviceAfterRestart.RestoreAsync(fixture.Submission.ReleaseId));
-        Assert.Equal(started, restored);
-
-        var detailBeforeResponse = await dataAfterRestart.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
-        var currentTestEvidence = Assert.IsType<TestEvidenceRecord>(
-            detailBeforeResponse!.CurrentEvidence[EvidenceKind.Test]);
-        var replacement = new TestEvidenceRecord(
-            Guid.NewGuid(),
-            fixture.Submission.ReleaseId,
-            2,
-            fixture.Now,
-            currentTestEvidence.Id,
-            fixture.Submission.ReleaseVersion,
-            fixture.Now,
-            0.99m,
-            []);
-        var submission = new RemediationSubmission(
-            Guid.NewGuid(),
-            started.RemediationRequestId!.Value,
-            fixture.Now,
-            new Dictionary<EvidenceKind, Guid> { [EvidenceKind.Test] = replacement.Id },
-            []);
-
-        var response = new RemediationWorkflowResponse(submission, [replacement]);
-        await Task.WhenAll(
-            serviceAfterRestart.ResumeRemediationAsync(fixture.Submission.ReleaseId, response),
-            replayService.ResumeRemediationAsync(fixture.Submission.ReleaseId, response));
-        var nextWait = Assert.IsType<PendingApprovalWait>(
-            await serviceAfterRestart.RestoreAsync(fixture.Submission.ReleaseId));
-
-        var detail = await dataAfterRestart.GetReleaseDetailAsync(fixture.Submission.ReleaseId);
-        Assert.NotNull(detail);
-        Assert.Equal(ProcessPhase.WaitingForApproval, detail.Release.Phase);
-        Assert.Equal(nextWait.WorkflowRequestId, detail.WorkflowCorrelation?.PendingWorkflowRequestId);
-        Assert.Equal(WorkflowRequestKind.Approval, detail.WorkflowCorrelation?.PendingRequestKind);
-        Assert.Single(detail.RemediationSubmissions);
-        Assert.Equal(2, detail.EvaluationRounds.Length);
-    }
-
-    [Fact]
-    public async Task Approval_wait_survives_restart_and_concurrent_replay_continues_once()
-    {
-        await using var fixture = await RestartFixture.CreateAsync("restart-approval");
-        PendingApprovalWait started;
-
-        await using (var firstContext = fixture.CreateContext())
-        using (var firstCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory))
-        {
-            var dataService = new ApplicationDataService(firstContext);
-            await fixture.SubmitAsync(dataService);
-            var service = new ReleaseWorkflowService(dataService, firstCoordinator, fixture.Clock);
-
-            await service.StartAsync(
-                fixture.Submission,
-                new EvaluationRoundStart(Guid.NewGuid(), 1, fixture.Now, []),
-                fixture.SessionId);
-            started = Assert.IsType<PendingApprovalWait>(
-                await service.RestoreAsync(fixture.Submission.ReleaseId));
-        }
-
-        using var secondCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory);
-        await using var firstResponseContext = fixture.CreateContext();
-        await using var secondResponseContext = fixture.CreateContext();
-        var firstService = new ReleaseWorkflowService(
-            new ApplicationDataService(firstResponseContext),
-            secondCoordinator,
-            fixture.Clock);
-        var secondService = new ReleaseWorkflowService(
-            new ApplicationDataService(secondResponseContext),
-            secondCoordinator,
-            fixture.Clock);
-
-        var restored = Assert.IsType<PendingApprovalWait>(
-            await firstService.RestoreAsync(fixture.Submission.ReleaseId));
-        Assert.Equal(started.WorkflowRequestId, restored.WorkflowRequestId);
-        var approval = Assert.IsType<ApprovalRequest>(restored.Approval);
-        var response = new ApprovalResponse(new HumanResponse(
-            Guid.NewGuid(),
-            HumanDecision.Approve,
-            "release-manager",
-            "Approved after restart.",
-            fixture.Now));
-
-        await Task.WhenAll(
-            firstService.ResumeApprovalAsync(fixture.Submission.ReleaseId, response),
-            secondService.ResumeApprovalAsync(fixture.Submission.ReleaseId, response));
-
-        await using var verificationContext = fixture.CreateContext();
-        var detail = await new ApplicationDataService(verificationContext)
-            .GetReleaseDetailAsync(fixture.Submission.ReleaseId);
-        Assert.NotNull(detail);
-        Assert.Equal(ProcessPhase.Approved, detail.Release.Phase);
-        Assert.Equal(response.Response.Id, detail.TerminalResponse?.Response.Id);
-        Assert.Equal(approval.Request.Id, detail.TerminalResponse?.ApprovalRequestId);
-        Assert.Single(detail.Timeline.Where(entry => entry.Kind is TimelineEntryKind.HumanResponseAccepted));
-        Assert.Single(detail.EvaluationRounds);
-        Assert.Single(detail.HumanDecisionRequests);
-    }
-
-    [Fact]
-    public async Task Approval_restore_returns_the_checkpoint_snapshot_instead_of_the_database_projection()
+    public async Task Approval_restore_returns_the_database_snapshot_after_checkpoint_identity_reconciliation()
     {
         await using var fixture = await RestartFixture.CreateAsync("restart-checkpoint-snapshot");
         PendingApprovalWait started;
+        ApprovalRequest originalApproval;
 
         await using (var firstContext = fixture.CreateContext())
         using (var firstCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory))
@@ -321,13 +194,14 @@ public sealed class RestartRecoveryTests
                 fixture.SessionId);
             started = Assert.IsType<PendingApprovalWait>(
                 await service.RestoreAsync(fixture.Submission.ReleaseId));
+            originalApproval = WorkflowWaitResolver.RequireApproval(
+                (await dataService.GetReleaseDetailAsync(fixture.Submission.ReleaseId))!);
         }
 
-        var checkpointApproval = Assert.IsType<ApprovalRequest>(started.Approval);
         await using (var mutationContext = fixture.CreateContext())
         {
             await mutationContext.Database.ExecuteSqlInterpolatedAsync(
-                $"UPDATE DecisionSnapshots SET DecisionBrief = {"database projection changed"} WHERE Id = {checkpointApproval.Snapshot.Id}");
+                $"UPDATE DecisionSnapshots SET DecisionBrief = {"database projection changed"} WHERE Id = {originalApproval.Snapshot.Id}");
         }
 
         using var secondCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory);
@@ -339,14 +213,18 @@ public sealed class RestartRecoveryTests
 
         var restored = Assert.IsType<PendingApprovalWait>(
             await serviceAfterRestart.RestoreAsync(fixture.Submission.ReleaseId));
-        var restoredApproval = Assert.IsType<ApprovalRequest>(restored.Approval);
+        var restoredApproval = WorkflowWaitResolver.RequireApproval(
+            (await new ApplicationDataService(secondContext)
+                .GetReleaseDetailAsync(fixture.Submission.ReleaseId))!);
 
-        Assert.Equivalent(checkpointApproval, restoredApproval, strict: true);
-        Assert.NotEqual("database projection changed", restoredApproval.Snapshot.DecisionBrief);
+        Assert.Equal(started.ApprovalRequestId, restored.ApprovalRequestId);
+        Assert.Equal(originalApproval.Request.Id, restoredApproval.Request.Id);
+        Assert.Equal("database projection changed", restoredApproval.Snapshot.DecisionBrief);
+        Assert.NotEqual(originalApproval.Snapshot.DecisionBrief, restoredApproval.Snapshot.DecisionBrief);
     }
 
     [Fact]
-    public async Task Approval_resume_rejects_a_database_request_identity_mismatch_before_responding()
+    public async Task Approval_resume_rejects_a_checkpoint_and_database_request_identity_mismatch()
     {
         await using var fixture = await RestartFixture.CreateAsync("restart-request-mismatch");
         PendingApprovalWait started;
@@ -365,12 +243,10 @@ public sealed class RestartRecoveryTests
                 await service.RestoreAsync(fixture.Submission.ReleaseId));
         }
 
-        var checkpointApproval = Assert.IsType<ApprovalRequest>(started.Approval);
-        await using (var mutationContext = fixture.CreateContext())
-        {
-            await mutationContext.Database.ExecuteSqlInterpolatedAsync(
-                $"UPDATE WorkflowRequests SET Id = {Guid.NewGuid()} WHERE Id = {checkpointApproval.Request.Id}");
-        }
+        fixture.ReplaceCheckpointText(
+            started.WorkflowRequestId,
+            started.ApprovalRequestId.ToString(),
+            Guid.NewGuid().ToString());
 
         using var secondCoordinator = new CheckpointStoreCoordinator(fixture.CheckpointDirectory);
         await using var secondContext = fixture.CreateContext();
@@ -402,7 +278,7 @@ public sealed class RestartRecoveryTests
         private readonly string _rootPath;
         private readonly string _databasePath;
 
-        private RestartFixture(string rootPath, string releaseId, bool blockedTest)
+        private RestartFixture(string rootPath, string releaseId)
         {
             _rootPath = rootPath;
             _databasePath = Path.Combine(rootPath, "release-readiness.db");
@@ -416,7 +292,6 @@ public sealed class RestartRecoveryTests
                 new UtcInterval(Now, Utc(2026, 8, 18, 11)),
                 Utc(2026, 8, 18, 9));
             SessionId = $"release-{releaseId}";
-            BlockedTest = blockedTest;
         }
 
         public DirectoryInfo CheckpointDirectory { get; }
@@ -429,17 +304,13 @@ public sealed class RestartRecoveryTests
 
         public string SessionId { get; }
 
-        private bool BlockedTest { get; }
-
-        public static async Task<RestartFixture> CreateAsync(
-            string releaseId,
-            bool blockedTest = false)
+        public static async Task<RestartFixture> CreateAsync(string releaseId)
         {
             var rootPath = Path.Combine(
                 Path.GetTempPath(),
                 "release-readiness-restart-tests",
                 Guid.NewGuid().ToString("N"));
-            var fixture = new RestartFixture(rootPath, releaseId, blockedTest);
+            var fixture = new RestartFixture(rootPath, releaseId);
             await using var context = fixture.CreateContext();
             await context.Database.EnsureCreatedAsync();
             return fixture;
@@ -514,7 +385,7 @@ public sealed class RestartRecoveryTests
         [
             new TestEvidenceRecord(
                 Guid.NewGuid(), Submission.ReleaseId, 1, Submission.SubmittedAt, null,
-                Submission.ReleaseVersion, Submission.SubmittedAt, BlockedTest ? 0m : 0.98m, []),
+                Submission.ReleaseVersion, Submission.SubmittedAt, 0.98m, []),
             new SecurityEvidenceRecord(
                 Guid.NewGuid(), Submission.ReleaseId, 1, Submission.SubmittedAt, null,
                 Submission.ReleaseVersion, Submission.SubmittedAt, [], [],

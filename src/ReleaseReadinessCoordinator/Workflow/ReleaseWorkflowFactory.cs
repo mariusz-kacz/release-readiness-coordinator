@@ -2,7 +2,6 @@ using Microsoft.Agents.AI.Workflows;
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Readiness;
-using DomainRemediationRequest = ReleaseReadinessCoordinator.Domain.RemediationRequest;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
@@ -77,10 +76,10 @@ public static class ReleaseWorkflowFactory
             submission.ReleaseId,
             dataService,
             timeProvider);
-        var remediation = RequestPort.Create<DomainRemediationRequest, RemediationWorkflowResponse>(
+        var remediation = RequestPort.Create<RemediationWaitReference, RemediationWorkflowResponse>(
             ReleaseWorkflowPortIds.Remediation);
         var remediationHandler = new RemediationWorkflowExecutor(submission.ReleaseId, dataService);
-        var approval = RequestPort.Create<ApprovalRequest, ApprovalResponse>(
+        var approval = RequestPort.Create<ApprovalWaitReference, ApprovalResponse>(
             ReleaseWorkflowPortIds.Approval);
         var humanDecisionHandler = new HumanDecisionWorkflowExecutor(
             submission.ReleaseId,

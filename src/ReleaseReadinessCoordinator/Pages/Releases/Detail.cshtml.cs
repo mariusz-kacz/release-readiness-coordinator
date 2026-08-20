@@ -49,7 +49,7 @@ public sealed partial class DetailModel(IApplicationDataService dataService) : P
         && current.Id == evidence.Id;
 
     public static string FormatInstant(UtcInstant instant) =>
-        instant.ToDisplayString();
+        LocalDateTimeDisplay.Format(instant);
 
     public static string FormatInstant(UtcInstant? instant) =>
         instant.HasValue ? FormatInstant(instant.Value) : "Not available";
@@ -78,14 +78,36 @@ public sealed partial class DetailModel(IApplicationDataService dataService) : P
     public static string FormatText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        return EmbeddedIsoInstant().Replace(text, match =>
-            DateTimeOffset.TryParse(
-                match.Groups["instant"].Value,
+        return EmbeddedUtcInstant().Replace(text, match =>
+            TryParseUtcInstant(match.Groups["instant"].Value, out var instant)
+                ? FormatInstant(new UtcInstant(instant))
+                : match.Value);
+    }
+
+    private static bool TryParseUtcInstant(string text, out DateTimeOffset instant)
+    {
+        if (DateTimeOffset.TryParseExact(
+                text,
+                "yyyy-MM-dd HH:mm:ss 'UTC'",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out instant))
+        {
+            return true;
+        }
+
+        if (DateTimeOffset.TryParse(
+                text,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.RoundtripKind,
-                out var instant)
-                ? new UtcInstant(instant.ToUniversalTime()).ToDisplayString()
-                : match.Value);
+                out var parsed))
+        {
+            instant = parsed.ToUniversalTime();
+            return true;
+        }
+
+        instant = default;
+        return false;
     }
 
     public static string FormatAttempt(string detail)
@@ -132,9 +154,9 @@ public sealed partial class DetailModel(IApplicationDataService dataService) : P
     private static partial Regex LegacyReuseReason();
 
     [GeneratedRegex(
-        @"(?<![0-9])(?<instant>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?(?:Z|[+-][0-9]{2}:[0-9]{2}))(?![0-9])",
+        @"(?<![0-9])(?<instant>[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?(?:Z|[+-][0-9]{2}:[0-9]{2})| [0-9]{2}:[0-9]{2}:[0-9]{2} UTC))(?![0-9])",
         RegexOptions.CultureInvariant)]
-    private static partial Regex EmbeddedIsoInstant();
+    private static partial Regex EmbeddedUtcInstant();
 
     [GeneratedRegex(@"^Attempt (?<attempt>[1-9][0-9]*) succeeded\.$", RegexOptions.CultureInvariant)]
     private static partial Regex LegacySuccessfulAttempt();

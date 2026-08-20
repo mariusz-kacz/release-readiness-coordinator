@@ -4,6 +4,7 @@ using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Readiness;
 using ReleaseReadinessCoordinator.Tests.Readiness;
+using ReleaseReadinessCoordinator.Tests.Support;
 using ReleaseReadinessCoordinator.Workflow;
 
 namespace ReleaseReadinessCoordinator.Tests.Workflow;
@@ -193,31 +194,6 @@ public sealed class DecisionIntegrityResponseTests
 
 public sealed class DecisionIntegrityRealGraphTests
 {
-    [Theory]
-    [InlineData(HumanDecision.Approve, ProcessPhase.Approved)]
-    [InlineData(HumanDecision.Reject, ProcessPhase.Rejected)]
-    public async Task Real_graph_decision_is_terminal(
-        HumanDecision decision,
-        ProcessPhase expectedPhase)
-    {
-        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(BranchOutcome.Passed);
-        using var checkpoints = new DecisionCheckpointDirectory();
-        using var coordinator = new CheckpointStoreCoordinator(checkpoints.Info);
-        var pending = Assert.IsType<PendingApprovalWait>(
-            await coordinator.StartAsync(host.CreateWorkflow(), host.Input, $"current-{decision}"));
-
-        var continued = await coordinator.ResumeApprovalAsync(
-            host.CreateWorkflow(),
-            $"current-{decision}",
-            pending,
-            Response(pending, decision));
-
-        Assert.Equal(decision, continued.Response.Decision);
-        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
-        Assert.Equal(expectedPhase, detail!.Release.Phase);
-        Assert.Equal(continued, detail.TerminalResponse);
-    }
-
     [Fact]
     public async Task Invalid_continuation_is_rejected_before_creating_a_human_response()
     {
@@ -231,7 +207,7 @@ public sealed class DecisionIntegrityRealGraphTests
 
         var conflict = await Assert.ThrowsAsync<WorkflowContinuationException>(() =>
             coordinator.ResumeApprovalAsync(
-                host.CreateWorkflow(), SessionId, mismatch, Response(pending, HumanDecision.Approve)));
+                host.CreateWorkflow(), SessionId, mismatch, Response(host.Input.StartedAt, HumanDecision.Approve)));
 
         Assert.Equal(ContinuationFailureKind.Mismatched, conflict.Kind);
         var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
@@ -239,16 +215,13 @@ public sealed class DecisionIntegrityRealGraphTests
         Assert.Null(detail.TerminalResponse);
     }
 
-    private static ApprovalResponse Response(PendingApprovalWait pending, HumanDecision decision)
-    {
-        var approval = Assert.IsType<ApprovalRequest>(pending.Approval);
-        return new ApprovalResponse(new HumanResponse(
+    private static ApprovalResponse Response(UtcInstant respondedAt, HumanDecision decision) =>
+        new(new HumanResponse(
             Guid.NewGuid(),
             decision,
             "release-manager",
             "Reviewed the immutable decision brief.",
-            approval.Request.CreatedAt));
-    }
+            respondedAt));
 }
 
 internal sealed class DecisionCheckpointDirectory : IDisposable

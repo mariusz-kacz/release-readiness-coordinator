@@ -132,6 +132,7 @@ internal sealed class WorkflowCorrelationRow : IOperationRow
     public string ReleaseId { get; set; } = null!;
     public string WorkflowSessionId { get; set; } = null!;
     public string PendingWorkflowRequestId { get; set; } = null!;
+    public Guid PendingDomainRequestId { get; set; }
     public WorkflowRequestKind PendingRequestKind { get; set; }
     public DateTimeOffset CorrelatedAtUtc { get; set; }
     public string ConcurrencyToken { get; set; } = null!;

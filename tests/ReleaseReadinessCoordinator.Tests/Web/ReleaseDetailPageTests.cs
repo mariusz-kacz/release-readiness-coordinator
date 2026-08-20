@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -21,25 +22,30 @@ public sealed class ReleaseDetailPageTests
         new(new DateTimeOffset(2026, 8, 20, 8, 0, 0, TimeSpan.Zero));
 
     [Fact]
-    public void Displayed_dates_include_seconds_and_historical_iso_dates_are_normalized()
+    public void Displayed_dates_use_local_time_with_seconds_and_no_timezone_information()
     {
         var instant = new UtcInstant(
             new DateTimeOffset(2026, 8, 21, 8, 0, 37, TimeSpan.Zero));
         const string legacyDetail =
             "Executed because the previous Change result reached its validity deadline at 2026-08-21T08:00:37.0000000+00:00.";
+        var local = LocalDisplay(instant.Value);
 
-        Assert.Equal("2026-08-21 08:00:37 UTC", DetailModel.FormatInstant(instant));
+        Assert.Equal(local, DetailModel.FormatInstant(instant));
         Assert.Equal(
-            "Executed because the previous Change result reached its validity deadline at 2026-08-21 08:00:37 UTC.",
+            $"Executed because the previous Change result reached its validity deadline at {local}.",
             DetailModel.FormatPlanningDetail(legacyDetail));
         Assert.Equal(
-            "Test evidence reached its validity deadline at 2026-08-21 08:00:37 UTC.",
+            $"Test evidence reached its validity deadline at {local}.",
             DetailModel.FormatText(
                 "Test evidence reached its validity deadline at 2026-08-21T08:00:37.0000000+00:00."));
         Assert.Equal(
-            "Earliest validity bound: 2026-08-21 08:00:37 UTC.",
+            $"Earliest validity bound: {local}.",
             DetailModel.FormatText(
                 "Earliest validity bound: 2026-08-21T08:00:37.0000000+00:00."));
+        Assert.Equal(
+            $"Earliest validity bound: {local}.",
+            DetailModel.FormatText(
+                "Earliest validity bound: 2026-08-21 08:00:37 UTC."));
     }
 
     [Fact]
@@ -78,7 +84,8 @@ public sealed class ReleaseDetailPageTests
         Assert.Contains("Change", html, StringComparison.Ordinal);
         Assert.Contains("Passed", html, StringComparison.Ordinal);
         Assert.Contains("Valid until", html, StringComparison.Ordinal);
-        Assert.Contains("2026-08-19 08:00:00 UTC", html, StringComparison.Ordinal);
+        Assert.Contains(LocalDisplay(SubmittedAt.Value), html, StringComparison.Ordinal);
+        Assert.DoesNotContain(" UTC", html, StringComparison.Ordinal);
         Assert.Contains("provider attempt 1 succeeded", html, StringComparison.Ordinal);
         Assert.Contains("coverage", html, StringComparison.Ordinal);
         Assert.Contains("99%", html, StringComparison.Ordinal);
@@ -240,6 +247,7 @@ public sealed class ReleaseDetailPageTests
             releaseId,
             "workflow-session-secret",
             "workflow-request-secret",
+            Guid.NewGuid(),
             WorkflowRequestKind.Approval,
             CompletedAt);
         var projection = CreateProjection(
@@ -275,6 +283,7 @@ public sealed class ReleaseDetailPageTests
                 releaseId,
                 "workflow-session-secret",
                 "workflow-request-secret",
+                Guid.NewGuid(),
                 WorkflowRequestKind.Remediation,
                 CompletedAt));
         await using var page = await RenderedPage.StartAsync(projection);
@@ -376,6 +385,7 @@ public sealed class ReleaseDetailPageTests
                 releaseId,
                 "workflow-session-secret",
                 "workflow-request-secret",
+                approvalRequest.Id,
                 WorkflowRequestKind.Approval,
                 ValidUntil),
             timeline:
@@ -481,6 +491,10 @@ public sealed class ReleaseDetailPageTests
 
         return count;
     }
+
+    private static string LocalDisplay(DateTimeOffset instant) =>
+        TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.Local)
+            .ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
     private sealed class RenderedPage : IAsyncDisposable
     {

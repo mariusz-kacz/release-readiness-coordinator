@@ -10,7 +10,7 @@ namespace ReleaseReadinessCoordinator.Tests.Workflow;
 public sealed class CheckpointContractTests
 {
     [Fact]
-    public async Task Restored_approval_wait_contains_the_checkpoint_carried_payload()
+    public async Task Restored_approval_wait_contains_only_the_checkpoint_request_reference()
     {
         await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
             BranchOutcome.Passed);
@@ -27,40 +27,83 @@ public sealed class CheckpointContractTests
                     SessionId));
         }
 
-        var approval = Assert.IsType<ApprovalRequest>(started.Approval);
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
+        var approval = WorkflowWaitResolver.RequireApproval(detail!);
         var checkpointText = Directory
             .EnumerateFiles(directory.Info.FullName, "*", SearchOption.AllDirectories)
             .Select(File.ReadAllText)
             .Single(text => text.Contains(started.WorkflowRequestId, StringComparison.Ordinal));
-        Assert.Contains(typeof(ApprovalRequest).FullName!, checkpointText, StringComparison.Ordinal);
+        Assert.Contains(typeof(ApprovalWaitReference).FullName!, checkpointText, StringComparison.Ordinal);
+        Assert.DoesNotContain(typeof(ApprovalRequest).FullName!, checkpointText, StringComparison.Ordinal);
+        Assert.DoesNotContain(approval.Snapshot.DecisionBrief, checkpointText, StringComparison.Ordinal);
         using var checkpoint = JsonDocument.Parse(checkpointText);
         var storedPayload = checkpoint.RootElement
             .GetProperty("runnerData")
             .GetProperty("outstandingRequests")[0]
             .GetProperty("data")
             .GetProperty("value");
-        Assert.Equivalent(
-            approval,
-            storedPayload.Deserialize<ApprovalRequest>(
-                new JsonSerializerOptions(JsonSerializerDefaults.Web)),
-            strict: true);
+        var storedReference = storedPayload.Deserialize<ApprovalWaitReference>(
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(approval.Request.Id, storedReference?.RequestId);
+        Assert.Equal(approval.Request.Id, started.ApprovalRequestId);
 
         using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
         var restored = Assert.IsType<PendingApprovalWait>(
-            await secondProcess.RestoreAsync(host.CreateWorkflow(), SessionId));
+            await secondProcess.RestoreAsync(host.CreateWorkflow(), SessionId, started));
 
         Assert.Equal(started.WorkflowRequestId, restored.WorkflowRequestId);
-        Assert.Equivalent(
-            approval,
-            Assert.IsType<ApprovalRequest>(restored.Approval),
-            strict: true);
+        Assert.Equal(started.ApprovalRequestId, restored.ApprovalRequestId);
+    }
+
+    [Fact]
+    public async Task Restored_remediation_wait_contains_only_the_checkpoint_request_reference()
+    {
+        await using var host = await ReadinessWorkflowTestHost.CreateForOutcomesAsync(
+            BranchOutcome.Blocked);
+        using var directory = new TemporaryDirectory();
+        const string SessionId = "release-remediation-reference";
+        PendingRemediationWait started;
+
+        using (var firstProcess = new CheckpointStoreCoordinator(directory.Info))
+        {
+            started = Assert.IsType<PendingRemediationWait>(
+                await firstProcess.StartAsync(
+                    host.CreateWorkflow(),
+                    host.Input,
+                    SessionId));
+        }
+
+        var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
+        var remediation = Assert.Single(detail!.RemediationRequests);
+        var checkpointText = Directory
+            .EnumerateFiles(directory.Info.FullName, "*", SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .Single(text => text.Contains(started.WorkflowRequestId, StringComparison.Ordinal));
+        Assert.Contains(typeof(RemediationWaitReference).FullName!, checkpointText, StringComparison.Ordinal);
+        Assert.DoesNotContain(typeof(RemediationRequest).FullName!, checkpointText, StringComparison.Ordinal);
+        using var checkpoint = JsonDocument.Parse(checkpointText);
+        var storedPayload = checkpoint.RootElement
+            .GetProperty("runnerData")
+            .GetProperty("outstandingRequests")[0]
+            .GetProperty("data")
+            .GetProperty("value");
+        var storedReference = storedPayload.Deserialize<RemediationWaitReference>(
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(remediation.Id, storedReference?.RequestId);
+        Assert.Equal(remediation.Id, started.RemediationRequestId);
+
+        using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
+        var restored = Assert.IsType<PendingRemediationWait>(
+            await secondProcess.RestoreAsync(host.CreateWorkflow(), SessionId, started));
+
+        Assert.Equal(started, restored);
     }
 
     [Theory]
     [InlineData("missing", (int)ContinuationFailureKind.Incompatible)]
     [InlineData("unreadable", (int)ContinuationFailureKind.Corrupt)]
     [InlineData("wrong-type", (int)ContinuationFailureKind.Mismatched)]
-    public async Task Invalid_checkpoint_approval_payload_fails_closed(
+    public async Task Invalid_checkpoint_approval_reference_fails_closed(
         string corruption,
         int expectedKindValue)
     {
@@ -79,11 +122,11 @@ public sealed class CheckpointContractTests
                     sessionId));
         }
 
-        directory.CorruptApprovalPayload(started.WorkflowRequestId, corruption);
+        directory.CorruptApprovalReference(started.WorkflowRequestId, corruption);
         using var secondProcess = new CheckpointStoreCoordinator(directory.Info);
 
         var exception = await Assert.ThrowsAsync<WorkflowContinuationException>(
-            () => secondProcess.RestoreAsync(host.CreateWorkflow(), sessionId));
+            () => secondProcess.RestoreAsync(host.CreateWorkflow(), sessionId, started));
 
         Assert.Equal((ContinuationFailureKind)expectedKindValue, exception.Kind);
         var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
@@ -125,7 +168,7 @@ public sealed class CheckpointContractTests
             host.CreateWorkflow(),
             SessionId,
             started,
-            Response(started));
+            Response());
 
         Assert.Equal(HumanDecision.Approve, resumed.Response.Decision);
     }
@@ -156,7 +199,7 @@ public sealed class CheckpointContractTests
                 host.CreateWorkflow(),
                 SessionId,
                 mismatch,
-                Response(started)));
+                Response()));
 
         Assert.Equal(ContinuationFailureKind.Mismatched, exception.Kind);
 
@@ -164,7 +207,7 @@ public sealed class CheckpointContractTests
             host.CreateWorkflow(),
             SessionId,
             started,
-            Response(started));
+            Response());
         Assert.Equal(HumanDecision.Approve, resumed.Response.Decision);
     }
 
@@ -178,7 +221,7 @@ public sealed class CheckpointContractTests
 
         public DirectoryInfo Info { get; }
 
-        public void CorruptApprovalPayload(string workflowRequestId, string corruption)
+        public void CorruptApprovalReference(string workflowRequestId, string corruption)
         {
             var checkpointPath = Directory
                 .EnumerateFiles(Info.FullName, "*", SearchOption.AllDirectories)
@@ -196,7 +239,7 @@ public sealed class CheckpointContractTests
                     data.Remove("value");
                     break;
                 case "unreadable":
-                    data["value"]!["snapshot"]!["decisionBrief"] = "";
+                    data["value"]!["requestId"] = Guid.Empty;
                     break;
                 case "wrong-type":
                     data["typeId"]!["typeName"] = typeof(ApprovalResponse).FullName;
@@ -217,15 +260,11 @@ public sealed class CheckpointContractTests
         }
     }
 
-    private static ApprovalResponse Response(PendingApprovalWait? pending)
-    {
-        var respondedAt = pending?.Approval?.Request.CreatedAt
-            ?? new UtcInstant(DateTimeOffset.UtcNow);
-        return new ApprovalResponse(new HumanResponse(
+    private static ApprovalResponse Response() =>
+        new(new HumanResponse(
             Guid.NewGuid(),
             HumanDecision.Approve,
             "release-manager",
             "Reviewed.",
-            respondedAt));
-    }
+            new UtcInstant(DateTimeOffset.UtcNow)));
 }

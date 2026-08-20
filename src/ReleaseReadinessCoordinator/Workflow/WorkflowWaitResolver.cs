@@ -26,8 +26,9 @@ internal static class WorkflowWaitResolver
 
     private static PendingWorkflowWait? Resolve(
         ReleaseDetailProjection detail,
-        WorkflowCorrelationRecord correlation) =>
-        (detail.Release.Phase, correlation.PendingRequestKind) switch
+        WorkflowCorrelationRecord correlation)
+    {
+        PendingWorkflowWait? wait = (detail.Release.Phase, correlation.PendingRequestKind) switch
         {
             (ProcessPhase.WaitingForRemediation, WorkflowRequestKind.Remediation) =>
                 new PendingRemediationWait(
@@ -36,9 +37,13 @@ internal static class WorkflowWaitResolver
             (ProcessPhase.WaitingForApproval, WorkflowRequestKind.Approval) =>
                 new PendingApprovalWait(
                     correlation.PendingWorkflowRequestId,
-                    RequireApproval(detail)),
+                    RequireApproval(detail).Request.Id),
             _ => null,
         };
+        return wait?.DomainRequestId == correlation.PendingDomainRequestId
+            ? wait
+            : null;
+    }
 
     private static RemediationRequest ActiveRemediationRequest(ReleaseDetailProjection detail)
     {

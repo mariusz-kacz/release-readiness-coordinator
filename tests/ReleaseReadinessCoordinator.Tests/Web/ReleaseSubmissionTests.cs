@@ -1,4 +1,5 @@
 using System.Net;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -68,6 +69,22 @@ public sealed class ReleaseSubmissionTests
         }
 
         Assert.Contains("Required when evidence is available", availableHtml, StringComparison.Ordinal);
+
+        foreach (var (name, instant) in new[]
+                 {
+                     ("Input.DeploymentWindowStart", DemoReleaseFixtures.Complete.DeploymentWindowStart),
+                     ("Input.DeploymentWindowEnd", DemoReleaseFixtures.Complete.DeploymentWindowEnd),
+                     ("Input.TestCompletedAt", DemoReleaseFixtures.Complete.TestCompletedAt!.Value),
+                     ("Input.SecurityScannedAt", DemoReleaseFixtures.Complete.SecurityScannedAt!.Value),
+                     ("Input.ChangeWindowStart", DemoReleaseFixtures.Complete.ChangeWindowStart!.Value),
+                     ("Input.ChangeWindowEnd", DemoReleaseFixtures.Complete.ChangeWindowEnd!.Value),
+                 })
+        {
+            var tag = InputTag(availableHtml, name);
+            Assert.Contains("type=\"datetime-local\"", tag, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains($"value=\"{LocalInput(instant)}\"", tag, StringComparison.Ordinal);
+            Assert.DoesNotContain("+00:00", tag, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -329,6 +346,10 @@ public sealed class ReleaseSubmissionTests
 
     private static int Count(string text, string value) =>
         Regex.Matches(text, Regex.Escape(value), RegexOptions.IgnoreCase).Count;
+
+    private static string LocalInput(DateTimeOffset instant) =>
+        TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.Local)
+            .ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
 
     private static string InputTag(string html, string name)
     {

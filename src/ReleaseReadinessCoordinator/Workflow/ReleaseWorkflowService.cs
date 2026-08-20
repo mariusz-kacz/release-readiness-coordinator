@@ -9,16 +9,29 @@ internal sealed class ReleaseWorkflowService
     private readonly IApplicationDataService _dataService;
     private readonly CheckpointStoreCoordinator _checkpointCoordinator;
     private readonly TimeProvider _timeProvider;
+    private readonly Func<IApplicationDataService, TimeProvider, ReadinessWorkflowDependencies>
+        _dependenciesFactory;
 
     public ReleaseWorkflowService(
         IApplicationDataService dataService,
         CheckpointStoreCoordinator checkpointCoordinator,
         TimeProvider timeProvider)
+        : this(dataService, checkpointCoordinator, timeProvider, CreateDefaultDependencies)
+    {
+    }
+
+    internal ReleaseWorkflowService(
+        IApplicationDataService dataService,
+        CheckpointStoreCoordinator checkpointCoordinator,
+        TimeProvider timeProvider,
+        Func<IApplicationDataService, TimeProvider, ReadinessWorkflowDependencies> dependenciesFactory)
     {
         _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
         _checkpointCoordinator = checkpointCoordinator
             ?? throw new ArgumentNullException(nameof(checkpointCoordinator));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _dependenciesFactory = dependenciesFactory
+            ?? throw new ArgumentNullException(nameof(dependenciesFactory));
     }
 
     public async Task StartAsync(
@@ -69,12 +82,12 @@ internal sealed class ReleaseWorkflowService
     {
         var detail = await GetDetailAsync(releaseId, cancellationToken);
         var expectedWait = WorkflowWaitResolver.Require(detail);
-        var restoredWait = await _checkpointCoordinator.RestoreAsync(
+        await _checkpointCoordinator.RestoreAsync(
             CreateWorkflow(detail.Release.Submission),
             detail.WorkflowCorrelation!.WorkflowSessionId,
+            expectedWait,
             cancellationToken);
-        EnsureSameWait(expectedWait, restoredWait);
-        return restoredWait is PendingApprovalWait ? restoredWait : expectedWait;
+        return expectedWait;
     }
 
     public async Task ResumeRemediationAsync(
@@ -214,13 +227,17 @@ internal sealed class ReleaseWorkflowService
             submission,
             _dataService,
             _timeProvider,
-            new ReadinessWorkflowDependencies(
-                new ApplicationDataTestEvidenceProvider(_dataService),
-                new TestReadinessPolicy(_timeProvider),
-                new ApplicationDataSecurityEvidenceProvider(_dataService),
-                new SecurityReadinessPolicy(_timeProvider),
-                new ApplicationDataChangeEvidenceProvider(_dataService),
-                new ChangeReadinessPolicy()));
+            _dependenciesFactory(_dataService, _timeProvider));
+
+    private static ReadinessWorkflowDependencies CreateDefaultDependencies(
+        IApplicationDataService dataService,
+        TimeProvider timeProvider) => new(
+        new ApplicationDataTestEvidenceProvider(dataService),
+        new TestReadinessPolicy(timeProvider),
+        new ApplicationDataSecurityEvidenceProvider(dataService),
+        new SecurityReadinessPolicy(timeProvider),
+        new ApplicationDataChangeEvidenceProvider(dataService),
+        new ChangeReadinessPolicy());
 
     private async Task<ReleaseDetailProjection> GetDetailAsync(
         ReleaseId releaseId,
@@ -250,6 +267,7 @@ internal sealed class ReleaseWorkflowService
                 releaseId,
                 sessionId,
                 pendingWait.WorkflowRequestId,
+                pendingWait.DomainRequestId,
                 requestKind,
                 new UtcInstant(_timeProvider.GetUtcNow())),
             $"workflow-correlation:{sessionId}:{pendingWait.WorkflowRequestId}",
@@ -296,32 +314,6 @@ internal sealed class ReleaseWorkflowService
         || exception.InnerException is not null && ContainsSqliteException(exception.InnerException)
         || exception is AggregateException aggregate
             && aggregate.InnerExceptions.Any(ContainsSqliteException);
-
-    private static void EnsureSameWait(
-        PendingWorkflowWait expected,
-        PendingWorkflowWait restored)
-    {
-        var matches = (expected, restored) switch
-        {
-            (PendingApprovalWait { Approval: { } expectedApproval } expectedWait,
-                PendingApprovalWait { Approval: { } restoredApproval } restoredWait) =>
-                expectedWait.WorkflowRequestId == restoredWait.WorkflowRequestId
-                && expectedApproval.Request.Id == restoredApproval.Request.Id
-                && expectedApproval.Request.ReleaseId == restoredApproval.Request.ReleaseId
-                && expectedApproval.Request.SnapshotId == restoredApproval.Request.SnapshotId
-                && expectedApproval.Snapshot.Id == restoredApproval.Snapshot.Id,
-            (PendingRemediationWait expectedWait, PendingRemediationWait restoredWait) =>
-                expectedWait.WorkflowRequestId == restoredWait.WorkflowRequestId,
-            _ => false,
-        };
-        if (!matches)
-        {
-            throw new WorkflowContinuationException(
-                ContinuationFailureKind.Mismatched,
-                $"Restored {restored.GetType().Name} '{restored.WorkflowRequestId}' instead of "
-                    + $"{expected.GetType().Name} '{expected.WorkflowRequestId}'.");
-        }
-    }
 
     private static PersistedHumanResponse? GetExactTerminalReplay(
         ReleaseDetailProjection detail,

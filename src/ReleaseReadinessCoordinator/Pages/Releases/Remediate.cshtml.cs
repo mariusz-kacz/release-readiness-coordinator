@@ -156,7 +156,7 @@ public sealed class RemediateModel(
             if (Current(active, EvidenceKind.Test) is TestEvidenceRecord test)
             {
                 input.TestRunVersion = test.TestRunVersion;
-                input.TestCompletedAt = test.CompletedAt?.Value;
+                input.TestCompletedAt = LocalDateTimeDisplay.ToLocal(test.CompletedAt?.Value);
                 input.TestPassRatePercent = test.PassRate * 100m;
                 input.CriticalSuiteFailures = FormatList(test.CriticalSuiteFailures);
             }
@@ -164,7 +164,7 @@ public sealed class RemediateModel(
             if (Current(active, EvidenceKind.Security) is SecurityEvidenceRecord security)
             {
                 input.SecurityScanVersion = security.ScanVersion;
-                input.SecurityScannedAt = security.ScannedAt?.Value;
+                input.SecurityScannedAt = LocalDateTimeDisplay.ToLocal(security.ScannedAt?.Value);
                 input.CriticalFindingIds = FormatList(security.UnresolvedCriticalFindingIds);
                 input.HighFindingIds = FormatList(security.UnresolvedHighFindingIds);
                 input.SecurityExceptions = FormatExceptions(security.ApprovedExceptions);
@@ -173,8 +173,8 @@ public sealed class RemediateModel(
             if (Current(active, EvidenceKind.Change) is ChangeEvidenceRecord change)
             {
                 input.ChangeApproved = change.IsApproved is true;
-                input.ChangeWindowStart = change.ApprovedWindow?.Start.Value;
-                input.ChangeWindowEnd = change.ApprovedWindow?.End.Value;
+                input.ChangeWindowStart = LocalDateTimeDisplay.ToLocal(change.ApprovedWindow?.Start.Value);
+                input.ChangeWindowEnd = LocalDateTimeDisplay.ToLocal(change.ApprovedWindow?.End.Value);
             }
 
             return input;
@@ -189,7 +189,7 @@ public sealed class RemediateModel(
             if (problemChecks.Contains(ReadinessCheck.Test))
             {
                 TestRunVersion = submission.ReleaseVersion;
-                TestCompletedAt = now.Value;
+                TestCompletedAt = LocalDateTimeDisplay.ToLocal(now.Value);
                 TestPassRatePercent = 99m;
                 CriticalSuiteFailures = string.Empty;
             }
@@ -197,7 +197,7 @@ public sealed class RemediateModel(
             if (problemChecks.Contains(ReadinessCheck.Security))
             {
                 SecurityScanVersion = submission.ReleaseVersion;
-                SecurityScannedAt = now.Value;
+                SecurityScannedAt = LocalDateTimeDisplay.ToLocal(now.Value);
                 CriticalFindingIds = string.Empty;
                 HighFindingIds = string.Empty;
                 SecurityExceptions = string.Empty;
@@ -206,8 +206,10 @@ public sealed class RemediateModel(
             if (problemChecks.Contains(ReadinessCheck.Change))
             {
                 ChangeApproved = true;
-                ChangeWindowStart = submission.RequestedDeploymentWindow.Start.Value;
-                ChangeWindowEnd = submission.RequestedDeploymentWindow.End.Value;
+                ChangeWindowStart = LocalDateTimeDisplay.ToLocal(
+                    submission.RequestedDeploymentWindow.Start.Value);
+                ChangeWindowEnd = LocalDateTimeDisplay.ToLocal(
+                    submission.RequestedDeploymentWindow.End.Value);
             }
         }
 
@@ -364,7 +366,7 @@ public sealed class RemediateModel(
                     exceptions
                         .OrderBy(pair => pair.Key, StringComparer.Ordinal)
                         .Select(pair =>
-                            $"{pair.Key}|{pair.Value.Scope}|{pair.Value.ExpiresAt.ToDisplayString()}"));
+                            $"{pair.Key}|{pair.Value.Scope}|{LocalDateTimeDisplay.Format(pair.Value.ExpiresAt)}"));
 
     }
 

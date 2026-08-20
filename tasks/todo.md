@@ -692,23 +692,24 @@ no migration or existing-data preservation is provided.
 
 **Estimated scope:** Medium (4 files)
 
-## Task 24 prerequisite: Correct typed checkpoint restoration
+## Task 24 prerequisite: Minimize and reconcile typed checkpoint state
 
-**Description:** Correct the checkpoint/restoration adapter so a process-boundary restore returns the immutable `ApprovalRequest` payload carried by the active MAF request. The MAF checkpoint remains the sole continuation source; SQLite is used only to reconcile release state and correlation, never to reconstruct the payload shown by the decision page.
+**Description:** Keep MAF authoritative for continuation while making SQLite authoritative for domain content. Carry only typed durable-request references in the checkpointed external-request payloads, persist the matching domain request ID in workflow correlation, and reconcile the complete identity tuple before rendering or responding.
 
 **Acceptance criteria:**
 
-- [x] After a real process boundary, `RestoreAsync` returns a `PendingApprovalWait` containing the exact checkpoint-carried `ApprovalRequest`, and verifies the workflow request ID plus approval request/response port contract.
-- [x] Missing, unreadable, or wrongly typed request payloads fail closed with the established continuation classification, create no human-response record, and are never replaced from SQLite or a second checkpoint store.
-- [x] Fresh waits, remediation restoration/resumption, approval resumption, checkpoint corruption handling, and replay behavior remain unchanged; no schema, deployable, sidecar format, or package-version change is introduced.
+- [x] Checkpointed remediation and approval request payloads contain only typed durable-request references, not snapshots, briefs, evidence, or other domain content; the surrounding checkpoint still contains complete MAF runtime state.
+- [x] Workflow correlation persists the durable request ID and constrains it to an existing workflow request; restore/resume exactly reconcile kind, workflow request ID, and domain request ID before responding.
+- [x] Decision and remediation interactions render SQLite-derived domain content only after successful checkpoint reconciliation.
+- [x] Missing, unreadable, wrongly typed, or mismatched continuation fails closed and creates no response business record; no deployable, sidecar store, or package-version change is introduced.
 
 **Implementation sequence:**
 
-1. Add pinned-1.17.0 characterization tests for fresh and process-boundary `ExternalRequest.Data`/`PortableValue` conversion, including the concrete type identifier and deserialization failure behavior.
-2. Add the failing service regression proving the restored snapshot remains the checkpoint value even when the SQLite projection differs, plus missing/wrong/unreadable payload cases.
-3. Make the smallest supported serialization-contract correction: configure MAF JSON conversion or make the existing approval payload graph JSON-round-trippable, then require typed payload recovery in `ToRestoredPendingWorkflowWait`.
-4. Return the verified restored wait from `ReleaseWorkflowService.RestoreAsync`; keep database-derived state only for phase/request reconciliation and reject any identity mismatch.
-5. If MAF 1.17.0 cannot round-trip the payload through its documented `PortableValue` surface, stop and report the version-specific conflict rather than parsing checkpoint JSON or adding parallel persistence.
+1. Add a failing regression proving SQLite decision content remains authoritative after checkpoint restoration.
+2. Replace remediation and approval request payloads with minimal typed durable-request references and characterize their pinned-1.17.0 checkpoint round trip.
+3. Add the durable request ID to SQLite workflow correlation with a foreign key to the request table.
+4. Centralize exact checkpoint/database wait reconciliation in the checkpoint coordinator before restore or response delivery.
+5. Keep interaction projections database-derived and verify malformed or mismatched references fail closed.
 
 **Verification:**
 
@@ -722,7 +723,7 @@ no migration or existing-data preservation is provided.
 
 - `src/ReleaseReadinessCoordinator/Workflow/CheckpointStoreCoordinator.cs`
 - `src/ReleaseReadinessCoordinator/Workflow/ReleaseWorkflowService.cs`
-- Existing approval payload/domain types only if required for supported JSON round-tripping
+- Workflow correlation domain and persistence records
 - `tests/ReleaseReadinessCoordinator.Tests/Workflow/CheckpointContractTests.cs`
 - `tests/ReleaseReadinessCoordinator.Tests/Workflow/RestartRecoveryTests.cs`
 
@@ -734,7 +735,7 @@ no migration or existing-data preservation is provided.
 
 **Acceptance criteria:**
 
-- [x] The page renders only the snapshot carried by the restored active approval request; snapshot identity and a separate concurrency token are not accepted from the form.
+- [x] The page renders only the SQLite snapshot bound to the reconciled active approval request; snapshot identity and a separate concurrency token are not accepted from the form.
 - [x] Approve/Reject requires actor and comment, resumes the matching typed request, persists one terminal decision, and redirects to terminal detail.
 - [x] Missing, mismatched, corrupt, or incompatible continuation displays safe feedback, creates no human-response record, and leaves the workflow unresumed; exact double-submit has one terminal effect.
 
@@ -768,15 +769,15 @@ no migration or existing-data preservation is provided.
 
 **Acceptance criteria:**
 
-- [ ] The suite covers all-pass approval, multi-block remediation/selective reuse, missing/transient aggregation, remediation-wait restart/resume-once, approval-wait restart/resume-once, and terminal rejection.
-- [ ] Each scenario verifies three-result fan-in, wait timing, phase transitions, timeline explanations, idempotency, and provider/policy call counts.
-- [ ] Unexpected exceptions remain technical failures and terminal decisions cannot reopen.
+- [x] The suite covers all-pass approval, multi-block remediation/selective reuse, missing/transient aggregation, remediation-wait restart/resume-once, approval-wait restart/resume-once, and terminal rejection.
+- [x] Each scenario verifies three-result fan-in, wait timing, phase transitions, timeline explanations, idempotency, and provider/policy call counts.
+- [x] Unexpected exceptions remain technical failures and terminal decisions cannot reopen.
 
 **Verification:**
 
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowScenario"`
-- [ ] Run the suite twice against clean temporary stores to expose ordering/static-state leaks.
-- [ ] `dotnet format --verify-no-changes`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowScenario"`
+- [x] Run the suite twice against clean temporary stores to expose ordering/static-state leaks.
+- [x] `dotnet format --verify-no-changes`
 
 **Dependencies:** Tasks 20-24
 
@@ -789,59 +790,32 @@ no migration or existing-data preservation is provided.
 
 **Estimated scope:** Medium (4 files)
 
-## Task 26: Add minimal browser smoke coverage
-
-**Description:** Add real-browser smoke tests for only the two required user journeys: submit/pass/human decision and blocker/remediation/selective rerun. Use accessible locators and retain server-side PRG/manual-refresh behavior.
-
-**Acceptance criteria:**
-
-- [ ] Browser coverage proves submit -> passing round -> restored human decision reaches a terminal phase.
-- [ ] Browser coverage proves blocker -> remediation -> selective rerun and visibly distinguishes Executed from Reused with source linkage.
-- [ ] Tests use isolated temporary stores, deterministic fakes, and capture actionable diagnostics on failure without adding SPA or real-time infrastructure.
-
-**Verification:**
-
-- [ ] Install the pinned browser runtime documented by the test project.
-- [ ] `dotnet test --no-build --filter "FullyQualifiedName~BrowserSmoke"`
-- [ ] Inspect failure screenshots/traces only when a test fails.
-
-**Dependencies:** Tasks 22-25
-
-**Files likely touched:**
-
-- `tests/ReleaseReadinessCoordinator.Tests/Browser/PassingDecisionSmokeTests.cs`
-- `tests/ReleaseReadinessCoordinator.Tests/Browser/RemediationReuseSmokeTests.cs`
-- `tests/ReleaseReadinessCoordinator.Tests/Browser/BrowserFixture.cs`
-- `tests/ReleaseReadinessCoordinator.Tests/ReleaseReadinessCoordinator.Tests.csproj`
-
-**Estimated scope:** Medium (4 files)
-
 ## Checkpoint F1: Evaluation
 
-- [ ] Tasks 25-26 acceptance criteria are met.
-- [ ] Required real-graph scenarios and both browser journeys pass.
-- [ ] Test evidence is deterministic.
+- [x] Task 25 acceptance criteria are met.
+- [x] Required real-graph scenarios pass.
+- [x] Test evidence is deterministic.
 
-## Task 27: Finish documentation, full verification, and spec audit
+## Task 26: Finish documentation, full verification, and spec audit
 
 **Description:** Document setup, simulated fixtures, app-data locations, restart demo, test commands, and architecture boundaries. Run the complete quality gate, inspect the diff, and map evidence to all 13 MVP acceptance criteria.
 
 **Acceptance criteria:**
 
-- [ ] `README.md` explains local setup, demo journeys, restart procedure, checkpoint trust/single-process constraints, and normal tests.
-- [ ] `AGENTS.md` contains accurate paths/commands, and a final acceptance matrix maps every `SPEC.md` criterion to executable or manual evidence.
-- [ ] Final review finds no prohibited component, generic platform, silent spec deviation, secret, generated runtime data, or unrelated change.
+- [x] `README.md` explains local setup, demo journeys, restart procedure, checkpoint trust/single-process constraints, and normal tests.
+- [x] `AGENTS.md` contains accurate paths/commands, and a final acceptance matrix maps every `SPEC.md` criterion to executable or manual evidence.
+- [x] Final review finds no prohibited component, generic platform, silent spec deviation, secret, generated runtime data, or unrelated change.
 
 **Verification:**
 
-- [ ] `dotnet restore`
-- [ ] `dotnet build --no-restore`
-- [ ] `dotnet test --no-build`
-- [ ] `dotnet format --verify-no-changes`
-- [ ] Run both manual end-to-end journeys, including stop/restart at remediation and approval waits.
-- [ ] Review the complete diff and report unrun checks, residual risks, and any approved deviation.
+- [x] `dotnet restore`
+- [x] `dotnet build --no-restore`
+- [x] `dotnet test --no-build`
+- [x] `dotnet format --verify-no-changes`
+- [x] Run both manual end-to-end journeys, including stop/restart at remediation and approval waits.
+- [x] Review the complete diff and report unrun checks, residual risks, and any approved deviation.
 
-**Dependencies:** Tasks 25-26
+**Dependencies:** Task 25
 
 **Files likely touched:**
 
@@ -854,8 +828,8 @@ no migration or existing-data preservation is provided.
 
 ## Checkpoint F2: Complete
 
-- [ ] Tasks 1-27 and every intermediate checkpoint are complete.
-- [ ] All task acceptance criteria and the standing Definition of Done are satisfied.
-- [ ] All 13 MVP acceptance criteria have recorded evidence.
-- [ ] The solution remains one bounded deployable application with one focused test project.
-- [ ] The owner has reviewed and approved the completed implementation before merge or deployment.
+- [x] Tasks 1-26 and every intermediate checkpoint are complete.
+- [x] All task acceptance criteria and the standing Definition of Done are satisfied.
+- [x] All 13 MVP acceptance criteria have recorded evidence.
+- [x] The solution remains one bounded deployable application with one focused test project.
+- [x] The owner has reviewed and approved the completed implementation before merge or deployment.

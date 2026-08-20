@@ -162,12 +162,21 @@ public sealed record WorkflowCorrelationRecord
         ReleaseId releaseId,
         string workflowSessionId,
         string pendingWorkflowRequestId,
+        Guid pendingDomainRequestId,
         WorkflowRequestKind pendingRequestKind,
         UtcInstant correlatedAt)
     {
         ReleaseId = releaseId;
         WorkflowSessionId = DomainGuard.Required(workflowSessionId, nameof(workflowSessionId));
         PendingWorkflowRequestId = DomainGuard.Required(pendingWorkflowRequestId, nameof(pendingWorkflowRequestId));
+        if (pendingDomainRequestId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "A pending domain request ID cannot be empty.",
+                nameof(pendingDomainRequestId));
+        }
+
+        PendingDomainRequestId = pendingDomainRequestId;
         PendingRequestKind = DomainGuard.Defined(pendingRequestKind, nameof(pendingRequestKind));
         CorrelatedAt = correlatedAt;
     }
@@ -177,6 +186,8 @@ public sealed record WorkflowCorrelationRecord
     public string WorkflowSessionId { get; }
 
     public string PendingWorkflowRequestId { get; }
+
+    public Guid PendingDomainRequestId { get; }
 
     public WorkflowRequestKind PendingRequestKind { get; }
 

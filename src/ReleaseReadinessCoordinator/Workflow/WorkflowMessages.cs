@@ -21,6 +21,10 @@ public sealed record ApprovalRequest(
 
 public sealed record ApprovalResponse(HumanResponse Response);
 
+internal sealed record RemediationWaitReference(Guid RequestId);
+
+internal sealed record ApprovalWaitReference(Guid RequestId);
+
 internal sealed record RoundPlanningRequest
 {
     public RoundPlanningRequest(

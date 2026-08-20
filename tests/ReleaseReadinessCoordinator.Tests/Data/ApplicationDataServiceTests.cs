@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
+using ReleaseReadinessCoordinator.Tests.Support;
 
 namespace ReleaseReadinessCoordinator.Tests.Data;
 
@@ -226,7 +227,8 @@ public sealed class ApplicationDataServiceTests
             "history:remediation");
 
         var correlation = new WorkflowCorrelationRecord(
-            submission.ReleaseId, "session-history", "request-history", WorkflowRequestKind.Remediation, Utc(2026, 8, 16, 11));
+            submission.ReleaseId, "session-history", "request-history", request.Id,
+            WorkflowRequestKind.Remediation, Utc(2026, 8, 16, 11));
         await service.SaveWorkflowCorrelationAsync(correlation, "history:correlation");
         await service.SaveWorkflowCorrelationAsync(correlation, "history:correlation");
 
@@ -497,38 +499,4 @@ public sealed class ApplicationDataServiceTests
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
 
-    private sealed class TemporaryDatabase : IAsyncDisposable
-    {
-        private TemporaryDatabase(string path)
-        {
-            Path = path;
-        }
-
-        private string Path { get; }
-
-        public static async Task<TemporaryDatabase> CreateAsync()
-        {
-            var database = new TemporaryDatabase(
-                System.IO.Path.Combine(
-                    System.IO.Path.GetTempPath(),
-                    $"release-readiness-data-{Guid.NewGuid():N}.db"));
-            await using var context = database.CreateContext();
-            await context.Database.EnsureCreatedAsync();
-            return database;
-        }
-
-        public AppDbContext CreateContext()
-        {
-            var options = new DbContextOptionsBuilder<AppDbContext>()
-                .UseSqlite($"Data Source={Path};Pooling=False;Default Timeout=30")
-                .Options;
-            return new AppDbContext(options);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            File.Delete(Path);
-            return ValueTask.CompletedTask;
-        }
-    }
 }

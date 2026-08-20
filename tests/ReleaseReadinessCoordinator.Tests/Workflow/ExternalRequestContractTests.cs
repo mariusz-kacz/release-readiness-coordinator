@@ -2,7 +2,6 @@ using Microsoft.Agents.AI.Workflows;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Tests.Readiness;
 using ReleaseReadinessCoordinator.Workflow;
-using DomainRemediationRequest = ReleaseReadinessCoordinator.Domain.RemediationRequest;
 
 namespace ReleaseReadinessCoordinator.Tests.Workflow;
 
@@ -43,19 +42,23 @@ public sealed class ExternalRequestContractTests
 
         if (testOutcome is not BranchOutcome.Passed)
         {
-            Assert.True(request.TryGetDataAs<DomainRemediationRequest>(out var remediation));
-            Assert.Equal(1, remediation.RoundNumber);
+            Assert.True(request.TryGetDataAs<RemediationWaitReference>(out var remediation));
+            var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
+            Assert.Equal(Assert.Single(detail!.RemediationRequests).Id, remediation.RequestId);
             Assert.Throws<InvalidOperationException>(
                 () => request.CreateResponse(Approval()));
         }
         else
         {
-            Assert.True(request.TryGetDataAs<ApprovalRequest>(out var approval));
-            Assert.Equal(1, approval.RoundNumber);
-            Assert.Equal(approval.Snapshot.Id, approval.Request.SnapshotId);
-            Assert.Equal(host.Submission.ReleaseId, approval.Snapshot.ReleaseId);
-            Assert.Equal(3, approval.Snapshot.Sources.Length);
-            Assert.False(string.IsNullOrWhiteSpace(approval.Snapshot.DecisionBrief));
+            Assert.True(request.TryGetDataAs<ApprovalWaitReference>(out var approval));
+            var detail = await host.DataService.GetReleaseDetailAsync(host.Submission.ReleaseId);
+            var persistedApproval = WorkflowWaitResolver.RequireApproval(detail!);
+            Assert.Equal(persistedApproval.Request.Id, approval.RequestId);
+            Assert.Equal(1, persistedApproval.RoundNumber);
+            Assert.Equal(persistedApproval.Snapshot.Id, persistedApproval.Request.SnapshotId);
+            Assert.Equal(host.Submission.ReleaseId, persistedApproval.Snapshot.ReleaseId);
+            Assert.Equal(3, persistedApproval.Snapshot.Sources.Length);
+            Assert.False(string.IsNullOrWhiteSpace(persistedApproval.Snapshot.DecisionBrief));
             Assert.Throws<InvalidOperationException>(
                 () => request.CreateResponse(new RemediationWorkflowResponse(
                     new RemediationSubmission(

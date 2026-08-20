@@ -1,4 +1,5 @@
 using System.Net;
+using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
@@ -23,7 +24,7 @@ public sealed class DecisionPageTests
         new(new DateTimeOffset(2026, 8, 19, 9, 0, 0, TimeSpan.Zero));
 
     [Fact]
-    public async Task Active_checkpoint_request_renders_immutable_snapshot_and_only_decision_inputs()
+    public async Task Active_reconciled_request_renders_database_snapshot_and_only_decision_inputs()
     {
         var active = ActiveState();
         await using var page = await RenderedPage.StartAsync(
@@ -36,7 +37,7 @@ public sealed class DecisionPageTests
             response.StatusCode == HttpStatusCode.OK,
             $"Expected an OK response but received {response.StatusCode}.\n{html}");
         Assert.Contains("Decision for release release-decision", html, StringComparison.Ordinal);
-        Assert.Contains("Checkpoint-carried decision brief.", html, StringComparison.Ordinal);
+        Assert.Contains("Database-persisted decision brief.", html, StringComparison.Ordinal);
         Assert.Contains(active.Approval.Snapshot.Id.ToString(), html, StringComparison.Ordinal);
         Assert.Contains(active.WorkflowRequestId, html, StringComparison.Ordinal);
         Assert.Contains("Test", html, StringComparison.Ordinal);
@@ -44,6 +45,8 @@ public sealed class DecisionPageTests
         Assert.Contains("Change", html, StringComparison.Ordinal);
         Assert.Contains("coverage", html, StringComparison.Ordinal);
         Assert.Contains("99%", html, StringComparison.Ordinal);
+        Assert.Contains(LocalDisplay(Now.Value), html, StringComparison.Ordinal);
+        Assert.DoesNotContain("2026-08-19 09:00:00 UTC", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.ResponseId\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.Decision\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.Responder\"", html, StringComparison.Ordinal);
@@ -69,18 +72,10 @@ public sealed class DecisionPageTests
 
         Assert.NotNull(active);
         Assert.Equal(harness.Pending.WorkflowRequestId, active.WorkflowRequestId);
-        Assert.Equal(
-            harness.Pending.Approval!.Request.Id,
-            active.Approval.Request.Id);
-        Assert.Equal(
-            harness.Pending.Approval.Snapshot.Id,
-            active.Approval.Snapshot.Id);
-        Assert.Equal(
-            harness.Pending.Approval.Snapshot.DecisionBrief,
-            active.Approval.Snapshot.DecisionBrief);
-        Assert.Equal(
-            harness.Pending.Approval.Snapshot.Sources.Select(source => source.Id),
-            active.Approval.Snapshot.Sources.Select(source => source.Id));
+        Assert.Equal(harness.Pending.ApprovalRequestId, active.Approval.Request.Id);
+        var detail = await harness.ReadAsync();
+        var persisted = WorkflowWaitResolver.RequireApproval(detail!);
+        Assert.Equivalent(persisted, active.Approval, strict: true);
     }
 
     [Theory]
@@ -389,7 +384,11 @@ public sealed class DecisionPageTests
                 new UtcInstant(Now.Value.AddHours(2)),
                 ["Provider attempt 1 succeeded."],
                 check is ReadinessCheck.Test
-                    ? new Dictionary<string, string> { ["coverage"] = "99%" }
+                    ? new Dictionary<string, string>
+                    {
+                        ["coverage"] = "99%",
+                        ["deadline"] = "Evidence expires at 2026-08-19 09:00:00 UTC.",
+                    }
                     : new Dictionary<string, string>(),
                 null,
                 null))
@@ -401,7 +400,7 @@ public sealed class DecisionPageTests
             2,
             sources,
             new UtcInstant(Now.Value.AddHours(2)),
-            "Checkpoint-carried decision brief.",
+            "Database-persisted decision brief.",
             Now);
         var request = new HumanDecisionRequest(
             Guid.NewGuid(), releaseId, snapshot.Id, Now);
@@ -409,6 +408,10 @@ public sealed class DecisionPageTests
             new ApprovalRequest(snapshot, request),
             "maf-approval-request-42");
     }
+
+    private static string LocalDisplay(DateTimeOffset instant) =>
+        TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.Local)
+            .ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
     private sealed class StubDecisionInteractionService(
         ActiveDecisionInteraction? active,
@@ -531,6 +534,7 @@ public sealed class DecisionPageTests
                     ReleaseId,
                     correlation.WorkflowSessionId,
                     $"mismatched-{Guid.NewGuid():N}",
+                    correlation.PendingDomainRequestId,
                     WorkflowRequestKind.Approval,
                     Now),
                 $"decision-page:mismatch:{Guid.NewGuid():N}");

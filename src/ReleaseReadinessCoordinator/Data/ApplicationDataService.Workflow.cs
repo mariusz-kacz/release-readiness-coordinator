@@ -362,6 +362,7 @@ public sealed partial class ApplicationDataService
                 {
                     row.WorkflowSessionId = correlation.WorkflowSessionId;
                     row.PendingWorkflowRequestId = correlation.PendingWorkflowRequestId;
+                    row.PendingDomainRequestId = correlation.PendingDomainRequestId;
                     row.PendingRequestKind = correlation.PendingRequestKind;
                     row.CorrelatedAtUtc = correlation.CorrelatedAt.Value;
                     row.OperationKey = operationKey;
@@ -662,6 +663,7 @@ public sealed partial class ApplicationDataService
         ReleaseId = correlation.ReleaseId.Value,
         WorkflowSessionId = correlation.WorkflowSessionId,
         PendingWorkflowRequestId = correlation.PendingWorkflowRequestId,
+        PendingDomainRequestId = correlation.PendingDomainRequestId,
         PendingRequestKind = correlation.PendingRequestKind,
         CorrelatedAtUtc = correlation.CorrelatedAt.Value,
         ConcurrencyToken = NewConcurrencyToken(),
@@ -672,6 +674,7 @@ public sealed partial class ApplicationDataService
         new ReleaseId(row.ReleaseId),
         row.WorkflowSessionId,
         row.PendingWorkflowRequestId,
+        row.PendingDomainRequestId,
         row.PendingRequestKind,
         new UtcInstant(row.CorrelatedAtUtc));
 

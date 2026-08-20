@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
@@ -43,6 +44,8 @@ public sealed class RemediationPageTests
         Assert.Contains("2026.08.19", html, StringComparison.Ordinal);
         Assert.Contains("Test evidence is missing", html, StringComparison.Ordinal);
         Assert.Contains("Security evidence is missing", html, StringComparison.Ordinal);
+        Assert.Contains(LocalDisplay(Now.Value), html, StringComparison.Ordinal);
+        Assert.DoesNotContain("2026-08-19 09:00:00 UTC", html, StringComparison.Ordinal);
         Assert.Contains("workflow-request-42", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.CorrelationToken\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"Input.ReplaceTestEvidence\"", html, StringComparison.Ordinal);
@@ -225,7 +228,7 @@ public sealed class RemediationPageTests
 
         Assert.IsType<PageResult>(result);
         Assert.Equal("2026.08.19", page.Input.TestRunVersion);
-        Assert.Equal(Now.Value, page.Input.TestCompletedAt);
+        Assert.Equal(LocalValue(Now.Value), page.Input.TestCompletedAt);
         Assert.Null(page.Input.TestPassRatePercent);
         Assert.Equal("checkout", page.Input.CriticalSuiteFailures);
         Assert.Equal("2026.08.19", page.Input.SecurityScanVersion);
@@ -233,7 +236,7 @@ public sealed class RemediationPageTests
         Assert.Equal("CRIT-1", page.Input.CriticalFindingIds);
         Assert.Equal("HIGH-1", page.Input.HighFindingIds);
         Assert.Equal(
-            "HIGH-1|payments-api|2026-08-19 09:00:00 UTC",
+            $"HIGH-1|payments-api|{LocalDisplay(Now.Value)}",
             page.Input.SecurityExceptions);
 
         page.Input.TestPassRatePercent = 99m;
@@ -529,6 +532,12 @@ public sealed class RemediationPageTests
             "workflow-request-42");
     }
 
+    private static DateTimeOffset LocalValue(DateTimeOffset instant) =>
+        TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.Local);
+
+    private static string LocalDisplay(DateTimeOffset instant) =>
+        LocalValue(instant).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
     private static BranchResult Problem(
         ReleaseId releaseId,
         ReadinessCheck check,
@@ -546,7 +555,11 @@ public sealed class RemediationPageTests
             (EvidenceKind)(int)check,
             null,
             ["No evidence record was available."],
-            new Dictionary<string, string> { ["problem"] = finding },
+            new Dictionary<string, string>
+            {
+                ["problem"] = finding,
+                ["deadline"] = "Evidence expires at 2026-08-19 09:00:00 UTC.",
+            },
             null,
             null);
 

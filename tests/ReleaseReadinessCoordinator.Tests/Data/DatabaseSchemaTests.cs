@@ -89,6 +89,16 @@ public sealed class DatabaseSchemaTests
         Assert.DoesNotContain(
             responseType.GetForeignKeys().SelectMany(foreignKey => foreignKey.Properties),
             property => property.Name is "RequestId" or "SnapshotId");
+        var correlationType = context.Model.FindEntityType(typeof(WorkflowCorrelationRow))!;
+        var correlationRequestForeignKey = Assert.Single(
+            correlationType.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(WorkflowRequestRow));
+        Assert.Equal(
+            [nameof(WorkflowCorrelationRow.PendingDomainRequestId)],
+            correlationRequestForeignKey.Properties.Select(property => property.Name));
+        AssertUniqueIndex<WorkflowCorrelationRow>(
+            context,
+            nameof(WorkflowCorrelationRow.PendingDomainRequestId));
 
         var currentEvidence = context.Model.FindEntityType(typeof(CurrentEvidenceRow))!;
         Assert.Equal(
@@ -179,6 +189,13 @@ public sealed class DatabaseSchemaTests
                         "Responder", "Comment", "RespondedAtUtc", "OperationKey",
                     ],
                     await ReadColumnNames(verification, "HumanResponses"));
+                Assert.Equal(
+                    [
+                        "ReleaseId", "WorkflowSessionId", "PendingWorkflowRequestId",
+                        "PendingDomainRequestId", "PendingRequestKind", "CorrelatedAtUtc",
+                        "ConcurrencyToken", "OperationKey",
+                    ],
+                    await ReadColumnNames(verification, "WorkflowCorrelations"));
             }
         }
         finally

@@ -3,7 +3,6 @@ using Microsoft.Agents.AI.Workflows;
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Readiness;
-using DomainRemediationRequest = ReleaseReadinessCoordinator.Domain.RemediationRequest;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
@@ -234,7 +233,7 @@ internal sealed partial class ReadinessAggregator : Executor, IResettableExecuto
         _aggregator = new RoundAggregator(dataService, timeProvider);
     }
 
-    [MessageHandler(Send = [typeof(DomainRemediationRequest), typeof(BuildDecisionSnapshot)])]
+    [MessageHandler(Send = [typeof(RemediationWaitReference), typeof(BuildDecisionSnapshot)])]
     private async ValueTask ReceiveAsync(
         CompletedBranchWork completed,
         IWorkflowContext context,
@@ -264,7 +263,9 @@ internal sealed partial class ReadinessAggregator : Executor, IResettableExecuto
             cancellationToken);
         if (aggregation.RemediationRequest is not null)
         {
-            await context.SendMessageAsync(aggregation.RemediationRequest, cancellationToken);
+            await context.SendMessageAsync(
+                new RemediationWaitReference(aggregation.RemediationRequest.Id),
+                cancellationToken);
         }
         else
         {
@@ -307,13 +308,13 @@ internal sealed partial class DecisionSnapshotWorkflowExecutor : Executor
     }
 
     [MessageHandler]
-    private async ValueTask<ApprovalRequest> BuildAsync(
+    private async ValueTask<ApprovalWaitReference> BuildAsync(
         BuildDecisionSnapshot command,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
         var built = await _builder.BuildAsync(command.Round, cancellationToken);
-        return new ApprovalRequest(built.Snapshot, built.Request);
+        return new ApprovalWaitReference(built.Request.Id);
     }
 }
 

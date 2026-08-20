@@ -52,7 +52,7 @@ internal static class EvidenceFormParsing
                 || !TryParseExpiry(fields[2], out var expiry))
             {
                 throw new FormatException(
-                    "Each security exception line must use finding-id|scope|expiry-with-offset.");
+                    "Each security exception line must use finding-id|scope|YYYY-MM-DD HH:mm:ss in local time.");
             }
 
             if (!exceptions.TryAdd(fields[0], (fields[1], Instant(expiry))))
@@ -67,6 +67,12 @@ internal static class EvidenceFormParsing
 
     private static bool TryParseExpiry(string text, out DateTimeOffset expiry) =>
         DateTimeOffset.TryParseExact(
+            text,
+            LocalDateTimeDisplay.TextFormat,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeLocal,
+            out expiry)
+        || DateTimeOffset.TryParseExact(
             text,
             "yyyy-MM-dd HH:mm:ss 'UTC'",
             CultureInfo.InvariantCulture,
