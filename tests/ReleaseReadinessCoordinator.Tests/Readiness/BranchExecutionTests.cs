@@ -36,6 +36,9 @@ public sealed class BranchExecutionTests
         Assert.Null(result.EvidenceId);
         Assert.Equal(1, provider.CallCount);
         Assert.Equal(0, evaluator.CallCount);
+        Assert.Equal(
+            "Check completed on the first attempt.",
+            Assert.Single(result.Attempts));
     }
 
     [Fact]

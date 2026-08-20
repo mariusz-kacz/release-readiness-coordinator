@@ -53,6 +53,8 @@ public sealed class RemediationPageTests
         Assert.Contains("name=\"Input.SecurityScanVersion\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.SecurityExceptions\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.ChangeWindowStart\"", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"row g-3 align-items-end\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("col-md-4 form-check ms-2 mt-5", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.RerunTest\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.RerunSecurity\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.RerunChange\"", html, StringComparison.Ordinal);
@@ -60,6 +62,37 @@ public sealed class RemediationPageTests
         Assert.Contains(
             "Changing any field for a branch appends one immutable evidence version",
             html,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Required fields apply only to branches you change",
+            html,
+            StringComparison.Ordinal);
+        foreach (var requiredInput in new[]
+                 {
+                     "Input.TestRunVersion",
+                     "Input.TestCompletedAt",
+                     "Input.TestPassRatePercent",
+                     "Input.SecurityScanVersion",
+                     "Input.SecurityScannedAt",
+                 })
+        {
+            var tag = InputTag(html, requiredInput);
+            Assert.False(HasAttribute(tag, "required"));
+            Assert.Contains("aria-required=\"false\"", tag, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("data-required-when-changed", tag, StringComparison.Ordinal);
+        }
+        Assert.Contains("required when approved", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "data-required-when=\"Input_ChangeApproved\"",
+            InputTag(html, "Input.ChangeWindowStart"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "data-required-when-changed",
+            InputTag(html, "Input.ChangeWindowStart"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "data-required-when=\"Input_ChangeApproved\"",
+            InputTag(html, "Input.ChangeWindowEnd"),
             StringComparison.Ordinal);
         Assert.Contains(
             "Active problem &mdash; this check will rerun automatically.",
@@ -78,6 +111,18 @@ public sealed class RemediationPageTests
         Assert.DoesNotContain("disabled", InputTag(html, "Input.RerunChange"), StringComparison.OrdinalIgnoreCase);
         Assert.Contains("data-evidence-section", html, StringComparison.Ordinal);
         Assert.Contains("data-branch-status", html, StringComparison.Ordinal);
+        var resetButtons = Regex.Matches(
+            html,
+            "<button[^>]*data-reset-evidence[^>]*>Reset changes</button>",
+            RegexOptions.IgnoreCase);
+        Assert.Equal(3, resetButtons.Count);
+        Assert.All(
+            resetButtons.Cast<Match>(),
+            button => Assert.Contains("disabled", button.Value, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("input.checked = initialValues[index]", html, StringComparison.Ordinal);
+        Assert.Contains("input.value = initialValues[index]", html, StringComparison.Ordinal);
+        Assert.Contains("let required = changed", html, StringComparison.Ordinal);
+        Assert.Contains("input.required = required", html, StringComparison.Ordinal);
         Assert.Contains("Save evidence and run next evaluation", html, StringComparison.Ordinal);
         Assert.Contains("Load ready demo evidence", html, StringComparison.Ordinal);
         Assert.Contains("demo=ready", html, StringComparison.Ordinal);
@@ -188,7 +233,7 @@ public sealed class RemediationPageTests
         Assert.Equal("CRIT-1", page.Input.CriticalFindingIds);
         Assert.Equal("HIGH-1", page.Input.HighFindingIds);
         Assert.Equal(
-            "HIGH-1|payments-api|2026-08-19T09:00:00.0000000+00:00",
+            "HIGH-1|payments-api|2026-08-19 09:00:00 UTC",
             page.Input.SecurityExceptions);
 
         page.Input.TestPassRatePercent = 99m;
@@ -441,6 +486,12 @@ public sealed class RemediationPageTests
             html,
             $"<input[^>]*name=\"{Regex.Escape(name)}\"[^>]*>",
             RegexOptions.IgnoreCase).Value;
+
+    private static bool HasAttribute(string tag, string attribute) =>
+        Regex.IsMatch(
+            tag,
+            $@"\s{Regex.Escape(attribute)}(?:\s|=|/?>)",
+            RegexOptions.IgnoreCase);
 
     private static ActiveRemediationInteraction ActiveState(bool includeCurrentEvidence = false)
     {

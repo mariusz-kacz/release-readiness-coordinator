@@ -36,6 +36,11 @@ public sealed class DecisionIntegritySnapshotTests
         Assert.Equal(
             Encoding.UTF8.GetBytes(DecisionSnapshotBuilder.BuildBrief(round)),
             Encoding.UTF8.GetBytes(first.Snapshot.DecisionBrief));
+        Assert.Contains(
+            "Earliest validity bound: 2026-08-17 11:00:00 UTC.",
+            first.Snapshot.DecisionBrief,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("T11:00:00", first.Snapshot.DecisionBrief, StringComparison.Ordinal);
 
         detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.Single(detail!.DecisionSnapshots);

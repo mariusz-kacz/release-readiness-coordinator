@@ -68,6 +68,12 @@ public sealed class TestReadinessPolicyTests
 
         Assert.Equal(BranchOutcome.Blocked, evaluation.Outcome);
         Assert.Null(evaluation.ValidUntil);
+        if (ticksFromDeadline == 0)
+        {
+            Assert.Equal(
+                "Test evidence reached its validity deadline at 2026-08-18 08:00:00 UTC.",
+                evaluation.Findings["freshness"]);
+        }
     }
 
     private static TestReadinessPolicy PolicyAt(DateTimeOffset now) =>

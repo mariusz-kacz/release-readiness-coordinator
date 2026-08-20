@@ -74,17 +74,15 @@ public sealed class NewModel(
             return Page();
         }
 
-        var page = detail.Release.Phase switch
-        {
-            ProcessPhase.WaitingForRemediation => "/Releases/Remediate",
-            ProcessPhase.WaitingForApproval => "/Releases/Decision",
-            _ => "/Releases/Detail",
-        };
-        return RedirectToPage(page, new { releaseId = releaseId.Value });
+        return RedirectToPage(
+            "/Releases/Detail",
+            new { releaseId = releaseId.Value });
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
+        ModelState.Remove(nameof(ExistingReleaseId));
+        ValidateAvailableEvidence();
         if (!ModelState.IsValid)
         {
             return Page();
@@ -112,6 +110,74 @@ public sealed class NewModel(
         {
             ModelState.AddModelError(string.Empty, exception.Message);
             return Page();
+        }
+    }
+
+    private void ValidateAvailableEvidence()
+    {
+        RequireTextWhenAvailable(
+            Input.IncludeTestEvidence,
+            Input.TestRunVersion,
+            nameof(Input.TestRunVersion),
+            "Test run version");
+        RequireValueWhenAvailable(
+            Input.IncludeTestEvidence,
+            Input.TestCompletedAt,
+            nameof(Input.TestCompletedAt),
+            "Test completion time");
+        RequireValueWhenAvailable(
+            Input.IncludeTestEvidence,
+            Input.TestPassRatePercent,
+            nameof(Input.TestPassRatePercent),
+            "Test pass rate");
+        RequireTextWhenAvailable(
+            Input.IncludeSecurityEvidence,
+            Input.SecurityScanVersion,
+            nameof(Input.SecurityScanVersion),
+            "Security scan version");
+        RequireValueWhenAvailable(
+            Input.IncludeSecurityEvidence,
+            Input.SecurityScannedAt,
+            nameof(Input.SecurityScannedAt),
+            "Security scan time");
+        RequireValueWhenAvailable(
+            Input.IncludeChangeEvidence,
+            Input.ChangeWindowStart,
+            nameof(Input.ChangeWindowStart),
+            "Change window start");
+        RequireValueWhenAvailable(
+            Input.IncludeChangeEvidence,
+            Input.ChangeWindowEnd,
+            nameof(Input.ChangeWindowEnd),
+            "Change window end");
+    }
+
+    private void RequireTextWhenAvailable(
+        bool evidenceAvailable,
+        string? value,
+        string fieldName,
+        string displayName)
+    {
+        if (evidenceAvailable && string.IsNullOrWhiteSpace(value))
+        {
+            ModelState.TryAddModelError(
+                $"Input.{fieldName}",
+                $"{displayName} is required when evidence is available.");
+        }
+    }
+
+    private void RequireValueWhenAvailable<T>(
+        bool evidenceAvailable,
+        T? value,
+        string fieldName,
+        string displayName)
+        where T : struct
+    {
+        if (evidenceAvailable && !value.HasValue)
+        {
+            ModelState.TryAddModelError(
+                $"Input.{fieldName}",
+                $"{displayName} is required when evidence is available.");
         }
     }
 

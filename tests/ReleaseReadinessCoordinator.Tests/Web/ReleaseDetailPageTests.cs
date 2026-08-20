@@ -21,9 +21,48 @@ public sealed class ReleaseDetailPageTests
         new(new DateTimeOffset(2026, 8, 20, 8, 0, 0, TimeSpan.Zero));
 
     [Fact]
+    public void Displayed_dates_include_seconds_and_historical_iso_dates_are_normalized()
+    {
+        var instant = new UtcInstant(
+            new DateTimeOffset(2026, 8, 21, 8, 0, 37, TimeSpan.Zero));
+        const string legacyDetail =
+            "Executed because the previous Change result reached its validity deadline at 2026-08-21T08:00:37.0000000+00:00.";
+
+        Assert.Equal("2026-08-21 08:00:37 UTC", DetailModel.FormatInstant(instant));
+        Assert.Equal(
+            "Executed because the previous Change result reached its validity deadline at 2026-08-21 08:00:37 UTC.",
+            DetailModel.FormatPlanningDetail(legacyDetail));
+        Assert.Equal(
+            "Test evidence reached its validity deadline at 2026-08-21 08:00:37 UTC.",
+            DetailModel.FormatText(
+                "Test evidence reached its validity deadline at 2026-08-21T08:00:37.0000000+00:00."));
+        Assert.Equal(
+            "Earliest validity bound: 2026-08-21 08:00:37 UTC.",
+            DetailModel.FormatText(
+                "Earliest validity bound: 2026-08-21T08:00:37.0000000+00:00."));
+    }
+
+    [Fact]
     public async Task Full_detail_renders_current_results_evidence_round_reasons_wait_brief_and_timeline()
     {
         var projection = CreateApprovalProjection();
+        var previousTestEvidence = Assert.IsType<TestEvidenceRecord>(
+            projection.CurrentEvidence[EvidenceKind.Test]);
+        var currentTestEvidence = new TestEvidenceRecord(
+            Guid.NewGuid(),
+            previousTestEvidence.ReleaseId,
+            2,
+            CompletedAt,
+            previousTestEvidence.Id,
+            "test-run-43",
+            CompletedAt,
+            1m,
+            []);
+        projection = projection with
+        {
+            EvidenceHistory = [.. projection.EvidenceHistory, currentTestEvidence],
+            CurrentEvidence = projection.CurrentEvidence.SetItem(EvidenceKind.Test, currentTestEvidence),
+        };
         await using var page = await RenderedPage.StartAsync(projection);
 
         var response = await page.Client.GetAsync("/Releases/release-ui");
@@ -39,11 +78,25 @@ public sealed class ReleaseDetailPageTests
         Assert.Contains("Change", html, StringComparison.Ordinal);
         Assert.Contains("Passed", html, StringComparison.Ordinal);
         Assert.Contains("Valid until", html, StringComparison.Ordinal);
+        Assert.Contains("2026-08-19 08:00:00 UTC", html, StringComparison.Ordinal);
         Assert.Contains("provider attempt 1 succeeded", html, StringComparison.Ordinal);
         Assert.Contains("coverage", html, StringComparison.Ordinal);
         Assert.Contains("99%", html, StringComparison.Ordinal);
         Assert.Contains("Evidence history", html, StringComparison.Ordinal);
         Assert.Contains("test-run-42", html, StringComparison.Ordinal);
+        Assert.Contains("test-run-43", html, StringComparison.Ordinal);
+        Assert.Contains("Version 1", html, StringComparison.Ordinal);
+        Assert.Contains("Version 2", html, StringComparison.Ordinal);
+        Assert.Contains("class=\"evidence-timeline", html, StringComparison.Ordinal);
+        Assert.Contains("Newest updates first", html, StringComparison.Ordinal);
+        Assert.Contains("1 evidence record", html, StringComparison.Ordinal);
+        Assert.Contains("3 evidence records", html, StringComparison.Ordinal);
+        Assert.Contains("Replaces Test version 1", html, StringComparison.Ordinal);
+        Assert.True(
+            html.IndexOf("test-run-43", StringComparison.Ordinal)
+            < html.IndexOf("test-run-42", StringComparison.Ordinal),
+            "The newest evidence event should render before the initial evidence event.");
+        Assert.DoesNotContain("v@evidence.Version", html, StringComparison.Ordinal);
         Assert.Contains("Evaluation rounds", html, StringComparison.Ordinal);
         Assert.Contains("Executed because initial evaluation", html, StringComparison.Ordinal);
         Assert.Contains("Reused from round 1 because the passing result is still current", html, StringComparison.Ordinal);
@@ -60,6 +113,96 @@ public sealed class ReleaseDetailPageTests
         var evaluated = html.IndexOf("Round 2 completed", StringComparison.Ordinal);
         var approval = html.IndexOf("Approval requested", StringComparison.Ordinal);
         Assert.True(submitted >= 0 && evaluated > submitted && approval > evaluated);
+    }
+
+    [Fact]
+    public async Task Historical_workflow_explanations_render_clearly_without_legacy_messages()
+    {
+        var projection = CreateApprovalProjection();
+        var latestRound = projection.EvaluationRounds[^1];
+        var existingChange = Assert.Single(
+            latestRound.Results,
+            result => result.Check is ReadinessCheck.Change);
+        var existingSecurity = Assert.Single(
+            latestRound.Results,
+            result => result.Check is ReadinessCheck.Security);
+        var evidenceId = new Guid("ce69ca46-bfa8-4488-83ae-ef4e6902827f");
+        var legacyDetail =
+            $"Executed because current Change evidence changed from <none> to '{evidenceId}'. Additional facts: previous result did not pass.";
+        var legacyReuseDetail =
+            $"Reused from round {existingSecurity.ReuseSourceRound} because evidence '{existingSecurity.EvidenceId}' and deadline {existingSecurity.ValidUntil!.Value.Value:O} were verified current, so reuse is safe.";
+        var historicalSecurity = new BranchResult(
+            Guid.NewGuid(),
+            existingSecurity.ReleaseId,
+            existingSecurity.RoundNumber,
+            existingSecurity.Check,
+            existingSecurity.Outcome,
+            existingSecurity.Disposition,
+            existingSecurity.PlanningReason,
+            legacyReuseDetail,
+            existingSecurity.EvidenceId,
+            existingSecurity.EvidenceKind,
+            existingSecurity.ValidUntil,
+            existingSecurity.Attempts,
+            existingSecurity.Findings,
+            existingSecurity.ReuseSourceResultId,
+            existingSecurity.ReuseSourceRound);
+        var historicalChange = new BranchResult(
+            Guid.NewGuid(),
+            projection.Release.Submission.ReleaseId,
+            latestRound.RoundNumber,
+            ReadinessCheck.Change,
+            BranchOutcome.Passed,
+            ExecutionDisposition.Executed,
+            PlanningReason.EvidenceChanged,
+            legacyDetail,
+            evidenceId,
+            EvidenceKind.Change,
+            existingChange.ValidUntil,
+            ["Attempt 1 succeeded."],
+            existingChange.Findings,
+            reuseSourceResultId: null,
+            reuseSourceRound: null);
+        var historicalRound = new EvaluationRound(
+            latestRound.Id,
+            latestRound.ReleaseId,
+            latestRound.RoundNumber,
+            latestRound.StartedAt,
+            latestRound.CompletedAt,
+            latestRound.Results.Select(result =>
+                result.Check switch
+                {
+                    ReadinessCheck.Security => historicalSecurity,
+                    ReadinessCheck.Change => historicalChange,
+                    _ => result,
+                }));
+        var historicalTimeline = projection.Timeline
+            .Select(entry => entry.Kind is TimelineEntryKind.EvaluationCompleted
+                ? Timeline(entry.ReleaseId, entry.Sequence, entry.Kind,
+                    $"Round 2 completed. Security: {legacyReuseDetail} Change: {legacyDetail}", entry.OccurredAt)
+                : entry)
+            .ToImmutableArray();
+        projection = projection with
+        {
+            EvaluationRounds = [projection.EvaluationRounds[0], historicalRound],
+            Timeline = historicalTimeline,
+        };
+        await using var page = await RenderedPage.StartAsync(projection);
+
+        var response = await page.Client.GetAsync("/Releases/release-ui");
+        var html = await response.Content.ReadAsStringAsync();
+
+        const string clearDetail =
+            "Executed because Change evidence is now available. The previous result had no Change evidence. Additional facts: previous result did not pass.";
+        const string clearReuseDetail =
+            "Reused from round 1 because the evidence is unchanged and the previous passing result is still valid.";
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(3, Count(html, clearDetail));
+        Assert.DoesNotContain(legacyDetail, html, StringComparison.Ordinal);
+        Assert.Equal(3, Count(html, clearReuseDetail));
+        Assert.DoesNotContain(legacyReuseDetail, html, StringComparison.Ordinal);
+        Assert.Equal(2, Count(html, "Check completed on the first attempt."));
+        Assert.DoesNotContain("Attempt 1 succeeded.", html, StringComparison.Ordinal);
     }
 
     [Fact]

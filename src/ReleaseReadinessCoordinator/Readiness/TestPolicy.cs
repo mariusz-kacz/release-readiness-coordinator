@@ -82,7 +82,7 @@ internal sealed class TestReadinessPolicy(TimeProvider timeProvider) : ITestRead
 
         if (!FreshnessDeadlines.IsCurrent(validUntil, _timeProvider))
         {
-            blockers["freshness"] = $"Test evidence reached its validity deadline at {validUntil.Value:O}.";
+            blockers["freshness"] = $"Test evidence reached its validity deadline at {validUntil.ToDisplayString()}.";
         }
 
         return blockers.Count > 0

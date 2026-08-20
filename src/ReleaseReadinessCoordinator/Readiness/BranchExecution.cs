@@ -191,7 +191,7 @@ internal static class EvidenceProviderRetry
             try
             {
                 var evidence = await provider.GetCurrentAsync(releaseId, cancellationToken);
-                attempts.Add($"Attempt {attempt} succeeded.");
+                attempts.Add(SuccessfulAttemptDetail(attempt));
                 return new EvidenceRetrieval<TEvidence>(evidence, null, attempts.ToImmutable());
             }
             catch (KnownTransientEvidenceProviderException exception)
@@ -212,6 +212,18 @@ internal static class EvidenceProviderRetry
             Evidence: null,
             failedEvidenceId,
             attempts.ToImmutable());
+    }
+
+    internal static string SuccessfulAttemptDetail(int attempt)
+    {
+        if (attempt <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(attempt));
+        }
+
+        return attempt == 1
+            ? "Check completed on the first attempt."
+            : $"Check completed on attempt {attempt}.";
     }
 }
 

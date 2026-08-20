@@ -107,7 +107,7 @@ internal sealed class SecurityReadinessPolicy(TimeProvider timeProvider) : ISecu
         var validUntil = FreshnessDeadlines.Calculate(evidence, earliestExceptionBound);
         if (!FreshnessDeadlines.IsCurrent(validUntil, _timeProvider))
         {
-            blockers["freshness"] = $"Security evidence reached its validity deadline at {validUntil.Value:O}.";
+            blockers["freshness"] = $"Security evidence reached its validity deadline at {validUntil.ToDisplayString()}.";
         }
 
         return blockers.Count > 0

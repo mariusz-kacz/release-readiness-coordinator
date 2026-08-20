@@ -111,7 +111,7 @@ body {
   overflow-wrap: anywhere;
 }
 
-.evidence-grid,
+.evidence-event-records,
 .round-list {
   display: grid;
   gap: 1rem;
@@ -133,6 +133,70 @@ body {
 
 .evidence-fact-wide {
   grid-column: 1 / -1;
+}
+
+.evidence-timeline {
+  list-style: none;
+  padding-left: 1.75rem;
+  position: relative;
+}
+
+.evidence-timeline::before {
+  background: var(--bs-border-color);
+  bottom: 0.75rem;
+  content: "";
+  left: 0.35rem;
+  position: absolute;
+  top: 0.75rem;
+  width: 2px;
+}
+
+.evidence-timeline-event {
+  padding-bottom: 2rem;
+  position: relative;
+}
+
+.evidence-timeline-event:last-child {
+  padding-bottom: 0;
+}
+
+.evidence-timeline-event::before {
+  background: var(--bs-body-bg);
+  border: 3px solid var(--bs-primary);
+  border-radius: 50%;
+  content: "";
+  height: 1rem;
+  left: -1.9rem;
+  position: absolute;
+  top: 0.35rem;
+  width: 1rem;
+}
+
+.evidence-event-heading {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.evidence-event-records {
+  margin-top: 0.75rem;
+}
+
+.evidence-audit {
+  border-top: 1px solid var(--bs-border-color);
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+}
+
+.evidence-audit summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.evidence-audit dd {
+  margin-bottom: 0.5rem;
 }
 
 .round-record .table-responsive {
@@ -181,7 +245,7 @@ body {
 }
 
 @media (min-width: 768px) {
-  .evidence-grid {
+  .evidence-event-records {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

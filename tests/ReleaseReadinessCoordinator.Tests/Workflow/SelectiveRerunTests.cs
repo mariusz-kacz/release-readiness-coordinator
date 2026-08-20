@@ -9,7 +9,8 @@ namespace ReleaseReadinessCoordinator.Tests.Workflow;
 public sealed class SelectiveRerunPlanningTests
 {
     private static readonly ReleaseId Id = new("release-42");
-    private static readonly UtcInstant Now = Utc(2026, 8, 17, 10);
+    private static readonly UtcInstant Now = new(
+        new DateTimeOffset(2026, 8, 17, 10, 0, 37, TimeSpan.Zero));
 
     [Fact]
     public void Initial_round_always_plans_one_execution_for_each_readiness_check()
@@ -77,13 +78,39 @@ public sealed class SelectiveRerunPlanningTests
 
         Assert.Collection(
             work,
-            test => Assert.Equal(WorkDisposition.Reuse, test.Disposition),
+            test =>
+            {
+                Assert.Equal(WorkDisposition.Reuse, test.Disposition);
+                Assert.Equal(
+                    "Reused from round 1 because the evidence is unchanged and the previous passing result is still valid.",
+                    test.PlanningDetail);
+            },
             security =>
             {
                 Assert.Equal(WorkDisposition.Execute, security.Disposition);
                 Assert.Equal(PlanningReason.EvidenceChanged, security.PlanningReason);
             },
             change => Assert.Equal(WorkDisposition.Reuse, change.Disposition));
+    }
+
+    [Fact]
+    public void Newly_available_evidence_reason_explains_the_change_without_internal_identifiers()
+    {
+        var previous = PassingResults().ToDictionary(result => result.Check);
+        previous[ReadinessCheck.Test] = Result(
+            ReadinessCheck.Test,
+            BranchOutcome.MissingEvidence,
+            evidenceId: null,
+            validUntil: null);
+
+        var item = Assert.Single(
+            Planner().Plan(Request(previous.Values)),
+            item => item.Check is ReadinessCheck.Test);
+
+        Assert.Equal(PlanningReason.EvidenceChanged, item.PlanningReason);
+        Assert.Equal(
+            "Executed because Test evidence is now available. The previous result had no Test evidence. Additional facts: previous result did not pass.",
+            item.PlanningDetail);
     }
 
     [Fact]
@@ -106,6 +133,9 @@ public sealed class SelectiveRerunPlanningTests
             {
                 Assert.Equal(WorkDisposition.Execute, change.Disposition);
                 Assert.Equal(PlanningReason.Expired, change.PlanningReason);
+                Assert.Equal(
+                    "Executed because the previous Change result reached its validity deadline at 2026-08-17 10:00:37 UTC.",
+                    change.PlanningDetail);
             });
     }
 
@@ -148,7 +178,7 @@ public sealed class SelectiveRerunPlanningTests
     private static BranchResult Result(
         ReadinessCheck check,
         BranchOutcome outcome,
-        Guid evidenceId,
+        Guid? evidenceId,
         UtcInstant? validUntil) => new(
         Guid.NewGuid(),
         Id,
@@ -248,7 +278,9 @@ public sealed class SelectiveRerunReuseTests
         Assert.Equal(source.ValidUntil, reused.ValidUntil);
         Assert.Empty(reused.Attempts);
         Assert.Equal(source.Findings, reused.Findings);
-        Assert.Contains("safe", reused.PlanningDetail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            "Reused from round 1 because the evidence is unchanged and the previous passing result is still valid.",
+            reused.PlanningDetail);
     }
 
     [Theory]

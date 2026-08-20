@@ -65,7 +65,7 @@ internal sealed class ResultReuse(TimeProvider timeProvider)
             BranchOutcome.Passed,
             ExecutionDisposition.Reused,
             PlanningReason.StillCurrent,
-            $"Reused from round {source.RoundNumber} because evidence '{source.EvidenceId.Value}' and deadline {source.ValidUntil.Value.Value:O} were verified current, so reuse is safe.",
+            RoundPlanner.ExplainReuse(source.RoundNumber),
             source.EvidenceId,
             source.EvidenceKind,
             source.ValidUntil,

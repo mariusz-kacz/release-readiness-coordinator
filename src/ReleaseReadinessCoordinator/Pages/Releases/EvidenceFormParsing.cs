@@ -1,3 +1,4 @@
+using System.Globalization;
 using ReleaseReadinessCoordinator.Domain;
 
 namespace ReleaseReadinessCoordinator.Pages.Releases;
@@ -48,7 +49,7 @@ internal static class EvidenceFormParsing
             var fields = line.Split('|', StringSplitOptions.TrimEntries);
             if (fields.Length != 3
                 || fields.Take(2).Any(string.IsNullOrWhiteSpace)
-                || !DateTimeOffset.TryParse(fields[2], out var expiry))
+                || !TryParseExpiry(fields[2], out var expiry))
             {
                 throw new FormatException(
                     "Each security exception line must use finding-id|scope|expiry-with-offset.");
@@ -63,6 +64,15 @@ internal static class EvidenceFormParsing
 
         return exceptions;
     }
+
+    private static bool TryParseExpiry(string text, out DateTimeOffset expiry) =>
+        DateTimeOffset.TryParseExact(
+            text,
+            "yyyy-MM-dd HH:mm:ss 'UTC'",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out expiry)
+        || DateTimeOffset.TryParse(text, out expiry);
 
     private static IEnumerable<string> Lines(string? text) =>
         string.IsNullOrWhiteSpace(text)

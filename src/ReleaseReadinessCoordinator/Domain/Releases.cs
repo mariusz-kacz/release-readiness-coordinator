@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace ReleaseReadinessCoordinator.Domain;
@@ -17,6 +18,9 @@ public readonly record struct UtcInstant : IComparable<UtcInstant>
     }
 
     public DateTimeOffset Value { get; }
+
+    public string ToDisplayString() =>
+        Value.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
 
     public int CompareTo(UtcInstant other) => Value.CompareTo(other.Value);
 

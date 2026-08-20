@@ -364,7 +364,7 @@ public sealed class RemediateModel(
                     exceptions
                         .OrderBy(pair => pair.Key, StringComparer.Ordinal)
                         .Select(pair =>
-                            $"{pair.Key}|{pair.Value.Scope}|{pair.Value.ExpiresAt.Value:O}"));
+                            $"{pair.Key}|{pair.Value.Scope}|{pair.Value.ExpiresAt.ToDisplayString()}"));
 
     }
 

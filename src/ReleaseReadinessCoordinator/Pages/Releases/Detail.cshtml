@@ -100,7 +100,7 @@
                             <td><span class="result-outcome">@result.Outcome</span></td>
                             <td>
                                 <span class="d-block fw-semibold">@result.Disposition</span>
-                                <span class="small">@result.PlanningDetail</span>
+                                <span class="small">@DetailModel.FormatPlanningDetail(result.PlanningDetail)</span>
                                 @if (result.ReuseSourceRound.HasValue)
                                 {
                                     <a class="d-block small mt-1" href="#round-@result.ReuseSourceRound">View source round @result.ReuseSourceRound</a>
@@ -137,7 +137,7 @@
                                     <ul class="compact-list small mb-2">
                                         @foreach (var attempt in result.Attempts)
                                         {
-                                            <li>@attempt</li>
+                                            <li>@DetailModel.FormatAttempt(attempt)</li>
                                         }
                                     </ul>
                                 }
@@ -152,7 +152,7 @@
                                         @foreach (var finding in result.Findings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
                                         {
                                             <dt>@finding.Key</dt>
-                                            <dd>@finding.Value</dd>
+                                            <dd>@DetailModel.FormatText(finding.Value)</dd>
                                         }
                                     </dl>
                                 }
@@ -196,7 +196,7 @@
             <h2 id="decision-brief-heading">Deterministic decision brief</h2>
             @if (Model.LatestDecisionSnapshot is { } snapshot)
             {
-                <p>@snapshot.DecisionBrief</p>
+                <p>@DetailModel.FormatText(snapshot.DecisionBrief)</p>
                 <p class="small text-secondary mb-0">
                     Snapshot from round @snapshot.RoundNumber; earliest validity bound
                     <time datetime="@snapshot.EarliestValidityBound.Value.ToString("O")">@DetailModel.FormatInstant(snapshot.EarliestValidityBound)</time>.
@@ -233,36 +233,57 @@
     }
     else
     {
-        <div class="evidence-grid">
-            @foreach (var evidence in Model.Detail.EvidenceHistory)
+        var evidenceById = Model.Detail.EvidenceHistory.ToDictionary(evidence => evidence.Id);
+        var evidenceEvents = Model.Detail.EvidenceHistory
+            .GroupBy(evidence => evidence.RecordedAt)
+            .OrderByDescending(group => group.Key.Value);
+
+        <p id="evidence-history-order" class="text-secondary">Newest updates first. Evidence recorded at the same time is grouped into one event.</p>
+        <ol class="evidence-timeline mb-0" aria-describedby="evidence-history-order">
+            @foreach (var evidenceEvent in evidenceEvents)
             {
-                <article class="evidence-record" id="evidence-@evidence.Id">
-                    <header class="section-heading">
+                var eventEvidence = evidenceEvent.OrderBy(evidence => evidence.Kind).ToArray();
+                <li class="evidence-timeline-event">
+                    <header class="evidence-event-heading">
                         <div>
-                            <h3 class="h5 mb-1">@evidence.Kind evidence <span class="text-secondary">v@evidence.Version</span></h3>
-                            <code class="small text-break">@evidence.Id</code>
+                            <span class="d-block small text-secondary">Evidence update</span>
+                            <time class="fw-semibold" datetime="@evidenceEvent.Key.Value.ToString("O")">@DetailModel.FormatInstant(evidenceEvent.Key)</time>
                         </div>
-                        @if (Model.IsCurrentEvidence(evidence))
-                        {
-                            <span class="badge text-bg-primary">Current</span>
-                        }
-                        else
-                        {
-                            <span class="badge text-bg-secondary">Historical</span>
-                        }
+                        <span class="badge text-bg-light border">@eventEvidence.Length evidence @(eventEvidence.Length == 1 ? "record" : "records")</span>
                     </header>
-                    <dl class="evidence-facts">
-                        <div>
-                            <dt>Recorded</dt>
-                            <dd><time datetime="@evidence.RecordedAt.Value.ToString("O")">@DetailModel.FormatInstant(evidence.RecordedAt)</time></dd>
-                        </div>
-                        <div>
-                            <dt>Supersedes</dt>
-                            <dd>@(evidence.SupersedesEvidenceId?.ToString() ?? "None")</dd>
-                        </div>
-                        @switch (evidence)
+                    <div class="evidence-event-records">
+                        @foreach (var evidence in eventEvidence)
                         {
-                            case TestEvidenceRecord test:
+                            <article class="evidence-record" id="evidence-@evidence.Id" aria-labelledby="evidence-title-@evidence.Id">
+                                <header class="section-heading">
+                                    <div>
+                                        <h3 id="evidence-title-@evidence.Id" class="h5 mb-1">@evidence.Kind evidence</h3>
+                                        <div class="d-flex flex-wrap align-items-center gap-2">
+                                            <span class="fw-semibold">Version @evidence.Version</span>
+                                            @if (evidence.SupersedesEvidenceId is { } supersededId
+                                                && evidenceById.TryGetValue(supersededId, out var supersededEvidence))
+                                            {
+                                                <a class="small" href="#evidence-@supersededId">Replaces @supersededEvidence.Kind version @supersededEvidence.Version</a>
+                                            }
+                                            else
+                                            {
+                                                <span class="small text-secondary">Initial version</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    @if (Model.IsCurrentEvidence(evidence))
+                                    {
+                                        <span class="badge text-bg-primary">Current</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-secondary">Historical</span>
+                                    }
+                                </header>
+                                <dl class="evidence-facts">
+                                    @switch (evidence)
+                                    {
+                                        case TestEvidenceRecord test:
                                 <div>
                                     <dt>Test run version</dt>
                                     <dd>@(test.TestRunVersion ?? "Not supplied")</dd>
@@ -297,8 +318,8 @@
                                         }
                                     </dd>
                                 </div>
-                                break;
-                            case SecurityEvidenceRecord security:
+                                            break;
+                                        case SecurityEvidenceRecord security:
                                 <div>
                                     <dt>Scan version</dt>
                                     <dd>@(security.ScanVersion ?? "Not supplied")</dd>
@@ -340,8 +361,8 @@
                                         }
                                     </dd>
                                 </div>
-                                break;
-                            case ChangeEvidenceRecord change:
+                                            break;
+                                        case ChangeEvidenceRecord change:
                                 <div>
                                     <dt>Approved</dt>
                                     <dd>@(change.IsApproved.HasValue ? (change.IsApproved.Value ? "Yes" : "No") : "Not supplied")</dd>
@@ -361,12 +382,27 @@
                                         }
                                     </dd>
                                 </div>
-                                break;
+                                            break;
+                                    }
+                                </dl>
+                                <details class="evidence-audit small">
+                                    <summary>Audit identifiers</summary>
+                                    <dl class="mb-0 mt-2">
+                                        <dt>Evidence ID</dt>
+                                        <dd><code class="text-break">@evidence.Id</code></dd>
+                                        @if (evidence.SupersedesEvidenceId is { } previousEvidenceId)
+                                        {
+                                            <dt>Previous evidence ID</dt>
+                                            <dd><code class="text-break">@previousEvidenceId</code></dd>
+                                        }
+                                    </dl>
+                                </details>
+                            </article>
                         }
-                    </dl>
-                </article>
+                    </div>
+                </li>
             }
-        </div>
+        </ol>
     }
 </section>
 
@@ -416,7 +452,7 @@
                                         <th scope="row">@result.Check</th>
                                         <td>@result.Outcome <span class="d-block small text-secondary">@result.Disposition</span></td>
                                         <td>
-                                            @result.PlanningDetail
+                                            @DetailModel.FormatPlanningDetail(result.PlanningDetail)
                                             @if (result.ReuseSourceRound.HasValue)
                                             {
                                                 <a class="d-block small mt-1" href="#round-@result.ReuseSourceRound">View source round @result.ReuseSourceRound</a>
@@ -433,7 +469,7 @@
                                                 <ul class="compact-list mb-0">
                                                     @foreach (var attempt in result.Attempts)
                                                     {
-                                                        <li>@attempt</li>
+                                                        <li>@DetailModel.FormatAttempt(attempt)</li>
                                                     }
                                                 </ul>
                                             }
@@ -449,7 +485,7 @@
                                                     @foreach (var finding in result.Findings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
                                                     {
                                                         <dt>@finding.Key</dt>
-                                                        <dd>@finding.Value</dd>
+                                                        <dd>@DetailModel.FormatText(finding.Value)</dd>
                                                     }
                                                 </dl>
                                             }

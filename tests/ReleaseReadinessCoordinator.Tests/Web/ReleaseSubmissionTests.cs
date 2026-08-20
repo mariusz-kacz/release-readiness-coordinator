@@ -1,7 +1,16 @@
+using System.Net;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
 using ReleaseReadinessCoordinator.Pages.Releases;
@@ -14,6 +23,52 @@ public sealed class ReleaseSubmissionTests
 {
     private static readonly DateTimeOffset SubmittedAt =
         new(2026, 8, 16, 10, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Initial_evidence_sections_explain_availability_and_mark_required_fields()
+    {
+        await using var page = await RenderedPage.StartAsync();
+
+        var unavailableResponse = await page.Client.GetAsync("/");
+        var unavailableHtml = await unavailableResponse.Content.ReadAsStringAsync();
+        var availableResponse = await page.Client.GetAsync("/?fixture=complete");
+        var availableHtml = await availableResponse.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, unavailableResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, availableResponse.StatusCode);
+        Assert.Equal(3, Count(unavailableHtml, "Evidence available now"));
+        Assert.DoesNotContain("Supply initial", unavailableHtml, StringComparison.Ordinal);
+        Assert.Contains("data-evidence-availability", unavailableHtml, StringComparison.Ordinal);
+        Assert.Contains("id=\"test-evidence-fields\"", unavailableHtml, StringComparison.Ordinal);
+        Assert.Contains("id=\"security-evidence-fields\"", unavailableHtml, StringComparison.Ordinal);
+        Assert.Contains("id=\"change-evidence-fields\"", unavailableHtml, StringComparison.Ordinal);
+        Assert.Contains(
+            "id=\"change-evidence-fields\" class=\"row g-3 align-items-end\"",
+            unavailableHtml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("col-md-4 form-check ms-2 mt-5", unavailableHtml, StringComparison.Ordinal);
+        Assert.Contains("fields.hidden = !available", unavailableHtml, StringComparison.Ordinal);
+        Assert.Contains("input.disabled = !available", unavailableHtml, StringComparison.Ordinal);
+
+        string[] requiredInputs =
+        [
+            "Input.TestRunVersion",
+            "Input.TestCompletedAt",
+            "Input.TestPassRatePercent",
+            "Input.SecurityScanVersion",
+            "Input.SecurityScannedAt",
+            "Input.ChangeWindowStart",
+            "Input.ChangeWindowEnd",
+        ];
+        foreach (var requiredInput in requiredInputs)
+        {
+            Assert.Contains("disabled", InputTag(unavailableHtml, requiredInput), StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("required", InputTag(availableHtml, requiredInput), StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("aria-required=\"true\"", InputTag(availableHtml, requiredInput), StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.Contains("Required when evidence is available", availableHtml, StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task Complete_demo_fixture_persists_release_evidence_starts_workflow_and_redirects()
@@ -70,6 +125,23 @@ public sealed class ReleaseSubmissionTests
     }
 
     [Fact]
+    public async Task Submit_release_ignores_validation_from_the_continue_workflow_form()
+    {
+        await using var harness = await SubmissionHarness.CreateAsync();
+        var page = harness.CreatePage();
+        page.Input = NewModel.InputModel.FromFixture(DemoReleaseFixtures.Complete);
+        page.ModelState.AddModelError(
+            nameof(NewModel.ExistingReleaseId),
+            "The Release ID field is required.");
+
+        var result = await page.OnPostAsync(CancellationToken.None);
+
+        var redirect = Assert.IsType<RedirectToPageResult>(result);
+        Assert.Equal("/Releases/Detail", redirect.PageName);
+        Assert.NotNull(await harness.ReadAsync(DemoReleaseFixtures.Complete.ReleaseId));
+    }
+
+    [Fact]
     public async Task Omitted_evidence_is_persisted_as_no_current_record_for_each_missing_branch()
     {
         await using var harness = await SubmissionHarness.CreateAsync();
@@ -83,6 +155,37 @@ public sealed class ReleaseSubmissionTests
         Assert.NotNull(detail);
         Assert.Empty(detail.CurrentEvidence);
         Assert.NotNull(detail.WorkflowCorrelation);
+    }
+
+    [Fact]
+    public async Task Available_initial_evidence_requires_essential_fields_before_submission()
+    {
+        await using var harness = await SubmissionHarness.CreateAsync();
+        var page = harness.CreatePage();
+        page.Input = NewModel.InputModel.FromFixture(DemoReleaseFixtures.MissingEvidence) with
+        {
+            IncludeTestEvidence = true,
+            IncludeSecurityEvidence = true,
+            IncludeChangeEvidence = true,
+        };
+
+        var result = await page.OnPostAsync(CancellationToken.None);
+
+        Assert.IsType<PageResult>(result);
+        string[] requiredKeys =
+        [
+            "Input.TestRunVersion",
+            "Input.TestCompletedAt",
+            "Input.TestPassRatePercent",
+            "Input.SecurityScanVersion",
+            "Input.SecurityScannedAt",
+            "Input.ChangeWindowStart",
+            "Input.ChangeWindowEnd",
+        ];
+        Assert.All(
+            requiredKeys,
+            key => Assert.True(page.ModelState.ContainsKey(key), $"Missing validation for {key}."));
+        Assert.Null(await harness.ReadAsync(DemoReleaseFixtures.MissingEvidence.ReleaseId));
     }
 
     [Fact]
@@ -113,11 +216,10 @@ public sealed class ReleaseSubmissionTests
     }
 
     [Theory]
-    [InlineData("complete", "/Releases/Decision")]
-    [InlineData("missing", "/Releases/Remediate")]
-    public async Task Continue_existing_workflow_routes_to_its_active_interaction(
-        string fixtureName,
-        string expectedPage)
+    [InlineData("complete")]
+    [InlineData("missing")]
+    public async Task Continue_existing_workflow_opens_release_details(
+        string fixtureName)
     {
         var fixture = fixtureName == "complete"
             ? DemoReleaseFixtures.Complete
@@ -133,7 +235,7 @@ public sealed class ReleaseSubmissionTests
         var result = await page.OnGetAsync(fixture: null, CancellationToken.None);
 
         var redirect = Assert.IsType<RedirectToPageResult>(result);
-        Assert.Equal(expectedPage, redirect.PageName);
+        Assert.Equal("/Releases/Detail", redirect.PageName);
         Assert.Equal(fixture.ReleaseId, redirect.RouteValues!["releaseId"]);
     }
 
@@ -223,5 +325,96 @@ public sealed class ReleaseSubmissionTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private static int Count(string text, string value) =>
+        Regex.Matches(text, Regex.Escape(value), RegexOptions.IgnoreCase).Count;
+
+    private static string InputTag(string html, string name)
+    {
+        var match = Regex.Match(
+            html,
+            $"<(?:input|textarea)[^>]*name=\"{Regex.Escape(name)}\"[^>]*>",
+            RegexOptions.IgnoreCase);
+        Assert.True(match.Success, $"Input '{name}' was not rendered.\n{html}");
+        return match.Value;
+    }
+
+    private sealed class RenderedPage : IAsyncDisposable
+    {
+        private readonly WebApplication _application;
+        private readonly string _databasePath;
+        private readonly string _checkpointPath;
+
+        private RenderedPage(
+            WebApplication application,
+            HttpClient client,
+            string databasePath,
+            string checkpointPath)
+        {
+            _application = application;
+            _databasePath = databasePath;
+            _checkpointPath = checkpointPath;
+            Client = client;
+        }
+
+        public HttpClient Client { get; }
+
+        public static async Task<RenderedPage> StartAsync()
+        {
+            var databasePath = Path.Combine(Path.GetTempPath(), $"release-form-{Guid.NewGuid():N}.db");
+            var checkpointPath = Path.Combine(
+                Path.GetTempPath(), "release-readiness-tests", Guid.NewGuid().ToString("N"));
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+            {
+                ApplicationName = typeof(ReleaseSubmissionTests).Assembly
+                    .GetReferencedAssemblies()
+                    .Single(name => name.Name == "ReleaseReadinessCoordinator")
+                    .FullName,
+                EnvironmentName = "Development",
+            });
+            builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
+            builder.Logging.ClearProviders();
+            builder.Services.AddRazorPages();
+            builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
+            builder.Services.AddSingleton<TimeProvider>(new FixedTimeProvider(SubmittedAt));
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseSqlite($"Data Source={databasePath};Pooling=False"));
+            builder.Services.AddScoped<IApplicationDataService, ApplicationDataService>();
+            builder.Services.AddSingleton(_ => new CheckpointStoreCoordinator(
+                Directory.CreateDirectory(checkpointPath)));
+            builder.Services.AddScoped(serviceProvider => new ReleaseWorkflowService(
+                serviceProvider.GetRequiredService<IApplicationDataService>(),
+                serviceProvider.GetRequiredService<CheckpointStoreCoordinator>(),
+                serviceProvider.GetRequiredService<TimeProvider>()));
+            builder.Services.AddScoped(serviceProvider => new ReleaseSubmissionApplicationService(
+                serviceProvider.GetRequiredService<IApplicationDataService>(),
+                serviceProvider.GetRequiredService<ReleaseWorkflowService>(),
+                serviceProvider.GetRequiredService<TimeProvider>()));
+
+            var application = builder.Build();
+            application.UseDeveloperExceptionPage();
+            application.MapRazorPages();
+            await application.StartAsync();
+            var address = application.Services.GetRequiredService<IServer>()
+                .Features.Get<IServerAddressesFeature>()!
+                .Addresses.Single();
+            return new RenderedPage(
+                application,
+                new HttpClient { BaseAddress = new Uri(address) },
+                databasePath,
+                checkpointPath);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Client.Dispose();
+            await _application.DisposeAsync();
+            File.Delete(_databasePath);
+            if (Directory.Exists(_checkpointPath))
+            {
+                Directory.Delete(_checkpointPath, recursive: true);
+            }
+        }
     }
 }

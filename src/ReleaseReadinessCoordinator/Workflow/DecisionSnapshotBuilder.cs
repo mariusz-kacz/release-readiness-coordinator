@@ -87,13 +87,13 @@ internal sealed class DecisionSnapshotBuilder(
         brief.Append("Release ").Append(round.ReleaseId.Value)
             .Append(" passed all deterministic readiness checks in round ")
             .Append(round.RoundNumber.ToString(CultureInfo.InvariantCulture)).Append(".\n")
-            .Append("Earliest validity bound: ").Append(earliest.Value.ToString("O", CultureInfo.InvariantCulture)).Append(".\n");
+            .Append("Earliest validity bound: ").Append(earliest.ToDisplayString()).Append(".\n");
 
         foreach (var result in round.Results.OrderBy(result => result.Check))
         {
             brief.Append(result.Check).Append(": Passed; result ").Append(result.Id.ToString("D"))
                 .Append("; evidence ").Append(result.EvidenceId!.Value.ToString("D"))
-                .Append("; valid until ").Append(result.ValidUntil!.Value.Value.ToString("O", CultureInfo.InvariantCulture))
+                .Append("; valid until ").Append(result.ValidUntil!.Value.ToDisplayString())
                 .Append(".\n");
             foreach (var finding in result.Findings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
             {

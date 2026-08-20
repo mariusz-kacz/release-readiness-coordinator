@@ -121,13 +121,16 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
             PlanningReason.ExplicitlySelected =>
                 $"Executed because {check} was explicitly selected for rerun.",
             PlanningReason.EvidenceChanged =>
-                $"Executed because current {check} evidence changed from {Display(previous.EvidenceId)} to {Display(currentEvidenceId)}.",
+                ExplainEvidenceChange(
+                    check,
+                    previous.EvidenceId.HasValue,
+                    currentEvidenceId.HasValue),
             PlanningReason.PreviousResultNotPassed =>
                 $"Executed because the previous {check} result was {previous.Outcome}.",
             PlanningReason.Expired =>
-                $"Executed because the previous {check} result reached its validity deadline at {previous.ValidUntil!.Value.Value:O}.",
+                $"Executed because the previous {check} result reached its validity deadline at {previous.ValidUntil!.Value.ToDisplayString()}.",
             PlanningReason.StillCurrent =>
-                $"Reused from round {previous.RoundNumber} because evidence {Display(previous.EvidenceId)} and deadline {previous.ValidUntil!.Value.Value:O} are still current, so reuse is safe.",
+                ExplainReuse(previous.RoundNumber),
             _ => throw new InvalidOperationException($"Unsupported planning reason '{reason}'."),
         };
 
@@ -140,6 +143,31 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
         return additional.Count == 0
             ? primary
             : $"{primary} Additional facts: {string.Join(", ", additional)}.";
+    }
+
+    internal static string ExplainEvidenceChange(
+        ReadinessCheck check,
+        bool hadPreviousEvidence,
+        bool hasCurrentEvidence)
+    {
+        if (!hadPreviousEvidence)
+        {
+            return $"Executed because {check} evidence is now available. The previous result had no {check} evidence.";
+        }
+
+        return hasCurrentEvidence
+            ? $"Executed because the {check} evidence was updated since the previous result."
+            : $"Executed because the {check} evidence used by the previous result is no longer available.";
+    }
+
+    internal static string ExplainReuse(int sourceRound)
+    {
+        if (sourceRound <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceRound));
+        }
+
+        return $"Reused from round {sourceRound} because the evidence is unchanged and the previous passing result is still valid.";
     }
 
     private static void AddAdditional(
@@ -155,7 +183,4 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
         }
     }
 
-    private static string Display(Guid? evidenceId) => evidenceId.HasValue
-        ? $"'{evidenceId.Value}'"
-        : "<none>";
 }

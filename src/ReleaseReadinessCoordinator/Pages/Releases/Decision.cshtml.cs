@@ -61,7 +61,7 @@ public sealed class DecisionModel(IDecisionInteractionService interactionService
                 "Choose Approve or Reject.");
         }
 
-        RequireText(Input.Responder, nameof(Input.Responder), "Actor is required.");
+        RequireText(Input.Responder, nameof(Input.Responder), "Reviewer is required.");
         RequireText(Input.Comment, nameof(Input.Comment), "Comment is required.");
         if (!ModelState.IsValid)
         {

@@ -2,10 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using ReleaseReadinessCoordinator.Data;
 using ReleaseReadinessCoordinator.Domain;
+using ReleaseReadinessCoordinator.Readiness;
+using ReleaseReadinessCoordinator.Workflow;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace ReleaseReadinessCoordinator.Pages.Releases;
 
-public sealed class DetailModel(IApplicationDataService dataService) : PageModel
+public sealed partial class DetailModel(IApplicationDataService dataService) : PageModel
 {
     private static readonly HashSet<string> SafeFailureKinds = new(StringComparer.Ordinal)
     {
@@ -45,16 +49,61 @@ public sealed class DetailModel(IApplicationDataService dataService) : PageModel
         && current.Id == evidence.Id;
 
     public static string FormatInstant(UtcInstant instant) =>
-        instant.Value.ToString("yyyy-MM-dd HH:mm 'UTC'");
+        instant.ToDisplayString();
 
     public static string FormatInstant(UtcInstant? instant) =>
         instant.HasValue ? FormatInstant(instant.Value) : "Not available";
+
+    public static string FormatPlanningDetail(string detail)
+    {
+        ArgumentNullException.ThrowIfNull(detail);
+
+        var formatted = LegacyEvidenceChangeReason().Replace(detail, match =>
+        {
+            var check = Enum.Parse<ReadinessCheck>(match.Groups["check"].Value);
+            return RoundPlanner.ExplainEvidenceChange(
+                check,
+                match.Groups["previous"].Value != "<none>",
+                match.Groups["current"].Value != "<none>");
+        });
+
+        formatted = LegacyReuseReason().Replace(formatted, match =>
+            int.TryParse(match.Groups["round"].Value, out var sourceRound)
+                ? RoundPlanner.ExplainReuse(sourceRound)
+                : match.Value);
+
+        return FormatText(formatted);
+    }
+
+    public static string FormatText(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return EmbeddedIsoInstant().Replace(text, match =>
+            DateTimeOffset.TryParse(
+                match.Groups["instant"].Value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var instant)
+                ? new UtcInstant(instant.ToUniversalTime()).ToDisplayString()
+                : match.Value);
+    }
+
+    public static string FormatAttempt(string detail)
+    {
+        ArgumentNullException.ThrowIfNull(detail);
+
+        var match = LegacySuccessfulAttempt().Match(detail);
+        return match.Success
+            && int.TryParse(match.Groups["attempt"].Value, out var attempt)
+                ? EvidenceProviderRetry.SuccessfulAttemptDetail(attempt)
+                : detail;
+    }
 
     public static string SafeTimelineSummary(TimelineEntry entry)
     {
         if (entry.Kind is not TimelineEntryKind.WorkflowFailed)
         {
-            return entry.Summary;
+            return FormatPlanningDetail(entry.Summary);
         }
 
         const string prefix = "Workflow failed (";
@@ -71,6 +120,24 @@ public sealed class DetailModel(IApplicationDataService dataService) : PageModel
 
         return "Workflow failed.";
     }
+
+    [GeneratedRegex(
+        @"Executed because current (?<check>Test|Security|Change) evidence changed from (?<previous><none>|'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}') to (?<current><none>|'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')\.",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex LegacyEvidenceChangeReason();
+
+    [GeneratedRegex(
+        @"Reused from round (?<round>[1-9][0-9]*) because evidence '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' and deadline \S+ were verified current, so reuse is safe\.",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex LegacyReuseReason();
+
+    [GeneratedRegex(
+        @"(?<![0-9])(?<instant>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?(?:Z|[+-][0-9]{2}:[0-9]{2}))(?![0-9])",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex EmbeddedIsoInstant();
+
+    [GeneratedRegex(@"^Attempt (?<attempt>[1-9][0-9]*) succeeded\.$", RegexOptions.CultureInvariant)]
+    private static partial Regex LegacySuccessfulAttempt();
 
     public async Task<IActionResult> OnGetAsync(
         string releaseId,

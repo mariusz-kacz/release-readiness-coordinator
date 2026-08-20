@@ -146,6 +146,12 @@ public sealed class SecurityReadinessPolicyTests
         var evaluation = policy.Evaluate(Submission(), Evidence());
 
         Assert.Equal(expected, evaluation.Outcome);
+        if (ticksFromDeadline == 0)
+        {
+            Assert.Equal(
+                "Security evidence reached its validity deadline at 2026-08-18 08:00:00 UTC.",
+                evaluation.Findings["freshness"]);
+        }
     }
 
     private static SecurityReadinessPolicy PolicyAt(DateTimeOffset now) =>

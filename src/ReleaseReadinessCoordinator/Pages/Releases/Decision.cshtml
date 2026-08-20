@@ -29,7 +29,7 @@
 
 <section class="detail-section" aria-labelledby="decision-brief-heading">
     <h2 id="decision-brief-heading">Immutable decision brief</h2>
-    <p class="mb-0">@snapshot.DecisionBrief</p>
+    <p class="mb-0">@DetailModel.FormatText(snapshot.DecisionBrief)</p>
 </section>
 
 <section class="detail-section" aria-labelledby="snapshot-sources-heading">
@@ -84,9 +84,9 @@
 
     <fieldset>
         <legend class="h2">Record terminal decision</legend>
-        <p class="text-secondary"><span aria-hidden="true">*</span> Actor and comment are required. Approval and rejection are terminal.</p>
+        <p class="text-secondary"><span aria-hidden="true">*</span> Reviewer and comment are required. Approval and rejection are terminal.</p>
         <div class="mb-3">
-            <label asp-for="Input.Responder" class="form-label">Actor <span aria-hidden="true">*</span></label>
+            <label asp-for="Input.Responder" class="form-label">Reviewer <span aria-hidden="true">*</span></label>
             <input asp-for="Input.Responder" class="form-control" required autocomplete="name" />
             <span asp-validation-for="Input.Responder" class="text-danger"></span>
         </div>

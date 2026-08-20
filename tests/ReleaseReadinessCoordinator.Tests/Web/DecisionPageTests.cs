@@ -48,6 +48,9 @@ public sealed class DecisionPageTests
         Assert.Contains("name=\"Input.Decision\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.Responder\"", html, StringComparison.Ordinal);
         Assert.Contains("name=\"Input.Comment\"", html, StringComparison.Ordinal);
+        Assert.Contains("Reviewer and comment are required.", html, StringComparison.Ordinal);
+        Assert.Contains("Reviewer <span", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Actor", html, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"Input.SnapshotId\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"Input.WorkflowRequestId\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"Input.CorrelationToken\"", html, StringComparison.Ordinal);
@@ -153,7 +156,7 @@ public sealed class DecisionPageTests
     }
 
     [Fact]
-    public async Task Whitespace_actor_and_comment_rerender_without_submitting()
+    public async Task Whitespace_reviewer_and_comment_rerender_without_submitting()
     {
         var active = ActiveState();
         var service = new StubDecisionInteractionService(active);
@@ -173,6 +176,9 @@ public sealed class DecisionPageTests
         Assert.IsType<PageResult>(result);
         Assert.Same(active, page.State);
         Assert.False(page.ModelState.IsValid);
+        Assert.Contains(
+            page.ModelState["Input.Responder"]!.Errors,
+            error => error.ErrorMessage == "Reviewer is required.");
         Assert.Empty(service.Submissions);
     }
 
