@@ -43,7 +43,7 @@ There are no separate APIs, client applications, workers, queues, brokers, sched
 
 | Service | Lifetime | Reason |
 |---|---|---|
-| `TimeProvider.System` | Singleton | One injectable source of time for policies and workflow records |
+| `TimeProvider.System` | Singleton | One injectable source for workflow, interaction, and audit timestamps |
 | `AppDbContext` | Scoped | One EF Core unit of work per HTTP request scope |
 | `IApplicationDataService` | Scoped | Bounded business persistence over the scoped context |
 | `ReleaseWorkflowService` | Scoped | Coordinates one request's start, restore, or resume operation |
@@ -97,15 +97,15 @@ The two request ports are `remediation-request` and `approval-request`. Their ch
 
 ### Planning
 
-[RoundPlanner.cs](../src/ReleaseReadinessCoordinator/Workflow/RoundPlanner.cs) receives the previous branch results, current evidence IDs, current time, and any explicit selections. It produces one `BranchWorkItem` for each fixed check.
+[RoundPlanner.cs](../src/ReleaseReadinessCoordinator/Workflow/RoundPlanner.cs) receives the previous branch results, current evidence IDs, and any explicit selections. It produces one `BranchWorkItem` for each fixed check.
 
 The execution-reason precedence is:
 
-1. explicitly selected for rerun;
-2. current evidence identity changed;
-3. previous result did not pass;
-4. previous passing result reached its deadline;
-5. otherwise reuse the still-current result.
+1. no previous result → `InitialEvaluation`;
+2. explicitly selected for rerun → `ExplicitlySelected`;
+3. current evidence identity changed → `EvidenceChanged`;
+4. previous result did not pass → `PreviousResultNotPassed`;
+5. otherwise reuse the previous pass → `UnchangedEvidence`.
 
 This keeps the reason deterministic even when several conditions are true. Additional true conditions remain in the explanatory text.
 
@@ -115,8 +115,8 @@ This keeps the reason deterministic even when several conditions are true. Addit
 
 The policies are separate concrete components:
 
-- `TestPolicy.cs` checks version, pass rate, critical-suite failures, and freshness.
-- `SecurityPolicy.cs` checks version, findings, exception scope and expiry, and freshness.
+- `TestPolicy.cs` checks version, pass rate, and critical-suite failures.
+- `SecurityPolicy.cs` checks version, findings, and exception scope and expiry through the requested deployment window.
 - `ChangePolicy.cs` checks approval and deployment-window containment.
 
 ### Reuse path
@@ -125,18 +125,18 @@ The policies are separate concrete components:
 
 - belongs to the same release and branch;
 - comes from an earlier round;
-- passed and has evidence plus a validity deadline;
-- references the evidence record that is still current;
-- has not reached its deadline.
+- passed and references evidence;
+- references the exact evidence record currently selected for the branch;
+- was not explicitly selected for rerun.
 
-Reuse emits a new immutable result linked to the source result and source round. Historical results are never mutated.
+Reuse emits a new immutable result linked to the source result and source round. Historical results are never mutated, and elapsed time alone never invalidates a passing result.
 
 ### Fan-in and routing
 
 MAF provides the fixed three-source fan-in barrier. `ReadinessAggregator` additionally rejects duplicate branches or results attributed to the wrong executor. [RoundAggregator.cs](../src/ReleaseReadinessCoordinator/Workflow/RoundAggregator.cs) then persists the complete round and timeline entry.
 
 - Any non-pass result opens one remediation request containing all current problems.
-- Three passing results route to [DecisionSnapshotBuilder.cs](../src/ReleaseReadinessCoordinator/Workflow/DecisionSnapshotBuilder.cs), which captures the three result and evidence sources, earliest validity bound, and byte-stable decision brief.
+- Three passing results route to [DecisionSnapshotBuilder.cs](../src/ReleaseReadinessCoordinator/Workflow/DecisionSnapshotBuilder.cs), which captures the three result and evidence sources and byte-stable decision brief.
 
 ## HTTP and workflow lifecycles
 
@@ -169,6 +169,8 @@ MAF provides the fixed three-source fan-in barrier. `ReadinessAggregator` additi
 4. `HumanDecisionHandler` saves one terminal response, closes the active request, transitions the release to `Approved` or `Rejected`, and appends the timeline entry.
 5. The terminal response becomes the workflow output. Human decisions never route back to evaluation.
 
+The response approves or rejects the immutable point-in-time snapshot. The MVP does not compare current evidence identities or re-evaluate Change-window containment or Security-exception coverage when the response arrives.
+
 ## Domain model and invariants
 
 The domain uses immutable records and separate state dimensions instead of one overloaded status:
@@ -183,7 +185,7 @@ The domain uses immutable records and separate state dimensions instead of one o
 | Decision integrity | `DecisionSnapshot` |
 | Continuation and audit | `WorkflowCorrelationRecord`, `TimelineEntry` |
 
-Constructors enforce invariants such as positive round and evidence versions, UTC-only instants, one result per check, passing results requiring evidence and a deadline, and reused results requiring a valid source link. EF Core configuration repeats critical uniqueness, foreign-key, immutability, and state constraints at the persistence boundary.
+Constructors enforce invariants such as positive round and evidence versions, UTC-only instants, one result per check, passing results requiring evidence, and reused results requiring a valid source link. EF Core configuration repeats critical uniqueness, foreign-key, immutability, and state constraints at the persistence boundary.
 
 ## Persistence model
 
@@ -264,14 +266,14 @@ The test project mirrors the production concerns:
 
 | Test area | What it protects |
 |---|---|
-| `Domain/` | Constructor invariants, identity, freshness, and snapshot contracts |
+| `Domain/` | Constructor invariants, evidence identity, reuse, and snapshot contracts |
 | `Readiness/` | Policy boundaries, retry classification, and branch-result mapping |
 | `Workflow/` | Real graph topology, fan-in, selective reuse, external requests, checkpoint contracts, and restart recovery |
 | `Data/` | Schema constraints, immutability, replay safety, and release projections |
 | `Web/` | Razor handlers, validation, PRG behavior, rendered detail, and safe continuation feedback through Kestrel |
 | `Support/` | Temporary databases, application factories, scenario builders, and counting fakes |
 
-`TimeProvider` and data-backed provider interfaces make time and side effects controllable without changing production policy code. Workflow scenario tests use the real graph; counting fakes prove that reused branches perform no provider or policy work.
+`TimeProvider` keeps recorded workflow and audit timestamps controllable, while data-backed provider interfaces isolate side effects. Workflow scenario tests use the real graph; counting fakes prove that reused branches perform no provider or policy work.
 
 ## Where to make changes
 

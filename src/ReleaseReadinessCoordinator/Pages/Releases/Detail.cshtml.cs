@@ -67,11 +67,6 @@ public sealed partial class DetailModel(IApplicationDataService dataService) : P
                 match.Groups["current"].Value != "<none>");
         });
 
-        formatted = LegacyReuseReason().Replace(formatted, match =>
-            int.TryParse(match.Groups["round"].Value, out var sourceRound)
-                ? RoundPlanner.ExplainReuse(sourceRound)
-                : match.Value);
-
         return FormatText(formatted);
     }
 
@@ -147,11 +142,6 @@ public sealed partial class DetailModel(IApplicationDataService dataService) : P
         @"Executed because current (?<check>Test|Security|Change) evidence changed from (?<previous><none>|'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}') to (?<current><none>|'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')\.",
         RegexOptions.CultureInvariant)]
     private static partial Regex LegacyEvidenceChangeReason();
-
-    [GeneratedRegex(
-        @"Reused from round (?<round>[1-9][0-9]*) because evidence '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' and deadline \S+ were verified current, so reuse is safe\.",
-        RegexOptions.CultureInvariant)]
-    private static partial Regex LegacyReuseReason();
 
     [GeneratedRegex(
         @"(?<![0-9])(?<instant>[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,7})?(?:Z|[+-][0-9]{2}:[0-9]{2})| [0-9]{2}:[0-9]{2}:[0-9]{2} UTC))(?![0-9])",

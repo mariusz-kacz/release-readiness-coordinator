@@ -73,9 +73,9 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
         }.OfType<EvidenceRecord>().ToArray();
         var dependencies = new ReadinessWorkflowDependencies(
             TestProvider(testEvidence, testOutcome),
-            new TestReadinessPolicy(timeProvider),
+            new TestReadinessPolicy(),
             SecurityProvider(securityEvidence, securityOutcome),
-            new SecurityReadinessPolicy(timeProvider),
+            new SecurityReadinessPolicy(),
             ChangeProvider(changeEvidence, changeOutcome),
             new ChangeReadinessPolicy());
 
@@ -97,7 +97,7 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
                 provider,
                 policy,
                 new SimulatedSecurityEvidenceProvider(SecurityEvidence(submission)),
-                new SecurityReadinessPolicy(timeProvider),
+                new SecurityReadinessPolicy(),
                 new SimulatedChangeEvidenceProvider(ChangeEvidence(submission)),
                 new ChangeReadinessPolicy()));
     }
@@ -115,7 +115,7 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
             timeProvider,
             new ReadinessWorkflowDependencies(
                 new SimulatedTestEvidenceProvider(TestEvidence(submission)),
-                new TestReadinessPolicy(timeProvider),
+                new TestReadinessPolicy(),
                 provider,
                 policy,
                 new SimulatedChangeEvidenceProvider(ChangeEvidence(submission)),
@@ -135,9 +135,9 @@ internal sealed class ReadinessWorkflowTestHost : IAsyncDisposable
             timeProvider,
             new ReadinessWorkflowDependencies(
                 new SimulatedTestEvidenceProvider(TestEvidence(submission)),
-                new TestReadinessPolicy(timeProvider),
+                new TestReadinessPolicy(),
                 new SimulatedSecurityEvidenceProvider(SecurityEvidence(submission)),
-                new SecurityReadinessPolicy(timeProvider),
+                new SecurityReadinessPolicy(),
                 provider,
                 policy));
     }

@@ -9,9 +9,6 @@ namespace ReleaseReadinessCoordinator.Tests.Workflow;
 public sealed class SelectiveRerunPlanningTests
 {
     private static readonly ReleaseId Id = new("release-42");
-    private static readonly UtcInstant Now = new(
-        new DateTimeOffset(2026, 8, 17, 10, 0, 37, TimeSpan.Zero));
-
     [Fact]
     public void Initial_round_always_plans_one_execution_for_each_readiness_check()
     {
@@ -34,16 +31,12 @@ public sealed class SelectiveRerunPlanningTests
         bool explicitlySelected,
         bool evidenceChanged,
         BranchOutcome previousOutcome,
-        bool expired,
         PlanningReason expectedReason)
     {
         var source = Result(
             ReadinessCheck.Test,
             previousOutcome,
-            evidenceId: TestEvidenceId,
-            validUntil: previousOutcome is BranchOutcome.Passed
-                ? expired ? Now : Utc(2026, 8, 17, 11)
-                : null);
+            evidenceId: TestEvidenceId);
         var previous = PassingResults().ToDictionary(result => result.Check);
         previous[ReadinessCheck.Test] = source;
         var currentEvidence = CurrentEvidence();
@@ -60,11 +53,11 @@ public sealed class SelectiveRerunPlanningTests
         var item = Assert.Single(Planner().Plan(request), item => item.Check is ReadinessCheck.Test);
 
         Assert.Equal(
-            expectedReason is PlanningReason.StillCurrent ? WorkDisposition.Reuse : WorkDisposition.Execute,
+            expectedReason is PlanningReason.UnchangedEvidence ? WorkDisposition.Reuse : WorkDisposition.Execute,
             item.Disposition);
         Assert.Equal(expectedReason, item.PlanningReason);
         Assert.Equal(
-            expectedReason is PlanningReason.StillCurrent ? source.Id : null,
+            expectedReason is PlanningReason.UnchangedEvidence ? source.Id : null,
             item.ReuseSourceResultId);
     }
 
@@ -82,7 +75,7 @@ public sealed class SelectiveRerunPlanningTests
             {
                 Assert.Equal(WorkDisposition.Reuse, test.Disposition);
                 Assert.Equal(
-                    "Reused from round 1 because the evidence is unchanged and the previous passing result is still valid.",
+                    "Reused from round 1 because the exact evidence is unchanged and the previous result passed.",
                     test.PlanningDetail);
             },
             security =>
@@ -100,8 +93,7 @@ public sealed class SelectiveRerunPlanningTests
         previous[ReadinessCheck.Test] = Result(
             ReadinessCheck.Test,
             BranchOutcome.MissingEvidence,
-            evidenceId: null,
-            validUntil: null);
+            evidenceId: null);
 
         var item = Assert.Single(
             Planner().Plan(Request(previous.Values)),
@@ -114,42 +106,27 @@ public sealed class SelectiveRerunPlanningTests
     }
 
     [Fact]
-    public void Reaching_one_deadline_executes_only_the_expired_branch()
+    public void Unchanged_passing_results_are_reused_without_elapsed_time_as_an_input()
     {
-        var previous = PassingResults().ToDictionary(result => result.Check);
-        previous[ReadinessCheck.Change] = Result(
-            ReadinessCheck.Change,
-            BranchOutcome.Passed,
-            ChangeEvidenceId,
-            Now);
+        var work = Planner().Plan(Request(PassingResults()));
 
-        var work = Planner().Plan(Request(previous.Values));
-
-        Assert.Collection(
-            work,
-            test => Assert.Equal(WorkDisposition.Reuse, test.Disposition),
-            security => Assert.Equal(WorkDisposition.Reuse, security.Disposition),
-            change =>
-            {
-                Assert.Equal(WorkDisposition.Execute, change.Disposition);
-                Assert.Equal(PlanningReason.Expired, change.PlanningReason);
-                Assert.Equal(
-                    "Executed because the previous Change result reached its validity deadline at 2026-08-17 10:00:37 UTC.",
-                    change.PlanningDetail);
-            });
+        Assert.All(work, item =>
+        {
+            Assert.Equal(WorkDisposition.Reuse, item.Disposition);
+            Assert.Equal(PlanningReason.UnchangedEvidence, item.PlanningReason);
+        });
     }
 
-    public static TheoryData<bool, bool, BranchOutcome, bool, PlanningReason>
+    public static TheoryData<bool, bool, BranchOutcome, PlanningReason>
         PrioritizedPlanningCases() => new()
         {
-            { true, true, BranchOutcome.Blocked, false, PlanningReason.ExplicitlySelected },
-            { false, true, BranchOutcome.Blocked, false, PlanningReason.EvidenceChanged },
-            { false, false, BranchOutcome.Blocked, false, PlanningReason.PreviousResultNotPassed },
-            { false, false, BranchOutcome.Passed, true, PlanningReason.Expired },
-            { false, false, BranchOutcome.Passed, false, PlanningReason.StillCurrent },
+            { true, true, BranchOutcome.Blocked, PlanningReason.ExplicitlySelected },
+            { false, true, BranchOutcome.Blocked, PlanningReason.EvidenceChanged },
+            { false, false, BranchOutcome.Blocked, PlanningReason.PreviousResultNotPassed },
+            { false, false, BranchOutcome.Passed, PlanningReason.UnchangedEvidence },
         };
 
-    private static RoundPlanner Planner() => new(new FixedTimeProvider(Now.Value));
+    private static RoundPlanner Planner() => new();
 
     private static RoundPlanningRequest Request(
         IEnumerable<BranchResult> previousResults,
@@ -163,9 +140,9 @@ public sealed class SelectiveRerunPlanningTests
 
     private static BranchResult[] PassingResults() =>
     [
-        Result(ReadinessCheck.Test, BranchOutcome.Passed, TestEvidenceId, Utc(2026, 8, 17, 11)),
-        Result(ReadinessCheck.Security, BranchOutcome.Passed, SecurityEvidenceId, Utc(2026, 8, 17, 12)),
-        Result(ReadinessCheck.Change, BranchOutcome.Passed, ChangeEvidenceId, Utc(2026, 8, 17, 13)),
+        Result(ReadinessCheck.Test, BranchOutcome.Passed, TestEvidenceId),
+        Result(ReadinessCheck.Security, BranchOutcome.Passed, SecurityEvidenceId),
+        Result(ReadinessCheck.Change, BranchOutcome.Passed, ChangeEvidenceId),
     ];
 
     private static Dictionary<ReadinessCheck, Guid> CurrentEvidence() => new()
@@ -178,8 +155,7 @@ public sealed class SelectiveRerunPlanningTests
     private static BranchResult Result(
         ReadinessCheck check,
         BranchOutcome outcome,
-        Guid? evidenceId,
-        UtcInstant? validUntil) => new(
+        Guid? evidenceId) => new(
         Guid.NewGuid(),
         Id,
         roundNumber: 1,
@@ -190,7 +166,6 @@ public sealed class SelectiveRerunPlanningTests
         "Executed because this was the initial evaluation.",
         evidenceId,
         EvidenceKindFor(check),
-        validUntil,
         ["Attempt 1 succeeded."],
         new Dictionary<string, string> { ["ready"] = "Policy result." },
         reuseSourceResultId: null,
@@ -208,21 +183,11 @@ public sealed class SelectiveRerunPlanningTests
     private static readonly Guid SecurityEvidenceId = new("22222222-2222-2222-2222-222222222222");
     private static readonly Guid ChangeEvidenceId = new("33333333-3333-3333-3333-333333333333");
 
-    private static UtcInstant Utc(int year, int month, int day, int hour) =>
-        new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
-
-    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => utcNow;
-    }
 }
 
 public sealed class SelectiveRerunReuseTests
 {
     private static readonly ReleaseId Id = new("release-42");
-    private static readonly UtcInstant Now = Utc(2026, 8, 17, 10);
-    private static readonly UtcInstant ValidUntil = Utc(2026, 8, 17, 11);
-
     [Fact]
     public async Task Planned_result_identities_survive_execution_and_reuse_unchanged()
     {
@@ -275,27 +240,50 @@ public sealed class SelectiveRerunReuseTests
         Assert.Equal(source.Id, reused.ReuseSourceResultId);
         Assert.Equal(source.RoundNumber, reused.ReuseSourceRound);
         Assert.Equal(source.EvidenceId, reused.EvidenceId);
-        Assert.Equal(source.ValidUntil, reused.ValidUntil);
         Assert.Empty(reused.Attempts);
         Assert.Equal(source.Findings, reused.Findings);
         Assert.Equal(
-            "Reused from round 1 because the evidence is unchanged and the previous passing result is still valid.",
+            "Reused from round 1 because the exact evidence is unchanged and the previous result passed.",
             reused.PlanningDetail);
     }
 
-    [Theory]
-    [InlineData("evidence")]
-    [InlineData("deadline")]
-    public void Defensive_reuse_failure_is_a_technical_failure(string mismatch)
+    [Fact]
+    public void Defensive_evidence_identity_mismatch_is_a_technical_failure()
     {
-        var source = SourceResult(validUntil: mismatch == "deadline" ? Now : ValidUntil);
-        var evidenceId = mismatch == "evidence" ? Guid.NewGuid() : source.EvidenceId;
+        var source = SourceResult();
 
         Assert.Throws<InvalidOperationException>(() => Reuse().Create(
             Guid.NewGuid(),
             ReuseWorkItem(source),
             source,
-            evidenceId));
+            Guid.NewGuid()));
+    }
+
+    [Theory]
+    [InlineData("release")]
+    [InlineData("branch")]
+    [InlineData("round")]
+    [InlineData("outcome")]
+    [InlineData("linkage")]
+    public void Defensive_source_mismatch_is_a_technical_failure(string mismatch)
+    {
+        var source = mismatch switch
+        {
+            "release" => SourceResult(releaseId: new ReleaseId("another-release")),
+            "branch" => SourceResult(check: ReadinessCheck.Security),
+            "round" => SourceResult(roundNumber: 2),
+            "outcome" => SourceResult(outcome: BranchOutcome.Blocked),
+            _ => SourceResult(),
+        };
+        var workItem = ReuseWorkItem(
+            source,
+            mismatch == "linkage" ? Guid.NewGuid() : source.Id);
+
+        Assert.Throws<InvalidOperationException>(() => Reuse().Create(
+            Guid.NewGuid(),
+            workItem,
+            source,
+            source.EvidenceId));
     }
 
     [Fact]
@@ -336,31 +324,35 @@ public sealed class SelectiveRerunReuseTests
         Assert.Equal(1, policy.CallCount);
     }
 
-    private static ResultReuse Reuse() => new(new FixedTimeProvider(Now.Value));
+    private static ResultReuse Reuse() => new();
 
-    private static BranchWorkItem ReuseWorkItem(BranchResult source) => new(
+    private static BranchWorkItem ReuseWorkItem(
+        BranchResult source,
+        Guid? sourceResultId = null) => new(
         Id,
         roundNumber: 2,
         ReadinessCheck.Test,
         WorkDisposition.Reuse,
-        PlanningReason.StillCurrent,
+        PlanningReason.UnchangedEvidence,
         "Reused from round 1 because the result is safe to reuse.",
-        source.Id);
+        sourceResultId ?? source.Id);
 
     private static BranchResult SourceResult(
         Guid? evidenceId = null,
-        UtcInstant? validUntil = null) => new(
+        ReleaseId? releaseId = null,
+        ReadinessCheck check = ReadinessCheck.Test,
+        int roundNumber = 1,
+        BranchOutcome outcome = BranchOutcome.Passed) => new(
         Guid.NewGuid(),
-        Id,
-        roundNumber: 1,
-        ReadinessCheck.Test,
-        BranchOutcome.Passed,
+        releaseId ?? Id,
+        roundNumber,
+        check,
+        outcome,
         ExecutionDisposition.Executed,
         PlanningReason.InitialEvaluation,
         "Executed because this was the initial evaluation.",
         evidenceId ?? Evidence().Id,
-        EvidenceKind.Test,
-        validUntil ?? ValidUntil,
+        (EvidenceKind)(int)check,
         ["Attempt 1 succeeded."],
         new Dictionary<string, string> { ["ready"] = "Test evidence passed." },
         reuseSourceResultId: null,
@@ -387,11 +379,6 @@ public sealed class SelectiveRerunReuseTests
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
 
-    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => utcNow;
-    }
-
     private sealed class CountingProvider(TestEvidenceRecord evidence) : ITestEvidenceProvider
     {
         public int CallCount { get; private set; }
@@ -416,7 +403,6 @@ public sealed class SelectiveRerunReuseTests
             CallCount++;
             return new TestPolicyEvaluation(
                 BranchOutcome.Passed,
-                ValidUntil,
                 new Dictionary<string, string> { ["ready"] = "Test evidence passed." });
         }
     }

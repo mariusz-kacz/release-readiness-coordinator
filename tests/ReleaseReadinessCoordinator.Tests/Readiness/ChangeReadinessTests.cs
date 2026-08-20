@@ -27,18 +27,16 @@ public sealed class ChangeReadinessPolicyTests
                     : null));
 
         Assert.Equal(BranchOutcome.MissingEvidence, evaluation.Outcome);
-        Assert.Null(evaluation.ValidUntil);
     }
 
     [Fact]
-    public void Unapproved_change_maps_to_blocked_without_a_reuse_deadline()
+    public void Unapproved_change_maps_to_blocked()
     {
         var evaluation = Policy().Evaluate(
             Submission(),
             Evidence(isApproved: false, new UtcInterval(ApprovedStart, ApprovedEnd)));
 
         Assert.Equal(BranchOutcome.Blocked, evaluation.Outcome);
-        Assert.Null(evaluation.ValidUntil);
     }
 
     [Theory]
@@ -61,13 +59,10 @@ public sealed class ChangeReadinessPolicyTests
             Evidence(isApproved: true, new UtcInterval(ApprovedStart, ApprovedEnd)));
 
         Assert.Equal(expected, evaluation.Outcome);
-        Assert.Equal(
-            expected is BranchOutcome.Passed ? ApprovedEnd : null,
-            evaluation.ValidUntil);
     }
 
     [Fact]
-    public void Passing_change_uses_the_approved_window_end_as_its_reuse_deadline()
+    public void Passing_change_retains_approved_window_as_evidence_without_result_metadata()
     {
         var policy = Policy();
 
@@ -76,7 +71,6 @@ public sealed class ChangeReadinessPolicyTests
             Evidence(isApproved: true, new UtcInterval(ApprovedStart, ApprovedEnd)));
 
         Assert.Equal(BranchOutcome.Passed, evaluation.Outcome);
-        Assert.Equal(ApprovedEnd, evaluation.ValidUntil);
     }
 
     [Fact]
@@ -194,7 +188,6 @@ public sealed class ChangeReadinessWorkflowIntegrationTests
             CallCount++;
             return new ChangePolicyEvaluation(
                 BranchOutcome.Passed,
-                Utc(2026, 8, 17, 12),
                 new Dictionary<string, string>
                 {
                     ["ready"] = "Change evidence satisfies the policy.",

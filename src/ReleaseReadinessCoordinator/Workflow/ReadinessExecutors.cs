@@ -42,13 +42,12 @@ internal sealed partial class ReadinessPlanner : Executor
 
     public ReadinessPlanner(
         ReleaseId releaseId,
-        IApplicationDataService dataService,
-        TimeProvider timeProvider)
+        IApplicationDataService dataService)
         : base(ReleaseWorkflowExecutorIds.Planner)
     {
         _releaseId = releaseId ?? throw new ArgumentNullException(nameof(releaseId));
         _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
-        _planner = new RoundPlanner(timeProvider);
+        _planner = new RoundPlanner();
     }
 
     [MessageHandler(Send = [typeof(PlannedBranchWorkItem)])]
@@ -121,8 +120,7 @@ internal sealed partial class ReadinessBranchExecutor : Executor
     public ReadinessBranchExecutor(
         ReleaseSubmission submission,
         ITestEvidenceProvider provider,
-        ITestReadinessPolicy policy,
-        TimeProvider timeProvider)
+        ITestReadinessPolicy policy)
         : base(ReleaseWorkflowExecutorIds.Test)
     {
         _branch = ReadinessBranch.Test;
@@ -138,14 +136,13 @@ internal sealed partial class ReadinessBranchExecutor : Executor
                 provider,
                 policy.Evaluate,
                 cancellationToken);
-        _reuse = new ResultReuse(timeProvider);
+        _reuse = new ResultReuse();
     }
 
     public ReadinessBranchExecutor(
         ReleaseSubmission submission,
         ISecurityEvidenceProvider provider,
-        ISecurityReadinessPolicy policy,
-        TimeProvider timeProvider)
+        ISecurityReadinessPolicy policy)
         : base(ReleaseWorkflowExecutorIds.Security)
     {
         _branch = ReadinessBranch.Security;
@@ -161,14 +158,13 @@ internal sealed partial class ReadinessBranchExecutor : Executor
                 provider,
                 policy.Evaluate,
                 cancellationToken);
-        _reuse = new ResultReuse(timeProvider);
+        _reuse = new ResultReuse();
     }
 
     public ReadinessBranchExecutor(
         ReleaseSubmission submission,
         IChangeEvidenceProvider provider,
-        IChangeReadinessPolicy policy,
-        TimeProvider timeProvider)
+        IChangeReadinessPolicy policy)
         : base(ReleaseWorkflowExecutorIds.Change)
     {
         _branch = ReadinessBranch.Change;
@@ -184,7 +180,7 @@ internal sealed partial class ReadinessBranchExecutor : Executor
                 provider,
                 policy.Evaluate,
                 cancellationToken);
-        _reuse = new ResultReuse(timeProvider);
+        _reuse = new ResultReuse();
     }
 
     [MessageHandler]

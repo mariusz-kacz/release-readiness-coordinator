@@ -63,7 +63,6 @@ internal sealed class BranchResultRow : IOperationRow
     public string PlanningDetail { get; set; } = null!;
     public Guid? EvidenceId { get; set; }
     public EvidenceKind EvidenceKind { get; set; }
-    public DateTimeOffset? ValidUntilUtc { get; set; }
     public string AttemptsJson { get; set; } = null!;
     public string FindingsJson { get; set; } = null!;
     public Guid? ReuseSourceResultId { get; set; }
@@ -101,7 +100,6 @@ internal sealed class DecisionSnapshotRow : IOperationRow
     public string ReleaseId { get; set; } = null!;
     public Guid EvaluationRoundId { get; set; }
     public int RoundNumber { get; set; }
-    public DateTimeOffset EarliestValidityBoundUtc { get; set; }
     public string DecisionBrief { get; set; } = null!;
     public DateTimeOffset CreatedAtUtc { get; set; }
     public string OperationKey { get; set; } = null!;

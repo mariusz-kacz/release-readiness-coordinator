@@ -2,7 +2,9 @@
 
 This checklist implements `SPEC.md` without changing its authority. Complete tasks in dependency order and stop at each checkpoint for review. Commands assume repository root.
 
-Tasks completed before the 2026-08-19 single-release-identifier decision remain checked as historical implementation records. Task 21 supersedes their revision-bearing identity clauses and must complete before Tasks 22-27.
+Tasks completed before the 2026-08-19 single-release-identifier decision remain checked as historical implementation records. Task 21 supersedes their revision-bearing identity clauses and completed before Tasks 22-26.
+
+Tasks 1-26 also record a completed baseline that originally included generic result expiration through `ValidUntil`, `FreshnessDeadlines`, deadline-driven reruns, and a decision-snapshot validity bound. Their standing final-state wording below follows the revised specification; completed Task 27 removes those baseline contracts. This preserves the implementation history without presenting expiration as a current requirement.
 
 ## Task 1: Bootstrap the .NET 10 solution and command baseline
 
@@ -128,8 +130,8 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 **Acceptance criteria:**
 
 - [x] Readiness check, branch outcome, work disposition, execution disposition, and planning reason remain separate bounded concepts.
-- [x] Work items enforce valid Execute/Reuse reason combinations; results record exact evidence identity, optional deadline, findings, attempts, and valid reuse-source linkage.
-- [x] Passing results require evidence and a deadline, non-passing results have no deadline, and completed rounds contain exactly one result for each readiness check.
+- [x] Work items enforce valid Execute/Reuse reason combinations; results record exact evidence identity, findings, attempts, and valid reuse-source linkage.
+- [x] Passing results require evidence, and completed rounds contain exactly one result for each readiness check.
 
 **Verification:**
 
@@ -153,7 +155,7 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 **Acceptance criteria:**
 
-- [x] A decision snapshot contains exactly three passing source results, their evidence and evaluator identities, the earliest deadline, and one immutable deterministic brief.
+- [x] A decision snapshot contains exactly three passing source results, their evidence and evaluator identities, and one immutable deterministic brief.
 - [x] Human requests/responses preserve stable identities, terminal decision intent, actor, and UTC timestamps while keeping workflow correlation distinct from business history.
 - [x] Correlation and timeline records preserve stable identities, positive ordering, UTC timestamps, and distinct business/audit meanings.
 
@@ -173,20 +175,21 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 **Estimated scope:** Medium (3 files)
 
-## Task 7: Establish evidence-identity and freshness rules
+## Task 7: Establish evidence-identity rules
 
-**Description:** Define exact evidence-record identity as the branch change-detection contract and provide deterministic deadline calculation for time-limited Test and Security evidence.
+**Description:** Define exact immutable evidence-record identity as the branch change-detection contract. A replacement record receives a new identity even when its business facts are equal.
+
+**Historical note:** The completed baseline version of this task also introduced generic 24-hour freshness deadlines. That behavior is intentionally superseded and removed by Task 27; it is not part of the revised final contract.
 
 **Acceptance criteria:**
 
 - [x] A new evidence version has a new reuse identity even when its business facts equal the prior record, and only its matching branch identity changes.
-- [x] Test and Security deadlines use the 24-hour maximum with earlier evidence-specific bounds honored; boundary checks use an injected `TimeProvider`.
-- [x] Domain change detection uses evidence IDs, explicit selection, and `ValidUntil`; it has no fingerprint, input-generation, invalidation-map, or stored-validity-state contract.
+- [x] Current-evidence selection is explicit and branch-scoped; immutable historical evidence remains addressable by its original identity.
+- [x] Domain change detection uses exact evidence IDs and explicit selection; it has no fingerprint, hash, input-generation, invalidation-map, generation, TTL, or configurable validity contract.
 
 **Verification:**
 
 - [x] `dotnet test --no-build --filter "FullyQualifiedName~EvidenceIdentity"`
-- [x] `dotnet test --no-build --filter "FullyQualifiedName~Freshness"`
 - [x] `rg -n "Fingerprint|ResultInvalidation|ResultValidity|InputGeneration" src` returns no matches.
 - [x] `dotnet build --no-restore`
 
@@ -194,9 +197,9 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 **Files likely touched:**
 
-- `src/ReleaseReadinessCoordinator/Domain/FreshnessDeadlines.cs`
+- `src/ReleaseReadinessCoordinator/Domain/FreshnessDeadlines.cs` (historical baseline file; remove in Task 27)
 - `src/ReleaseReadinessCoordinator/Domain/Evaluations.cs`
-- `tests/ReleaseReadinessCoordinator.Tests/Domain/EvidenceIdentityAndFreshnessTests.cs`
+- `tests/ReleaseReadinessCoordinator.Tests/Domain/EvidenceIdentityTests.cs`
 
 **Estimated scope:** Medium (3 files)
 
@@ -204,7 +207,7 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 - [x] Tasks 4-7 acceptance criteria are met.
 - [x] Immutable releases/evidence, evaluation, decision, correlation, and audit contracts match the current specification.
-- [x] State dimensions remain separate, while change and freshness are represented by evidence ID and `ValidUntil`.
+- [x] State dimensions remain separate, while automatic change detection is represented by exact evidence identity.
 
 ## Task 8: Create the SQLite schema and migrations
 
@@ -265,7 +268,7 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 - [x] Tasks 4-9 acceptance criteria are met.
 - [x] Domain and data tests pass against temporary SQLite databases.
-- [x] State dimensions, evidence-identity rules, deadlines, immutability, constraints, and replay safety match the specification.
+- [x] State dimensions, evidence-identity rules, immutability, constraints, and replay safety match the specification.
 - [x] No generic repository, CQRS, event-sourcing, or speculative layer exists.
 
 ## Task 10: Deliver release submission and demo fixtures
@@ -302,9 +305,9 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 **Acceptance criteria:**
 
-- [x] Missing required facts map to `MissingEvidence`; version, pass-rate, critical-suite, or freshness misses map to `Blocked`; otherwise the result is `Passed`.
+- [x] Missing required facts map to `MissingEvidence`; version, pass-rate, or critical-suite misses map to `Blocked`; otherwise the result is `Passed`.
 - [x] Only typed known provider failures retry, with exactly three total immediate attempts; exhaustion returns `TransientFailure` with attempt details.
-- [x] Boundary tests cover 95%, exact version match, critical failures, and the validity deadline.
+- [x] Boundary tests cover 95%, exact version match, critical failures, and immutable completion timestamps as audit facts.
 
 **Verification:**
 
@@ -325,13 +328,13 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 ## Task 12: Deliver the Security readiness slice
 
-**Description:** Add simulated Security evidence retrieval and deterministic evaluation of version, critical/high findings, scoped exceptions, expiry through the release window, and evidence freshness.
+**Description:** Add simulated Security evidence retrieval and deterministic evaluation of version, critical/high findings, and scoped exceptions whose expiry covers the requested deployment window.
 
 **Acceptance criteria:**
 
 - [x] Missing scan/required exception facts, deterministic blockers, exhausted known transient failures, and passing evidence map to the exact four outcomes.
 - [x] Every high finding requires a matching in-scope exception valid through the entire requested release window; unresolved critical findings always block.
-- [x] Boundary tests cover exception scope/expiry, release-window changes, exact version match, and freshness.
+- [x] Boundary tests cover exception scope/expiry through the requested deployment window, release-window changes, and exact version match.
 
 **Verification:**
 
@@ -363,7 +366,7 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 **Acceptance criteria:**
 
 - [x] Missing approval or approved window maps to `MissingEvidence`; unapproved or out-of-window evidence maps to `Blocked`.
-- [x] `Passed` requires change approval and full containment in the approved window, and uses the approved-window end as `ValidUntil`; non-passing results have no reuse deadline.
+- [x] `Passed` requires change approval and full containment of the requested deployment window in the approved window; the approved-window end remains a business fact rather than result-validity metadata.
 - [x] Known source retry exhaustion maps to `TransientFailure`; invariant and programming failures remain technical failures.
 
 **Verification:**
@@ -392,19 +395,19 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 ## Task 14: Implement selective execution and safe reuse planning
 
-**Description:** Build the round planner that always emits three work items and chooses Execute/Reuse from prior outcome, current evidence identity, deadline, and explicit branch selection. Implement a separate defensive reuse path.
+**Description:** Build the round planner that always emits three work items and chooses Execute/Reuse from prior outcome, exact current evidence identity, and explicit branch selection. Implement a separate defensive reuse path.
 
 **Acceptance criteria:**
 
 - [x] Every reuse prerequisite and overlapping-condition case produces the correct disposition and the specification's single prioritized planning reason; additional detail remains explanatory text rather than new domain reason types.
-- [x] Reuse verifies exact evidence ID and deadline, emits a new result linked to source result/round, and explains why reuse is safe.
+- [x] Reuse verifies the source release, branch, earlier round, passing outcome, and exact current evidence ID; it emits a new result linked to the source result/round and explains why reuse is safe.
 - [x] Reused work makes zero provider or policy calls; failed defensive verification becomes a technical failure rather than silent execution.
 
 **Verification:**
 
 - [x] `dotnet test --no-build --filter "FullyQualifiedName~SelectiveRerun"`
 - [x] Counting fakes prove zero forbidden calls on reuse and expected calls on execution.
-- [x] Evidence- and time-driven tests replace or expire one branch without executing unrelated branches.
+- [x] Evidence-identity, previous-outcome, and explicit-selection tests execute the affected branch without executing unrelated unchanged previous passes.
 
 **Dependencies:** Tasks 7 and 11-13
 
@@ -447,11 +450,11 @@ Tasks completed before the 2026-08-19 single-release-identifier decision remain 
 
 ## Task 16: Build immutable snapshots and terminal MAF human decisions
 
-**Description:** For an all-pass round, persist one immutable `DecisionSnapshot` and deterministic brief, issue a typed MAF approval request, and persist one idempotent terminal approval/rejection delivered through the restored request. Simplify the prior decision contract by removing submitted snapshot/concurrency identities, stale-response persistence, freshness revalidation, and the approval-to-planner route.
+**Description:** For an all-pass round, persist one immutable `DecisionSnapshot` and deterministic brief, issue a typed MAF approval request, and persist one idempotent terminal approval/rejection delivered through the restored request. The response does not submit snapshot/concurrency identities, re-evaluate the point-in-time readiness decision, or route back to the planner.
 
 **Acceptance criteria:**
 
-- [x] Snapshot resolves three source results and their evidence IDs, earliest deadline, and immutable deterministic brief; the brief is never regenerated or hashed when the response arrives.
+- [x] Snapshot resolves three source results and their evidence IDs plus an immutable deterministic brief; the brief is never regenerated or hashed when the response arrives.
 - [x] While approval is pending, evidence/remediation/rerun changes are disallowed. The restored MAF request ID and response type are the continuation authority; invalid continuation is rejected before workflow resumption and creates no human-response record.
 - [x] A correctly resumed Approve/Reject response persists exactly one terminal decision, exact replay is harmless, conflicting response-ID reuse fails, and human decision has no edge back to the planner.
 
@@ -638,7 +641,7 @@ no migration or existing-data preservation is provided.
 
 **Acceptance criteria:**
 
-- [x] The page shows phase, three current results, evidence/findings, round history, planning reasons, `ValidUntil`, attempts, deterministic brief, active wait, and chronological timeline.
+- [x] The page shows phase, three current results, evidence/findings, round history, planning reasons, attempts, deterministic brief, active wait, and chronological timeline.
 - [x] Every round labels `Executed because ...` or `Reused from round N because ...` and links a reused result to its source.
 - [x] Technical and continuation failures are visible without exposing secrets or raw checkpoint contents.
 
@@ -765,7 +768,7 @@ no migration or existing-data preservation is provided.
 
 ## Task 25: Complete real-graph workflow scenario coverage
 
-**Description:** Consolidate the six required orchestration-risk scenarios into a small real-graph suite using deterministic providers, fake time, temporary SQLite, and temporary checkpoint directories. Assert business history and provider/policy call counts, not DTO trivia.
+**Description:** Consolidate the six required orchestration-risk scenarios into a small real-graph suite using deterministic providers, controlled audit timestamps, temporary SQLite, and temporary checkpoint directories. Assert business history and provider/policy call counts, not DTO trivia.
 
 **Acceptance criteria:**
 
@@ -802,7 +805,7 @@ no migration or existing-data preservation is provided.
 
 **Acceptance criteria:**
 
-- [x] `README.md` explains local setup, demo journeys, restart procedure, checkpoint trust/single-process constraints, and normal tests.
+- [x] `README.md` explains local setup, demo journeys, evidence-identity selective reuse, immutable-snapshot approval semantics, checkpoint trust/single-process constraints, and normal tests.
 - [x] `AGENTS.md` contains accurate paths/commands, and a final acceptance matrix maps every `SPEC.md` criterion to executable or manual evidence.
 - [x] Final review finds no prohibited component, generic platform, silent spec deviation, secret, generated runtime data, or unrelated change.
 
@@ -833,3 +836,70 @@ no migration or existing-data preservation is provided.
 - [x] All 13 MVP acceptance criteria have recorded evidence.
 - [x] The solution remains one bounded deployable application with one focused test project.
 - [x] The owner has reviewed and approved the completed implementation before merge or deployment.
+
+## Task 27: Remove generic result expiration and simplify evidence-driven reuse
+
+**Description:** Apply the post-MVP scope simplification across domain, readiness policies, workflow planning/reuse, persistence, Razor UI, tests, and documentation. Remove generic elapsed-time invalidation completely. A previous passing result remains reusable when it belongs to the correct release and branch, comes from an earlier round, references the exact evidence record that remains current, and was not explicitly selected for rerun. Preserve intrinsic Change-window containment, Security-exception coverage, immutable evidence timestamps, workflow/audit timestamps, fixed MAF topology, durable waits, and restart reconciliation. Search for actual references during implementation; the areas listed below are expected impact, not an exhaustive replacement checklist.
+
+**Acceptance criteria:**
+
+- [x] Remove generic validity contracts from branch and policy results, including `BranchResult.ValidUntil`, policy-evaluation validity fields, `FreshnessDeadlines`, `PlanningReason.Expired`, and `DecisionSnapshot.EarliestValidityBound`; rename `PlanningReason.StillCurrent` to `UnchangedEvidence` and update invariant/error/display language.
+- [x] `RoundPlanner` uses exactly this precedence: no previous result → `InitialEvaluation`; explicit selection → `ExplicitlySelected`; different current evidence ID → `EvidenceChanged`; previous non-pass → `PreviousResultNotPassed`; otherwise reuse → `UnchangedEvidence`. Elapsed time is not an input.
+- [x] Defensive reuse verifies same release and branch, an earlier source round, a passing source outcome, exact current evidence identity, and valid source-result/source-round linkage; reuse makes zero provider and policy calls and fails closed on an evidence-ID or source mismatch.
+- [x] Test and Security policies no longer calculate or enforce generic age limits. Change no longer exports its approved-window end as generic result validity. Change approval/window containment and Security exception scope/coverage through the requested deployment window remain unchanged and fully tested.
+- [x] Remove obsolete result/snapshot validity columns, EF mappings, projections, brief content, and Razor displays. Recreate/reset disposable local SQLite and checkpoint data instead of adding migrations, compatibility fields, dual reads, or adapters for old demo data.
+- [x] Delete tests whose only purpose is generic expiration and simplify fixtures/builders that supplied result-validity values. Keep or strengthen focused tests for initial execution, explicit rerun, changed evidence execution, previous non-pass execution, unchanged-pass reuse, source linkage, zero provider/policy calls, defensive evidence-ID mismatch, Change containment, Security exception coverage, real-graph remediation/selective reuse, and restart recovery.
+- [x] Preserve the immutable point-in-time approval model: no approval-time revalidation, no human-decision route back to the planner, no topology redesign, and no change to checkpoint/SQLite authority, reconciliation, or idempotency safeguards.
+- [x] Update all user and maintainer documentation to the evidence-identity model. Introduce no fingerprint, hash, generation, invalidation map, TTL, configurable policy, background check, scheduler, compatibility layer, additional branch, LLM, generic abstraction, or replacement freshness mechanism.
+
+**Implementation sequence:**
+
+1. Update domain contracts and focused invariant tests, including the planning-reason rename and removal of result/snapshot validity properties.
+2. Simplify Test, Security, and Change policy outputs, then update `RoundPlanner` and `ResultReuse` without changing the three-way graph.
+3. Remove obsolete persistence columns/mappings and reset disposable local state; update projections and decision-brief construction.
+4. Remove generic validity content from Razor pages and explanations while retaining business-window, exception, and audit timestamps.
+5. Delete or rewrite expiration-specific tests, run the focused evidence-identity and temporal-business-rule suites, then run the real graph, restart, web, and complete quality gates.
+6. Search the complete repository and reconcile every remaining expiration/time term with the revised specification before marking the task complete.
+
+**Verification:**
+
+- [x] `rg -n "ValidUntil|PlanningReason\.Expired|FreshnessDeadlines|EarliestValidityBound|24-hour|24 hour" src tests` returns no generic result-expiration contract.
+- [x] `rg -n "TimeProvider" src/ReleaseReadinessCoordinator/Workflow/RoundPlanner.cs src/ReleaseReadinessCoordinator/Workflow/ResultReuse.cs src/ReleaseReadinessCoordinator/Readiness/TestPolicy.cs src/ReleaseReadinessCoordinator/Readiness/SecurityPolicy.cs` returns no matches; clocks used for audit/workflow timestamps elsewhere remain.
+- [x] `dotnet restore`
+- [x] `dotnet build --no-restore`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~EvidenceIdentity|FullyQualifiedName~SelectiveRerun|FullyQualifiedName~TestReadiness|FullyQualifiedName~SecurityReadiness|FullyQualifiedName~ChangeReadiness|FullyQualifiedName~DecisionContract|FullyQualifiedName~DecisionIntegrity"`
+- [x] `dotnet test --no-build --filter "FullyQualifiedName~WorkflowScenario|FullyQualifiedName~RestartRecovery|FullyQualifiedName~CheckpointContract|FullyQualifiedName~ReleaseReadinessCoordinator.Tests.Web"`
+- [x] `dotnet test --no-build`
+- [x] `dotnet format --verify-no-changes`
+- [x] Run the blocker/remediation journey and confirm unchanged passing evidence is reused with source linkage and no generic validity/deadline display.
+
+**Dependencies:** Task 26 and the completed MVP baseline
+
+**Schema decision:** Local portfolio data is disposable. Delete and recreate the SQLite database and matching workflow-checkpoint directory after the persisted-shape change; do not preserve old result/snapshot validity fields or introduce migration compatibility machinery.
+
+**Likely affected areas:**
+
+- `src/ReleaseReadinessCoordinator/Domain/Evaluations.cs`
+- `src/ReleaseReadinessCoordinator/Domain/Decisions.cs`
+- `src/ReleaseReadinessCoordinator/Domain/FreshnessDeadlines.cs` (remove)
+- `src/ReleaseReadinessCoordinator/Readiness/`
+- `src/ReleaseReadinessCoordinator/Workflow/RoundPlanner.cs`
+- `src/ReleaseReadinessCoordinator/Workflow/ResultReuse.cs`
+- `src/ReleaseReadinessCoordinator/Workflow/DecisionSnapshotBuilder.cs`
+- `src/ReleaseReadinessCoordinator/Data/`
+- `src/ReleaseReadinessCoordinator/Pages/Releases/`
+- `tests/ReleaseReadinessCoordinator.Tests/Domain/`
+- `tests/ReleaseReadinessCoordinator.Tests/Readiness/`
+- `tests/ReleaseReadinessCoordinator.Tests/Workflow/`
+- `tests/ReleaseReadinessCoordinator.Tests/Web/`
+- `SPEC.md`, `README.md`, `docs/`, and `tasks/`
+
+**Estimated scope:** Large cross-cutting simplification intentionally owned by one bounded post-MVP task; implement in the ordered stages above without decomposing it into replacement feature work.
+
+## Checkpoint G: Revised final contract
+
+- [x] Task 27 acceptance criteria and the standing Definition of Done are satisfied.
+- [x] Evidence identity, previous outcome, and explicit selection are the only selective-reuse inputs.
+- [x] Change-window containment and Security-exception coverage remain intact.
+- [x] The complete quality gate passes against clean disposable local state.
+- [x] Specification, documentation, acceptance evidence, plan, and checklist describe one consistent evidence-driven reuse model.

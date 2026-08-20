@@ -152,7 +152,6 @@ public sealed class DomainInvariantTests
             () => new DecisionSnapshot(
                 Guid.NewGuid(), Id, Guid.NewGuid(), roundNumber: 2,
                 sources,
-                Utc(2026, 8, 15, 8),
                 "All deterministic checks passed.",
                 Utc(2026, 8, 14, 9)));
     }
@@ -219,12 +218,11 @@ public sealed class DomainInvariantTests
             outcome,
             disposition,
             disposition is ExecutionDisposition.Reused
-                ? PlanningReason.StillCurrent
+                ? PlanningReason.UnchangedEvidence
                 : PlanningReason.InitialEvaluation,
             planningDetail,
             evidenceId: Guid.NewGuid(),
             evidenceKind,
-            validUntil: outcome is BranchOutcome.Passed ? Utc(2026, 8, 15, 8) : null,
             attempts: ["Evidence evaluated."],
             findings: new Dictionary<string, string> { ["ready"] = "The deterministic policy passed." },
             reuseSourceResultId,

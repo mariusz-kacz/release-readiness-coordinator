@@ -18,7 +18,7 @@ public sealed class ReleaseDetailPageTests
         new(new DateTimeOffset(2026, 8, 19, 8, 0, 0, TimeSpan.Zero));
     private static readonly UtcInstant CompletedAt =
         new(new DateTimeOffset(2026, 8, 19, 8, 5, 0, TimeSpan.Zero));
-    private static readonly UtcInstant ValidUntil =
+    private static readonly UtcInstant LaterAt =
         new(new DateTimeOffset(2026, 8, 20, 8, 0, 0, TimeSpan.Zero));
 
     [Fact]
@@ -26,26 +26,13 @@ public sealed class ReleaseDetailPageTests
     {
         var instant = new UtcInstant(
             new DateTimeOffset(2026, 8, 21, 8, 0, 37, TimeSpan.Zero));
-        const string legacyDetail =
-            "Executed because the previous Change result reached its validity deadline at 2026-08-21T08:00:37.0000000+00:00.";
         var local = LocalDisplay(instant.Value);
 
         Assert.Equal(local, DetailModel.FormatInstant(instant));
         Assert.Equal(
-            $"Executed because the previous Change result reached its validity deadline at {local}.",
-            DetailModel.FormatPlanningDetail(legacyDetail));
-        Assert.Equal(
-            $"Test evidence reached its validity deadline at {local}.",
+            $"Approval recorded at {local}.",
             DetailModel.FormatText(
-                "Test evidence reached its validity deadline at 2026-08-21T08:00:37.0000000+00:00."));
-        Assert.Equal(
-            $"Earliest validity bound: {local}.",
-            DetailModel.FormatText(
-                "Earliest validity bound: 2026-08-21T08:00:37.0000000+00:00."));
-        Assert.Equal(
-            $"Earliest validity bound: {local}.",
-            DetailModel.FormatText(
-                "Earliest validity bound: 2026-08-21 08:00:37 UTC."));
+                "Approval recorded at 2026-08-21 08:00:37 UTC."));
     }
 
     [Fact]
@@ -83,7 +70,8 @@ public sealed class ReleaseDetailPageTests
         Assert.Contains("Security", html, StringComparison.Ordinal);
         Assert.Contains("Change", html, StringComparison.Ordinal);
         Assert.Contains("Passed", html, StringComparison.Ordinal);
-        Assert.Contains("Valid until", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Valid until", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("validity bound", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(LocalDisplay(SubmittedAt.Value), html, StringComparison.Ordinal);
         Assert.DoesNotContain(" UTC", html, StringComparison.Ordinal);
         Assert.Contains("provider attempt 1 succeeded", html, StringComparison.Ordinal);
@@ -106,7 +94,7 @@ public sealed class ReleaseDetailPageTests
         Assert.DoesNotContain("v@evidence.Version", html, StringComparison.Ordinal);
         Assert.Contains("Evaluation rounds", html, StringComparison.Ordinal);
         Assert.Contains("Executed because initial evaluation", html, StringComparison.Ordinal);
-        Assert.Contains("Reused from round 1 because the passing result is still current", html, StringComparison.Ordinal);
+        Assert.Contains("Reused from round 1 because the exact evidence is unchanged and the previous result passed", html, StringComparison.Ordinal);
         Assert.Contains("href=\"#round-1\"", html, StringComparison.Ordinal);
         Assert.Contains("Ready for an immutable approval decision.", html, StringComparison.Ordinal);
         Assert.Contains("Active wait", html, StringComparison.Ordinal);
@@ -123,37 +111,16 @@ public sealed class ReleaseDetailPageTests
     }
 
     [Fact]
-    public async Task Historical_workflow_explanations_render_clearly_without_legacy_messages()
+    public async Task Historical_evidence_change_explanations_render_clearly_without_internal_identifiers()
     {
         var projection = CreateApprovalProjection();
         var latestRound = projection.EvaluationRounds[^1];
         var existingChange = Assert.Single(
             latestRound.Results,
             result => result.Check is ReadinessCheck.Change);
-        var existingSecurity = Assert.Single(
-            latestRound.Results,
-            result => result.Check is ReadinessCheck.Security);
         var evidenceId = new Guid("ce69ca46-bfa8-4488-83ae-ef4e6902827f");
         var legacyDetail =
             $"Executed because current Change evidence changed from <none> to '{evidenceId}'. Additional facts: previous result did not pass.";
-        var legacyReuseDetail =
-            $"Reused from round {existingSecurity.ReuseSourceRound} because evidence '{existingSecurity.EvidenceId}' and deadline {existingSecurity.ValidUntil!.Value.Value:O} were verified current, so reuse is safe.";
-        var historicalSecurity = new BranchResult(
-            Guid.NewGuid(),
-            existingSecurity.ReleaseId,
-            existingSecurity.RoundNumber,
-            existingSecurity.Check,
-            existingSecurity.Outcome,
-            existingSecurity.Disposition,
-            existingSecurity.PlanningReason,
-            legacyReuseDetail,
-            existingSecurity.EvidenceId,
-            existingSecurity.EvidenceKind,
-            existingSecurity.ValidUntil,
-            existingSecurity.Attempts,
-            existingSecurity.Findings,
-            existingSecurity.ReuseSourceResultId,
-            existingSecurity.ReuseSourceRound);
         var historicalChange = new BranchResult(
             Guid.NewGuid(),
             projection.Release.Submission.ReleaseId,
@@ -165,7 +132,6 @@ public sealed class ReleaseDetailPageTests
             legacyDetail,
             evidenceId,
             EvidenceKind.Change,
-            existingChange.ValidUntil,
             ["Attempt 1 succeeded."],
             existingChange.Findings,
             reuseSourceResultId: null,
@@ -179,14 +145,13 @@ public sealed class ReleaseDetailPageTests
             latestRound.Results.Select(result =>
                 result.Check switch
                 {
-                    ReadinessCheck.Security => historicalSecurity,
                     ReadinessCheck.Change => historicalChange,
                     _ => result,
                 }));
         var historicalTimeline = projection.Timeline
             .Select(entry => entry.Kind is TimelineEntryKind.EvaluationCompleted
                 ? Timeline(entry.ReleaseId, entry.Sequence, entry.Kind,
-                    $"Round 2 completed. Security: {legacyReuseDetail} Change: {legacyDetail}", entry.OccurredAt)
+                    $"Round 2 completed. Change: {legacyDetail}", entry.OccurredAt)
                 : entry)
             .ToImmutableArray();
         projection = projection with
@@ -201,13 +166,9 @@ public sealed class ReleaseDetailPageTests
 
         const string clearDetail =
             "Executed because Change evidence is now available. The previous result had no Change evidence. Additional facts: previous result did not pass.";
-        const string clearReuseDetail =
-            "Reused from round 1 because the evidence is unchanged and the previous passing result is still valid.";
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(3, Count(html, clearDetail));
         Assert.DoesNotContain(legacyDetail, html, StringComparison.Ordinal);
-        Assert.Equal(3, Count(html, clearReuseDetail));
-        Assert.DoesNotContain(legacyReuseDetail, html, StringComparison.Ordinal);
         Assert.Equal(2, Count(html, "Check completed on the first attempt."));
         Assert.DoesNotContain("Attempt 1 succeeded.", html, StringComparison.Ordinal);
     }
@@ -304,7 +265,7 @@ public sealed class ReleaseDetailPageTests
     {
         var waiting = CreateApprovalProjection();
         var approvalRequest = Assert.Single(waiting.HumanDecisionRequests);
-        var respondedAt = new UtcInstant(ValidUntil.Value.AddMinutes(1));
+        var respondedAt = new UtcInstant(LaterAt.Value.AddMinutes(1));
         var responseRecord = new PersistedHumanResponse(
             waiting.Release.Submission.ReleaseId,
             approvalRequest.Id,
@@ -345,7 +306,7 @@ public sealed class ReleaseDetailPageTests
             new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>());
         var changeEvidence = new ChangeEvidenceRecord(
             Guid.NewGuid(), releaseId, 1, SubmittedAt, null, true,
-            new UtcInterval(SubmittedAt, ValidUntil));
+            new UtcInterval(SubmittedAt, LaterAt));
 
         var roundOneResults = new[]
         {
@@ -362,12 +323,12 @@ public sealed class ReleaseDetailPageTests
             ReusedResult(releaseId, 2, roundOneResults[2]),
         };
         var roundTwo = new EvaluationRound(
-            Guid.NewGuid(), releaseId, 2, CompletedAt, ValidUntil, roundTwoResults);
+            Guid.NewGuid(), releaseId, 2, CompletedAt, LaterAt, roundTwoResults);
         var snapshot = new DecisionSnapshot(
             Guid.NewGuid(), releaseId, roundTwo.Id, 2, roundTwoResults,
-            ValidUntil, "Ready for an immutable approval decision.", ValidUntil);
+            "Ready for an immutable approval decision.", LaterAt);
         var approvalRequest = new HumanDecisionRequest(
-            Guid.NewGuid(), releaseId, snapshot.Id, ValidUntil);
+            Guid.NewGuid(), releaseId, snapshot.Id, LaterAt);
 
         return CreateProjection(
             ProcessPhase.WaitingForApproval,
@@ -387,12 +348,12 @@ public sealed class ReleaseDetailPageTests
                 "workflow-request-secret",
                 approvalRequest.Id,
                 WorkflowRequestKind.Approval,
-                ValidUntil),
+                LaterAt),
             timeline:
             [
                 Timeline(releaseId, 1, TimelineEntryKind.ReleaseSubmitted, "Release submitted", SubmittedAt),
                 Timeline(releaseId, 2, TimelineEntryKind.EvaluationCompleted, "Round 2 completed", CompletedAt),
-                Timeline(releaseId, 3, TimelineEntryKind.ApprovalRequested, "Approval requested", ValidUntil),
+                Timeline(releaseId, 3, TimelineEntryKind.ApprovalRequested, "Approval requested", LaterAt),
             ]);
     }
 
@@ -411,7 +372,7 @@ public sealed class ReleaseDetailPageTests
             releaseId,
             "payments-api",
             "2026.08.19",
-            new UtcInterval(SubmittedAt, ValidUntil),
+            new UtcInterval(SubmittedAt, LaterAt),
             SubmittedAt);
         var release = phase == ProcessPhase.Evaluating
             ? Release.Create(submission)
@@ -446,7 +407,6 @@ public sealed class ReleaseDetailPageTests
             planningDetail,
             evidenceId,
             (EvidenceKind)(int)check,
-            ValidUntil,
             ["provider attempt 1 succeeded"],
             findingKey is null
                 ? new Dictionary<string, string>()
@@ -461,11 +421,10 @@ public sealed class ReleaseDetailPageTests
         new(
             Guid.NewGuid(), releaseId, round, source.Check, BranchOutcome.Passed,
             ExecutionDisposition.Reused,
-            PlanningReason.StillCurrent,
-            $"Reused from round {source.RoundNumber} because the passing result is still current",
+            PlanningReason.UnchangedEvidence,
+            $"Reused from round {source.RoundNumber} because the exact evidence is unchanged and the previous result passed",
             source.EvidenceId,
             source.EvidenceKind,
-            source.ValidUntil,
             [],
             source.Findings,
             source.Id,

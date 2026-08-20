@@ -489,7 +489,6 @@ public sealed partial class ApplicationDataService
         PlanningDetail = result.PlanningDetail,
         EvidenceId = result.EvidenceId,
         EvidenceKind = result.EvidenceKind,
-        ValidUntilUtc = result.ValidUntil?.Value,
         AttemptsJson = JsonSerializer.Serialize(result.Attempts, JsonOptions),
         FindingsJson = SerializeDictionary(result.Findings),
         ReuseSourceResultId = result.ReuseSourceResultId,
@@ -508,7 +507,6 @@ public sealed partial class ApplicationDataService
         row.PlanningDetail,
         row.EvidenceId,
         row.EvidenceKind,
-        ToInstant(row.ValidUntilUtc),
         Deserialize<string[]>(row.AttemptsJson),
         DeserializeDictionary(row.FindingsJson),
         row.ReuseSourceResultId,
@@ -596,7 +594,6 @@ public sealed partial class ApplicationDataService
             ReleaseId = snapshot.ReleaseId.Value,
             EvaluationRoundId = snapshot.EvaluationRoundId,
             RoundNumber = snapshot.RoundNumber,
-            EarliestValidityBoundUtc = snapshot.EarliestValidityBound.Value,
             DecisionBrief = snapshot.DecisionBrief,
             CreatedAtUtc = snapshot.CreatedAt.Value,
             OperationKey = operationKey,
@@ -714,7 +711,6 @@ public sealed partial class ApplicationDataService
             row.EvaluationRoundId,
             row.RoundNumber,
             rounds[row.EvaluationRoundId].Results,
-            new UtcInstant(row.EarliestValidityBoundUtc),
             row.DecisionBrief,
             new UtcInstant(row.CreatedAtUtc)))];
     }

@@ -29,9 +29,8 @@ public enum PlanningReason
     InitialEvaluation = 1,
     PreviousResultNotPassed = 2,
     EvidenceChanged = 3,
-    Expired = 4,
-    ExplicitlySelected = 5,
-    StillCurrent = 6,
+    ExplicitlySelected = 4,
+    UnchangedEvidence = 5,
 }
 
 public enum ExecutionDisposition
@@ -57,7 +56,7 @@ public sealed record BranchWorkItem
         DomainGuard.Defined(planningReason, nameof(planningReason));
 
         if (disposition is WorkDisposition.Execute
-            && (planningReason is PlanningReason.StillCurrent || reuseSourceResultId.HasValue))
+            && (planningReason is PlanningReason.UnchangedEvidence || reuseSourceResultId.HasValue))
         {
             throw new ArgumentException(
                 "Execute work requires an execution reason and cannot name a reuse source.",
@@ -65,12 +64,12 @@ public sealed record BranchWorkItem
         }
 
         if (disposition is WorkDisposition.Reuse
-            && (planningReason is not PlanningReason.StillCurrent
+            && (planningReason is not PlanningReason.UnchangedEvidence
                 || !reuseSourceResultId.HasValue
                 || reuseSourceResultId.Value == Guid.Empty))
         {
             throw new ArgumentException(
-                "Reuse work must be still current and name a source result.",
+                "Reuse work must have unchanged evidence and name a source result.",
                 nameof(planningReason));
         }
 
@@ -120,7 +119,6 @@ public sealed record BranchResult
         string planningDetail,
         Guid? evidenceId,
         EvidenceKind evidenceKind,
-        UtcInstant? validUntil,
         ImmutableArray<string> attempts,
         ImmutableDictionary<string, string> findings,
         Guid? reuseSourceResultId,
@@ -136,7 +134,6 @@ public sealed record BranchResult
             planningDetail,
             evidenceId,
             evidenceKind,
-            validUntil,
             (IEnumerable<string>)attempts,
             findings,
             reuseSourceResultId,
@@ -155,7 +152,6 @@ public sealed record BranchResult
         string planningDetail,
         Guid? evidenceId,
         EvidenceKind evidenceKind,
-        UtcInstant? validUntil,
         IEnumerable<string> attempts,
         IReadOnlyDictionary<string, string> findings,
         Guid? reuseSourceResultId,
@@ -190,16 +186,6 @@ public sealed record BranchResult
             throw new ArgumentException("This outcome requires an evidence record.", nameof(evidenceId));
         }
 
-        if (outcome is BranchOutcome.Passed && !validUntil.HasValue)
-        {
-            throw new ArgumentException("A passing result requires a validity deadline.", nameof(validUntil));
-        }
-
-        if (outcome is not BranchOutcome.Passed && validUntil.HasValue)
-        {
-            throw new ArgumentException("A non-passing result cannot carry a validity deadline.", nameof(validUntil));
-        }
-
         ValidatePlanning(disposition, planningReason);
         ValidateReuse(roundNumber, outcome, disposition, reuseSourceResultId, reuseSourceRound);
 
@@ -213,7 +199,6 @@ public sealed record BranchResult
         PlanningDetail = DomainGuard.Required(planningDetail, nameof(planningDetail));
         EvidenceId = evidenceId;
         EvidenceKind = evidenceKind;
-        ValidUntil = validUntil;
         Attempts = DomainGuard.Copy(
             attempts.Select(value => DomainGuard.Required(value, nameof(attempts))),
             nameof(attempts));
@@ -245,8 +230,6 @@ public sealed record BranchResult
 
     public EvidenceKind EvidenceKind { get; }
 
-    public UtcInstant? ValidUntil { get; }
-
     public ImmutableArray<string> Attempts { get; }
 
     public ImmutableDictionary<string, string> Findings { get; }
@@ -260,7 +243,7 @@ public sealed record BranchResult
         PlanningReason planningReason)
     {
         if (disposition is ExecutionDisposition.Executed
-            && planningReason is PlanningReason.StillCurrent)
+            && planningReason is PlanningReason.UnchangedEvidence)
         {
             throw new ArgumentException(
                 "An executed result requires an execution reason.",
@@ -268,10 +251,10 @@ public sealed record BranchResult
         }
 
         if (disposition is ExecutionDisposition.Reused
-            && planningReason is not PlanningReason.StillCurrent)
+            && planningReason is not PlanningReason.UnchangedEvidence)
         {
             throw new ArgumentException(
-                "A reused result must use the still-current reason.",
+                "A reused result must use the unchanged-evidence reason.",
                 nameof(planningReason));
         }
     }

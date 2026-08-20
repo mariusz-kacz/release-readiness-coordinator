@@ -26,9 +26,9 @@ internal sealed class CountingFakes
         IApplicationDataService dataService,
         TimeProvider timeProvider) => new(
         new CountingTestProvider(this, dataService),
-        new CountingTestPolicy(this, new TestReadinessPolicy(timeProvider)),
+        new CountingTestPolicy(this, new TestReadinessPolicy()),
         new CountingSecurityProvider(this, dataService),
-        new CountingSecurityPolicy(this, new SecurityReadinessPolicy(timeProvider)),
+        new CountingSecurityPolicy(this, new SecurityReadinessPolicy()),
         new CountingChangeProvider(this, dataService),
         new CountingChangePolicy(this, new ChangeReadinessPolicy()));
 

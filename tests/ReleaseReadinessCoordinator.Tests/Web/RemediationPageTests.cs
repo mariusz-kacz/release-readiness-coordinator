@@ -102,7 +102,7 @@ public sealed class RemediationPageTests
             html,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Passing result &mdash; it will be reused if its evidence stays unchanged and remains current.",
+            "Passing result &mdash; it will be reused if its exact evidence stays unchanged.",
             html,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -470,7 +470,7 @@ public sealed class RemediationPageTests
             change =>
             {
                 Assert.Equal(ExecutionDisposition.Reused, change.Disposition);
-                Assert.Equal(PlanningReason.StillCurrent, change.PlanningReason);
+                Assert.Equal(PlanningReason.UnchangedEvidence, change.PlanningReason);
             });
     }
 
@@ -553,12 +553,11 @@ public sealed class RemediationPageTests
             "Executed because this was the initial evaluation.",
             null,
             (EvidenceKind)(int)check,
-            null,
             ["No evidence record was available."],
             new Dictionary<string, string>
             {
                 ["problem"] = finding,
-                ["deadline"] = "Evidence expires at 2026-08-19 09:00:00 UTC.",
+                ["guidance"] = "Supply the missing evidence facts.",
             },
             null,
             null);

@@ -278,7 +278,6 @@ public sealed class ApplicationDataServiceTests
             round.Id,
             round.RoundNumber,
             round.Results,
-            round.Results.Min(result => result.ValidUntil!.Value),
             "All readiness checks passed.",
             Utc(2026, 8, 16, 10));
         var request = new HumanDecisionRequest(
@@ -448,7 +447,6 @@ public sealed class ApplicationDataServiceTests
                 "Executed because this is the initial evaluation.",
                 source?.Id,
                 kind,
-                passed ? Utc(2026, 8, 17, 12 + (int)check) : null,
                 ["attempt-1"],
                 new Dictionary<string, string> { ["summary"] = outcome.ToString() },
                 null,

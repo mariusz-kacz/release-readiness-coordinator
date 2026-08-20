@@ -12,7 +12,6 @@ public sealed record DecisionSnapshot
         Guid evaluationRoundId,
         int roundNumber,
         ImmutableArray<BranchResult> sources,
-        UtcInstant earliestValidityBound,
         string decisionBrief,
         UtcInstant createdAt)
         : this(
@@ -21,7 +20,6 @@ public sealed record DecisionSnapshot
             evaluationRoundId,
             roundNumber,
             (IEnumerable<BranchResult>)sources,
-            earliestValidityBound,
             decisionBrief,
             createdAt)
     {
@@ -33,7 +31,6 @@ public sealed record DecisionSnapshot
         Guid evaluationRoundId,
         int roundNumber,
         IEnumerable<BranchResult> sources,
-        UtcInstant earliestValidityBound,
         string decisionBrief,
         UtcInstant createdAt)
     {
@@ -52,17 +49,11 @@ public sealed record DecisionSnapshot
                 "Every snapshot source must be a passing result from the selected release round.");
         }
 
-        if (completeSources.Min(result => result.ValidUntil!.Value) != earliestValidityBound)
-        {
-            throw new ArgumentException("The snapshot validity bound must be the earliest result bound.", nameof(earliestValidityBound));
-        }
-
         Id = id;
         ReleaseId = releaseId;
         EvaluationRoundId = evaluationRoundId;
         RoundNumber = roundNumber;
         Sources = completeSources;
-        EarliestValidityBound = earliestValidityBound;
         DecisionBrief = DomainGuard.Required(decisionBrief, nameof(decisionBrief));
         CreatedAt = createdAt;
     }
@@ -76,8 +67,6 @@ public sealed record DecisionSnapshot
     public int RoundNumber { get; }
 
     public ImmutableArray<BranchResult> Sources { get; }
-
-    public UtcInstant EarliestValidityBound { get; }
 
     public string DecisionBrief { get; }
 

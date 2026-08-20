@@ -5,11 +5,8 @@ using DomainBranchWorkItem = ReleaseReadinessCoordinator.Domain.BranchWorkItem;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
-internal sealed class RoundPlanner(TimeProvider timeProvider)
+internal sealed class RoundPlanner
 {
-    private readonly TimeProvider _timeProvider =
-        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-
     public ImmutableArray<DomainBranchWorkItem> Plan(RoundPlanningRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -40,14 +37,11 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
         var explicitlySelected = request.ExplicitlySelectedChecks.Contains(check);
         var evidenceChanged = previous.EvidenceId != currentEvidenceId;
         var previousResultNotPassed = previous.Outcome is not BranchOutcome.Passed;
-        var expired = previous.ValidUntil.HasValue
-            && !FreshnessDeadlines.IsCurrent(previous.ValidUntil.Value, _timeProvider);
 
         var reason = SelectReason(
             explicitlySelected,
             evidenceChanged,
-            previousResultNotPassed,
-            expired);
+            previousResultNotPassed);
         var detail = Explain(
             check,
             previous,
@@ -55,10 +49,9 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
             reason,
             explicitlySelected,
             evidenceChanged,
-            previousResultNotPassed,
-            expired);
+            previousResultNotPassed);
 
-        return reason is PlanningReason.StillCurrent
+        return reason is PlanningReason.UnchangedEvidence
             ? new DomainBranchWorkItem(
                 request.ReleaseId,
                 request.RoundNumber,
@@ -73,8 +66,7 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
     private static PlanningReason SelectReason(
         bool explicitlySelected,
         bool evidenceChanged,
-        bool previousResultNotPassed,
-        bool expired)
+        bool previousResultNotPassed)
     {
         if (explicitlySelected)
         {
@@ -91,7 +83,7 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
             return PlanningReason.PreviousResultNotPassed;
         }
 
-        return expired ? PlanningReason.Expired : PlanningReason.StillCurrent;
+        return PlanningReason.UnchangedEvidence;
     }
 
     private static DomainBranchWorkItem Execute(
@@ -113,8 +105,7 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
         PlanningReason reason,
         bool explicitlySelected,
         bool evidenceChanged,
-        bool previousResultNotPassed,
-        bool expired)
+        bool previousResultNotPassed)
     {
         var primary = reason switch
         {
@@ -127,9 +118,7 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
                     currentEvidenceId.HasValue),
             PlanningReason.PreviousResultNotPassed =>
                 $"Executed because the previous {check} result was {previous.Outcome}.",
-            PlanningReason.Expired =>
-                $"Executed because the previous {check} result reached its validity deadline at {previous.ValidUntil!.Value.ToDisplayString()}.",
-            PlanningReason.StillCurrent =>
+            PlanningReason.UnchangedEvidence =>
                 ExplainReuse(previous.RoundNumber),
             _ => throw new InvalidOperationException($"Unsupported planning reason '{reason}'."),
         };
@@ -138,7 +127,6 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
         AddAdditional(additional, reason, PlanningReason.ExplicitlySelected, explicitlySelected, "explicitly selected");
         AddAdditional(additional, reason, PlanningReason.EvidenceChanged, evidenceChanged, "evidence changed");
         AddAdditional(additional, reason, PlanningReason.PreviousResultNotPassed, previousResultNotPassed, "previous result did not pass");
-        AddAdditional(additional, reason, PlanningReason.Expired, expired, "deadline reached");
 
         return additional.Count == 0
             ? primary
@@ -167,7 +155,7 @@ internal sealed class RoundPlanner(TimeProvider timeProvider)
             throw new ArgumentOutOfRangeException(nameof(sourceRound));
         }
 
-        return $"Reused from round {sourceRound} because the evidence is unchanged and the previous passing result is still valid.";
+        return $"Reused from round {sourceRound} because the exact evidence is unchanged and the previous result passed.";
     }
 
     private static void AddAdditional(

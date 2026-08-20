@@ -5,10 +5,8 @@ namespace ReleaseReadinessCoordinator.Tests.Domain;
 public sealed class EvaluationContractTests
 {
     private static readonly ReleaseId Id = new("release-42");
-    private static readonly UtcInstant ValidUntil = Utc(2026, 8, 15, 8);
-
     [Theory]
-    [InlineData(WorkDisposition.Execute, PlanningReason.StillCurrent)]
+    [InlineData(WorkDisposition.Execute, PlanningReason.UnchangedEvidence)]
     [InlineData(WorkDisposition.Reuse, PlanningReason.InitialEvaluation)]
     [InlineData(WorkDisposition.Reuse, PlanningReason.EvidenceChanged)]
     public void Branch_work_item_rejects_invalid_disposition_and_planning_reason_combinations(
@@ -33,8 +31,8 @@ public sealed class EvaluationContractTests
             roundNumber: 2,
             ReadinessCheck.Test,
             WorkDisposition.Reuse,
-            PlanningReason.StillCurrent,
-            "Evidence identity and deadline remain current."));
+            PlanningReason.UnchangedEvidence,
+            "Evidence identity is unchanged."));
     }
 
     [Fact]
@@ -45,58 +43,42 @@ public sealed class EvaluationContractTests
             roundNumber: 2,
             ReadinessCheck.Test,
             WorkDisposition.Reuse,
-            PlanningReason.StillCurrent,
-            "Evidence identity and deadline remain current.",
+            PlanningReason.UnchangedEvidence,
+            "Evidence identity is unchanged.",
             Guid.Empty));
 
         Assert.Throws<ArgumentException>(() => Result(
             ReadinessCheck.Test,
             BranchOutcome.Passed,
             Guid.NewGuid(),
-            ValidUntil,
             ExecutionDisposition.Reused,
-            PlanningReason.StillCurrent,
+            PlanningReason.UnchangedEvidence,
             Guid.Empty,
             sourceRound: 1));
     }
 
     [Fact]
-    public void Passing_branch_result_requires_evidence_and_a_deadline()
+    public void Passing_branch_result_requires_evidence()
     {
         Assert.Throws<ArgumentException>(() => Result(
             ReadinessCheck.Test,
             BranchOutcome.Passed,
-            evidenceId: null,
-            validUntil: ValidUntil));
-
-        Assert.Throws<ArgumentException>(() => Result(
-            ReadinessCheck.Test,
-            BranchOutcome.Passed,
-            evidenceId: Guid.NewGuid(),
-            validUntil: null));
+            evidenceId: null));
     }
 
     [Fact]
-    public void Non_passing_branch_result_has_no_deadline_and_missing_evidence_may_have_no_record()
+    public void Missing_evidence_result_may_have_no_evidence_record()
     {
-        Assert.Throws<ArgumentException>(() => Result(
-            ReadinessCheck.Test,
-            BranchOutcome.Blocked,
-            evidenceId: Guid.NewGuid(),
-            validUntil: ValidUntil));
-
         var missing = Result(
             ReadinessCheck.Test,
             BranchOutcome.MissingEvidence,
-            evidenceId: null,
-            validUntil: null);
+            evidenceId: null);
 
         Assert.Null(missing.EvidenceId);
-        Assert.Null(missing.ValidUntil);
     }
 
     [Fact]
-    public void Reused_branch_result_retains_its_source_linkage_and_still_current_reason()
+    public void Reused_branch_result_retains_its_source_linkage_and_unchanged_evidence_reason()
     {
         var sourceId = Guid.NewGuid();
 
@@ -104,14 +86,13 @@ public sealed class EvaluationContractTests
             ReadinessCheck.Security,
             BranchOutcome.Passed,
             Guid.NewGuid(),
-            ValidUntil,
             ExecutionDisposition.Reused,
-            PlanningReason.StillCurrent,
+            PlanningReason.UnchangedEvidence,
             sourceId,
             sourceRound: 1);
 
         Assert.Equal(ExecutionDisposition.Reused, result.Disposition);
-        Assert.Equal(PlanningReason.StillCurrent, result.PlanningReason);
+        Assert.Equal(PlanningReason.UnchangedEvidence, result.PlanningReason);
         Assert.Equal(sourceId, result.ReuseSourceResultId);
         Assert.Equal(1, result.ReuseSourceRound);
     }
@@ -120,7 +101,6 @@ public sealed class EvaluationContractTests
         ReadinessCheck check,
         BranchOutcome outcome,
         Guid? evidenceId,
-        UtcInstant? validUntil,
         ExecutionDisposition disposition = ExecutionDisposition.Executed,
         PlanningReason planningReason = PlanningReason.InitialEvaluation,
         Guid? reuseSourceResultId = null,
@@ -135,7 +115,6 @@ public sealed class EvaluationContractTests
             "Concise planning detail.",
             evidenceId,
             EvidenceKindFor(check),
-            validUntil,
             attempts: ["Evidence evaluated."],
             findings: new Dictionary<string, string> { ["ready"] = "The deterministic policy passed." },
             reuseSourceResultId,
@@ -148,7 +127,4 @@ public sealed class EvaluationContractTests
         ReadinessCheck.Change => EvidenceKind.Change,
         _ => throw new ArgumentOutOfRangeException(nameof(check)),
     };
-
-    private static UtcInstant Utc(int year, int month, int day, int hour) =>
-        new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
 }

@@ -23,7 +23,6 @@
         <div><dt>Snapshot</dt><dd><code class="text-break">@snapshot.Id</code></dd></div>
         <div><dt>Evaluation round</dt><dd>Round @snapshot.RoundNumber</dd></div>
         <div><dt>Created</dt><dd><time datetime="@snapshot.CreatedAt.Value.ToString("O")">@DetailModel.FormatInstant(snapshot.CreatedAt)</time></dd></div>
-        <div><dt>Earliest validity bound</dt><dd><time datetime="@snapshot.EarliestValidityBound.Value.ToString("O")">@DetailModel.FormatInstant(snapshot.EarliestValidityBound)</time></dd></div>
     </dl>
 </section>
 
@@ -43,7 +42,6 @@
                     <th scope="col">Outcome</th>
                     <th scope="col">Evidence</th>
                     <th scope="col">Result</th>
-                    <th scope="col">Valid until</th>
                     <th scope="col">Findings</th>
                 </tr>
             </thead>
@@ -55,7 +53,6 @@
                         <td>@source.Outcome</td>
                         <td><code class="small text-break">@source.EvidenceId</code></td>
                         <td><code class="small text-break">@source.Id</code></td>
-                        <td><time datetime="@source.ValidUntil!.Value.Value.ToString("O")">@DetailModel.FormatInstant(source.ValidUntil)</time></td>
                         <td>
                             @if (source.Findings.IsEmpty)
                             {

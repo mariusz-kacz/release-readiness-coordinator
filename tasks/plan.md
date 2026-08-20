@@ -2,13 +2,14 @@
 
 ## Overview
 
-Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed three-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, and a minimal server-rendered UI. Human decision intentionally uses a closed immutable snapshot and terminal approval/rejection so the portfolio emphasizes MAF orchestration rather than production-grade continuously editable approval evidence. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
+Release Readiness Coordinator is one ASP.NET Core .NET 10 Razor Pages application backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. Tasks 1-26 delivered the fixed three-branch workflow, deterministic policies and routing, selective reuse, typed remediation and approval waits, restart recovery, and minimal server-rendered UI. Task 27 simplifies the final reuse contract to previous outcome, exact evidence identity, and explicit rerun selection. Human decision continues to use a closed immutable snapshot and terminal approval/rejection so the portfolio emphasizes MAF orchestration rather than production-grade continuously editable approval evidence.
 
 ## Planning Basis
 
 - `SPEC.md` is the sole authoritative product and architecture specification.
-- Tasks 1-15 are implemented and verified in the current repository. Task 16 is reopened to replace its production-oriented stale-decision contract with the approved portfolio-focused terminal MAF decision flow.
+- Tasks 1-26 are implemented and verified as the completed MVP baseline. Task 27 is a post-MVP simplification that updates the final domain contract without changing the fixed workflow topology.
 - On 2026-08-19 the owner removed numeric release revisions from the MVP. Completed revision-bearing tasks remain historical records; Task 21 performs the compulsory single-identifier cutover before remaining UI work.
+- The completed baseline originally included generic result expiration through `ValidUntil`, `FreshnessDeadlines`, deadline-driven reruns, and a decision-snapshot validity bound. On 2026-08-20 the owner deliberately removed that scope; Task 27 records and implements the coherent cross-cutting deletion while retaining intrinsic Change-window and Security-exception rules.
 - The NuGet V3 package index was checked on 2026-08-11 and includes `Microsoft.Agents.AI.Workflows` version `1.17.0`.
 - Official MAF documentation confirms the planned superstep synchronization barrier, typed `RequestPort` external requests, checkpoint capture of pending requests, stable topology/executor identity requirements during rehydration, and the process-exclusive/non-thread-safe filesystem checkpoint store. Because some API reference pages display an older package label, Tasks 2 and 3 require compiled 1.17.0 contract tests before feature implementation continues.
 
@@ -32,8 +33,8 @@ Official references:
   - `/Releases/{releaseId}/Remediate`
   - `/Releases/{releaseId}/Decision`
 - One bounded application data service uses EF Core directly. There are no generic repositories, CQRS layers, event sourcing, workers, queues, or additional deployables.
-- Built-in `TimeProvider` is injected for all time-sensitive logic.
-- Every submission has one globally unique `ReleaseId`; there is no numeric revision or release-family relationship. Release metadata is immutable after submission, and corrections require a new release ID. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs and `ValidUntil` deadlines.
+- Built-in `TimeProvider` is injected where the application records current workflow, interaction, and audit timestamps; readiness reuse does not depend on the clock.
+- Every submission has one globally unique `ReleaseId`; there is no numeric revision or release-family relationship. Release metadata is immutable after submission, and corrections require a new release ID. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares exact current evidence IDs with previous passing results plus explicit rerun selections.
 - Evidence changes are allowed through remediation only and are locked while approval is pending. The restored typed MAF reference is the authority for approval-response correlation, while SQLite is the authority for decision content; human decision never routes back to the planner.
 - Local simulated providers implement typed evidence-source contracts. Only known typed transient failures receive one initial attempt plus two immediate retries.
 - SQLite stores immutable/versioned business records and an append-only timeline. MAF checkpoints live under a configurable private application-data directory that is excluded from source control.
@@ -48,7 +49,7 @@ flowchart TD
     T3 --> T4[Task 4: Immutable release and evidence contracts]
     T4 --> T5[Task 5: Evaluation and reuse contracts]
     T5 --> T6[Task 6: Decision and audit contracts]
-    T5 --> T7[Task 7: Evidence identity and freshness rules]
+    T5 --> T7[Task 7: Evidence identity rules]
     T6 --> T8_9[Tasks 8-9: SQLite schema and bounded data service]
     T7 --> T8_9
     T8_9 --> T10[Task 10: Release submission]
@@ -63,6 +64,7 @@ flowchart TD
     T21 --> T22_24[Tasks 22-24: Razor Pages interactions]
     T22_24 --> T25[Task 25: Workflow evaluation]
     T25 --> T26[Task 26: Documentation and final acceptance]
+    T26 --> T27[Task 27: Remove generic result expiration]
 ```
 
 ## Task List
@@ -87,13 +89,13 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 - [x] Task 4: Model immutable releases and versioned evidence
 - [x] Task 5: Define evaluation and selective-reuse contracts
 - [x] Task 6: Define decision, correlation, and audit contracts
-- [x] Task 7: Establish evidence-identity and freshness rules
+- [x] Task 7: Establish evidence-identity rules
 
 ### Checkpoint B1: Domain Semantics
 
 - [x] Immutable releases/evidence and durable decision/audit vocabulary are defined
 - [x] Phase, outcome, disposition, and planning reason remain separate bounded concepts
-- [x] Evidence-identity and freshness-deadline rules are covered by deterministic tests
+- [x] Exact evidence identity is covered as the branch change-detection contract
 
 - [x] Task 8: Create the SQLite schema and migrations
 - [x] Task 9: Implement the bounded idempotent application data service
@@ -171,13 +173,25 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 - [x] Task 26: Finish documentation, full verification, and spec audit
 
-### Checkpoint F2: Complete
+### Checkpoint F2: Completed MVP Baseline
 
 - [x] All 13 MVP acceptance criteria in `SPEC.md` are demonstrated
 - [x] Restore, build, tests, formatting, and documented manual runtime checks pass
 - [x] No prohibited architecture has been introduced
 - [x] Complete diff is reviewed and residual risks/unrun checks are reported
 - [x] Human review approves implementation readiness
+
+### Phase 7: Post-MVP Scope Simplification
+
+- [x] Task 27: Remove generic result expiration and simplify evidence-driven reuse
+
+### Checkpoint G: Revised Final Contract
+
+- [x] Passing results are reusable solely by previous outcome, exact current evidence identity, and absence of explicit rerun selection
+- [x] Generic result-expiration fields, policies, planner branches, persistence, UI, and tests are removed
+- [x] Change-window containment and Security-exception coverage remain fully enforced
+- [x] Root restore, build, test, and formatting gates pass against a freshly created disposable local schema
+- [x] Specification, architecture, guides, acceptance evidence, and planning artifacts tell the same evidence-driven reuse story
 
 ## Risks and Mitigations
 
@@ -186,6 +200,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 | MAF 1.17.0 APIs differ from current documentation examples | High | Tasks 2-3 compile and execute version-pinned topology, request, checkpoint, and stable-ID probes before domain implementation. Any conflict is reported; the version is never changed silently. |
 | SQLite writes and filesystem checkpoints cannot be atomic | High | Use stable operation keys, unique constraints, replay-safe upserts, correlation verification, and explicit reconciliation tests. |
 | Reuse accidentally calls providers or policies | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
+| Removing generic expiration accidentally weakens temporal business rules | High | Task 27 deletes only elapsed-time reuse invalidation and explicitly preserves Change approved-window containment, Security exception coverage through the requested deployment window, and all audit timestamps. |
 | Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate release ID without adding grouping, supersession, or cancellation behavior to the MVP. |
 | Removing revision changes established domain, persisted, route, and checkpoint identities | High | Land Task 21 before further UI work, reset disposable pre-release SQLite/checkpoint stores, update all contracts and tests together, and add no compatibility layer. |
 | An approval response resumes the wrong external request | High | Rebuild the identical graph, restore the pending request, and exactly reconcile its MAF request ID, typed port contract, and durable request ID with SQLite before sending the response. Invalid continuation has no business effect. |
@@ -196,9 +211,7 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ## Open Questions
 
-- Does the owner prefer any visual styling beyond accessible semantic HTML and a small local stylesheet? The default plan is deliberately minimal.
-
-No other architectural decisions are reopened by this plan. A discovered conflict with MAF 1.17.0, a new package outside the specification, or a change to public/persisted contracts must be brought to the owner before implementation proceeds.
+None for Task 27. A discovered conflict with MAF 1.17.0, a new package outside the specification, or a need to weaken the retained Change-window or Security-exception rules must be brought to the owner before implementation proceeds.
 
 ## Definition of Done Applied to Every Task
 

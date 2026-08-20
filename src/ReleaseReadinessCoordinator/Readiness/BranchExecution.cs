@@ -33,8 +33,6 @@ internal interface IReadinessPolicyEvaluation
 {
     BranchOutcome Outcome { get; }
 
-    UtcInstant? ValidUntil { get; }
-
     ImmutableDictionary<string, string> Findings { get; }
 }
 
@@ -76,7 +74,6 @@ internal static class BranchExecution
                 evidenceKind,
                 BranchOutcome.TransientFailure,
                 retrieval.ExhaustedEvidenceId,
-                validUntil: null,
                 retrieval.Attempts,
                 new Dictionary<string, string>
                 {
@@ -93,7 +90,6 @@ internal static class BranchExecution
                 evidenceKind,
                 BranchOutcome.MissingEvidence,
                 evidenceId: null,
-                validUntil: null,
                 retrieval.Attempts,
                 new Dictionary<string, string>
                 {
@@ -115,7 +111,6 @@ internal static class BranchExecution
             evidenceKind,
             evaluation.Outcome,
             retrieval.Evidence.Id,
-            evaluation.ValidUntil,
             retrieval.Attempts,
             evaluation.Findings);
     }
@@ -127,7 +122,6 @@ internal static class BranchExecution
         EvidenceKind evidenceKind,
         BranchOutcome outcome,
         Guid? evidenceId,
-        UtcInstant? validUntil,
         IEnumerable<string> attempts,
         IReadOnlyDictionary<string, string> findings) => new(
             resultId,
@@ -140,7 +134,6 @@ internal static class BranchExecution
             workItem.PlanningDetail,
             evidenceId,
             evidenceKind,
-            validUntil,
             attempts,
             findings,
             reuseSourceResultId: null,

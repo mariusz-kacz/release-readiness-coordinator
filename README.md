@@ -2,7 +2,11 @@
 
 A durable, human-in-the-loop release governance workflow built with .NET 10 and Microsoft Agent Framework.
 
-Release Readiness Coordinator gathers simulated Test, Security, and Change evidence, evaluates the three checks in parallel, and waits for remediation when something blocks a release. On the next round, it runs only the checks affected by new evidence and safely reuses results that are still valid. Once every check passes, a release manager can approve or reject an immutable decision snapshot.
+No LLM is used; all readiness decisions are made by deterministic C# policies.
+
+Release Readiness Coordinator gathers simulated Test, Security, and Change evidence, evaluates the three checks in parallel, and waits for remediation when something blocks a release. On later rounds, checks affected by new evidence execute again while unchanged previously passing checks are safely reused. Once every check passes, a release manager can approve or reject an immutable decision snapshot.
+
+> **MVP limitation:** The MVP approves an immutable point-in-time snapshot and does not revalidate its source evidence or temporal business rules at approval-response time. Production-grade continuous governance is outside this portfolio scope.
 
 The result is a focused portfolio project that makes workflow orchestration, selective execution, recovery, and audit history visible in one server-rendered application.
 
@@ -45,7 +49,7 @@ The release detail page brings the current workflow phase, latest Test, Security
 
 ### Selective execution and reuse history
 
-Here, Test and Security run again after receiving evidence, while the still-current Change result is reused from round 1. Each result explains its planning reason and links reused work to its source round.
+Here, Test and Security run again after receiving new evidence, while the passing Change result is reused from round 1 because its evidence record is unchanged. Each result explains its planning reason and links reused work to its source round.
 
 ![Two evaluation rounds showing Test and Security executed while Change is safely reused](docs/img/selective-execution-history.png)
 

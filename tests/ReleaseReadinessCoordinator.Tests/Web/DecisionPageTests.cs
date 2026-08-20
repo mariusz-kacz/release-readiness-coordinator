@@ -381,13 +381,12 @@ public sealed class DecisionPageTests
                 "Executed for the decision package.",
                 Guid.NewGuid(),
                 (EvidenceKind)(int)check,
-                new UtcInstant(Now.Value.AddHours(2)),
                 ["Provider attempt 1 succeeded."],
                 check is ReadinessCheck.Test
                     ? new Dictionary<string, string>
                     {
                         ["coverage"] = "99%",
-                        ["deadline"] = "Evidence expires at 2026-08-19 09:00:00 UTC.",
+                        ["suite"] = "Critical suites passed.",
                     }
                     : new Dictionary<string, string>(),
                 null,
@@ -399,7 +398,6 @@ public sealed class DecisionPageTests
             Guid.NewGuid(),
             2,
             sources,
-            new UtcInstant(Now.Value.AddHours(2)),
             "Database-persisted decision brief.",
             Now);
         var request = new HumanDecisionRequest(

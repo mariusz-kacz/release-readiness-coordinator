@@ -10,12 +10,9 @@ internal interface ITestReadinessPolicy
         TestEvidenceRecord evidence);
 }
 
-internal sealed class TestReadinessPolicy(TimeProvider timeProvider) : ITestReadinessPolicy
+internal sealed class TestReadinessPolicy : ITestReadinessPolicy
 {
     private const decimal MinimumPassRate = 0.95m;
-
-    private readonly TimeProvider _timeProvider =
-        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 
     public TestPolicyEvaluation Evaluate(
         ReleaseSubmission submission,
@@ -54,11 +51,9 @@ internal sealed class TestReadinessPolicy(TimeProvider timeProvider) : ITestRead
         {
             return new TestPolicyEvaluation(
                 BranchOutcome.MissingEvidence,
-                validUntil: null,
                 missing);
         }
 
-        var validUntil = FreshnessDeadlines.Calculate(evidence);
         var blockers = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!string.Equals(
                 evidence.TestRunVersion,
@@ -80,19 +75,13 @@ internal sealed class TestReadinessPolicy(TimeProvider timeProvider) : ITestRead
                 $"Critical suites failed: {string.Join(", ", evidence.CriticalSuiteFailures.Value)}.";
         }
 
-        if (!FreshnessDeadlines.IsCurrent(validUntil, _timeProvider))
-        {
-            blockers["freshness"] = $"Test evidence reached its validity deadline at {validUntil.ToDisplayString()}.";
-        }
-
         return blockers.Count > 0
-            ? new TestPolicyEvaluation(BranchOutcome.Blocked, validUntil: null, blockers)
+            ? new TestPolicyEvaluation(BranchOutcome.Blocked, blockers)
             : new TestPolicyEvaluation(
                 BranchOutcome.Passed,
-                validUntil,
                 new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["ready"] = "Test evidence satisfies the version, pass-rate, critical-suite, and freshness policy.",
+                    ["ready"] = "Test evidence satisfies the version, pass-rate, and critical-suite policy.",
                 });
     }
 }
@@ -101,7 +90,6 @@ internal sealed record TestPolicyEvaluation : IReadinessPolicyEvaluation
 {
     public TestPolicyEvaluation(
         BranchOutcome outcome,
-        UtcInstant? validUntil,
         IReadOnlyDictionary<string, string> findings)
     {
         if (outcome is BranchOutcome.TransientFailure)
@@ -111,21 +99,11 @@ internal sealed record TestPolicyEvaluation : IReadinessPolicyEvaluation
                 nameof(outcome));
         }
 
-        if ((outcome is BranchOutcome.Passed) != validUntil.HasValue)
-        {
-            throw new ArgumentException(
-                "Only a passing Test policy evaluation has a validity deadline.",
-                nameof(validUntil));
-        }
-
         Outcome = outcome;
-        ValidUntil = validUntil;
         Findings = findings.ToImmutableDictionary(StringComparer.Ordinal);
     }
 
     public BranchOutcome Outcome { get; }
-
-    public UtcInstant? ValidUntil { get; }
 
     public ImmutableDictionary<string, string> Findings { get; }
 }

@@ -8,12 +8,11 @@ namespace ReleaseReadinessCoordinator.Tests.Readiness;
 public sealed class TestReadinessPolicyTests
 {
     private static readonly UtcInstant CompletedAt = Utc(2026, 8, 17, 8);
-    private static readonly UtcInstant Deadline = Utc(2026, 8, 18, 8);
 
     [Fact]
     public void Required_test_facts_must_all_be_present()
     {
-        var policy = PolicyAt(CompletedAt.Value.AddHours(1));
+        var policy = Policy();
         TestEvidenceRecord[] evidenceWithMissingFacts =
         [
             Evidence(testRunVersion: null),
@@ -36,28 +35,25 @@ public sealed class TestReadinessPolicyTests
     [Fact]
     public void Exact_version_95_percent_and_no_critical_failures_pass()
     {
-        var policy = PolicyAt(Deadline.Value.AddTicks(-1));
+        var policy = Policy();
 
         var evaluation = policy.Evaluate(
             Submission(releaseVersion: "2.4.0"),
             Evidence(testRunVersion: "2.4.0", passRate: 0.95m, criticalSuiteFailures: []));
 
         Assert.Equal(BranchOutcome.Passed, evaluation.Outcome);
-        Assert.Equal(Deadline, evaluation.ValidUntil);
     }
 
     [Theory]
-    [InlineData("2.4.0-rc.1", 0.95, false, -1)]
-    [InlineData("2.4.0", 0.9499, false, -1)]
-    [InlineData("2.4.0", 0.95, true, -1)]
-    [InlineData("2.4.0", 0.95, false, 0)]
+    [InlineData("2.4.0-rc.1", 0.95, false)]
+    [InlineData("2.4.0", 0.9499, false)]
+    [InlineData("2.4.0", 0.95, true)]
     public void Deterministic_policy_misses_block(
         string testRunVersion,
         decimal passRate,
-        bool hasCriticalFailure,
-        long ticksFromDeadline)
+        bool hasCriticalFailure)
     {
-        var policy = PolicyAt(Deadline.Value.AddTicks(ticksFromDeadline));
+        var policy = Policy();
 
         var evaluation = policy.Evaluate(
             Submission(),
@@ -67,17 +63,9 @@ public sealed class TestReadinessPolicyTests
                 criticalSuiteFailures: hasCriticalFailure ? ["payments-critical"] : []));
 
         Assert.Equal(BranchOutcome.Blocked, evaluation.Outcome);
-        Assert.Null(evaluation.ValidUntil);
-        if (ticksFromDeadline == 0)
-        {
-            Assert.Equal(
-                "Test evidence reached its validity deadline at 2026-08-18 08:00:00 UTC.",
-                evaluation.Findings["freshness"]);
-        }
     }
 
-    private static TestReadinessPolicy PolicyAt(DateTimeOffset now) =>
-        new(new FixedTimeProvider(now));
+    private static TestReadinessPolicy Policy() => new();
 
     private static ReleaseSubmission Submission(string releaseVersion = "2.4.0") => new(
         Id(),
@@ -105,10 +93,6 @@ public sealed class TestReadinessPolicyTests
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
 
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
 }
 public sealed class TestReadinessWorkflowIntegrationTests
 {
@@ -188,7 +172,6 @@ public sealed class TestReadinessWorkflowIntegrationTests
             CallCount++;
             return new TestPolicyEvaluation(
                 BranchOutcome.Passed,
-                Utc(2026, 8, 18, 8),
                 new Dictionary<string, string>
                 {
                     ["ready"] = "Test evidence satisfies the policy.",

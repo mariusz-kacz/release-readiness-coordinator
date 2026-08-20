@@ -78,7 +78,6 @@
                     <th scope="col">Outcome</th>
                     <th scope="col">Execution</th>
                     <th scope="col">Evidence</th>
-                    <th scope="col">Valid until</th>
                     <th scope="col">Attempts and findings</th>
                 </tr>
             </thead>
@@ -114,16 +113,6 @@
                                 else
                                 {
                                     <span class="text-secondary">None</span>
-                                }
-                            </td>
-                            <td>
-                                @if (result.ValidUntil.HasValue)
-                                {
-                                    <time datetime="@result.ValidUntil.Value.Value.ToString("O")">@DetailModel.FormatInstant(result.ValidUntil)</time>
-                                }
-                                else
-                                {
-                                    <span class="text-secondary">Not reusable</span>
                                 }
                             </td>
                             <td>
@@ -197,10 +186,7 @@
             @if (Model.LatestDecisionSnapshot is { } snapshot)
             {
                 <p>@DetailModel.FormatText(snapshot.DecisionBrief)</p>
-                <p class="small text-secondary mb-0">
-                    Snapshot from round @snapshot.RoundNumber; earliest validity bound
-                    <time datetime="@snapshot.EarliestValidityBound.Value.ToString("O")">@DetailModel.FormatInstant(snapshot.EarliestValidityBound)</time>.
-                </p>
+                <p class="small text-secondary mb-0">Snapshot from round @snapshot.RoundNumber.</p>
                 @if (Model.Detail.TerminalResponse is { } terminal)
                 {
                     <hr />
@@ -440,7 +426,6 @@
                                     <th scope="col">Check</th>
                                     <th scope="col">Result</th>
                                     <th scope="col">Planning reason</th>
-                                    <th scope="col">Valid until</th>
                                     <th scope="col">Attempts</th>
                                     <th scope="col">Findings</th>
                                 </tr>
@@ -458,7 +443,6 @@
                                                 <a class="d-block small mt-1" href="#round-@result.ReuseSourceRound">View source round @result.ReuseSourceRound</a>
                                             }
                                         </td>
-                                        <td>@DetailModel.FormatInstant(result.ValidUntil)</td>
                                         <td>
                                             @if (result.Attempts.IsEmpty)
                                             {

@@ -39,7 +39,6 @@ internal sealed class ChangeReadinessPolicy : IChangeReadinessPolicy
         {
             return new ChangePolicyEvaluation(
                 BranchOutcome.MissingEvidence,
-                validUntil: null,
                 missing);
         }
 
@@ -58,10 +57,9 @@ internal sealed class ChangeReadinessPolicy : IChangeReadinessPolicy
         }
 
         return blockers.Count > 0
-            ? new ChangePolicyEvaluation(BranchOutcome.Blocked, validUntil: null, blockers)
+            ? new ChangePolicyEvaluation(BranchOutcome.Blocked, blockers)
             : new ChangePolicyEvaluation(
                 BranchOutcome.Passed,
-                approvedWindow.End,
                 new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["ready"] = "Change evidence is approved and fully contains the requested deployment window.",
@@ -73,7 +71,6 @@ internal sealed record ChangePolicyEvaluation : IReadinessPolicyEvaluation
 {
     public ChangePolicyEvaluation(
         BranchOutcome outcome,
-        UtcInstant? validUntil,
         IReadOnlyDictionary<string, string> findings)
     {
         if (outcome is BranchOutcome.TransientFailure)
@@ -83,21 +80,11 @@ internal sealed record ChangePolicyEvaluation : IReadinessPolicyEvaluation
                 nameof(outcome));
         }
 
-        if ((outcome is BranchOutcome.Passed) != validUntil.HasValue)
-        {
-            throw new ArgumentException(
-                "Only a passing Change policy evaluation has a validity deadline.",
-                nameof(validUntil));
-        }
-
         Outcome = outcome;
-        ValidUntil = validUntil;
         Findings = findings.ToImmutableDictionary(StringComparer.Ordinal);
     }
 
     public BranchOutcome Outcome { get; }
-
-    public UtcInstant? ValidUntil { get; }
 
     public ImmutableDictionary<string, string> Findings { get; }
 }

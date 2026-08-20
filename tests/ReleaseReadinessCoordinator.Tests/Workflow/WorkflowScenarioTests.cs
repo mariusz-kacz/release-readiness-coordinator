@@ -90,7 +90,7 @@ public sealed class WorkflowScenarioTests
             change =>
             {
                 Assert.Equal(ExecutionDisposition.Reused, change.Disposition);
-                Assert.Equal(PlanningReason.StillCurrent, change.PlanningReason);
+                Assert.Equal(PlanningReason.UnchangedEvidence, change.PlanningReason);
                 Assert.Equal(1, change.ReuseSourceRound);
             });
         Assert.Single(ready.RemediationSubmissions);

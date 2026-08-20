@@ -47,7 +47,6 @@ public sealed class BranchExecutionTests
         var provider = new CountingProvider(TestEvidence());
         var evaluator = new CountingEvaluator(new Evaluation(
             BranchOutcome.Blocked,
-            ValidUntil: null,
             new Dictionary<string, string>
             {
                 ["pass-rate"] = "The pass rate is below 95%.",
@@ -85,7 +84,6 @@ public sealed class BranchExecutionTests
 
         Assert.Equal(BranchOutcome.TransientFailure, result.Outcome);
         Assert.Equal(evidence.Id, result.EvidenceId);
-        Assert.Null(result.ValidUntil);
         Assert.Equal(3, provider.CallCount);
         Assert.Equal(0, evaluator.CallCount);
         Assert.Equal(3, result.Attempts.Length);
@@ -146,7 +144,6 @@ public sealed class BranchExecutionTests
 
     private static Evaluation PassingEvaluation() => new(
         BranchOutcome.Passed,
-        Utc(2026, 8, 18, 8),
         new Dictionary<string, string>
         {
             ["ready"] = "Evidence satisfies the policy.",
@@ -254,7 +251,6 @@ public sealed class BranchExecutionTests
 
     private sealed record Evaluation(
         BranchOutcome Outcome,
-        UtcInstant? ValidUntil,
         IReadOnlyDictionary<string, string> FindingValues) : IReadinessPolicyEvaluation
     {
         public ImmutableDictionary<string, string> Findings { get; } =

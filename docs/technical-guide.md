@@ -50,6 +50,8 @@ Loading a fixture only fills the form. You can review or edit its values before 
 5. Enter the reviewer and comment, then select **Approve release** or **Reject release**.
 6. Confirm the terminal detail shows `Approved` or `Rejected`, the audited response, and no active workflow wait.
 
+The response is terminal for the immutable point-in-time snapshot; the MVP does not route approval back through readiness evaluation.
+
 ### Blockers, remediation, and selective reuse
 
 1. Select **Load Complete evidence** and choose a unique release ID.
@@ -59,7 +61,7 @@ Loading a fixture only fills the form. You can review or edit its values before 
 5. Confirm the detail page reaches `WaitingForRemediation` only after showing one result for each check: Test and Security blocked, Change passed.
 6. Select **Open remediation form**, then **Load ready demo evidence**. This updates only the branches with active problems.
 7. Select **Save evidence and run next evaluation**.
-8. On round 2, confirm Test and Security are `Executed`; Change is `Reused`, links to its source round, and has no execution attempts.
+8. On round 2, confirm Test and Security are `Executed`; Change is `Reused` because its evidence record is unchanged, links to its source round, and has no execution attempts.
 9. Complete the resulting human decision if desired.
 
 The workflow advances during form requests. Use **Refresh status** when observing a page from another tab; the application intentionally has no live-update channel.
@@ -88,6 +90,8 @@ By default, state is written below `src/ReleaseReadinessCoordinator/app-data/`:
 | `data-protection-keys/` | ASP.NET Core data-protection keys used by server-rendered forms |
 
 The whole `app-data/` tree is ignored by Git. `ApplicationData__Directory` overrides the root and may be absolute or relative to the web project's content root.
+
+Local portfolio state is disposable and has no migration compatibility guarantee. After pulling a persisted-shape change, stop the application and delete both `release-readiness.db` (including any `-shm` or `-wal` sidecars) and the matching `workflow-checkpoints/` directory before restarting. Never retain one without the other because their release sessions and workflow continuations are correlated.
 
 Persisted instants remain UTC. Visible and editable date/time values use the application host's local timezone and omit timezone text.
 

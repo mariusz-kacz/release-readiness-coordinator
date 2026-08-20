@@ -33,15 +33,10 @@ public sealed class DecisionIntegritySnapshotTests
         Assert.Equal(first.Request.Id, replay.Request.Id);
         Assert.Equal(round.Results.Select(result => result.Id), first.Snapshot.Sources.Select(result => result.Id));
         Assert.Equal(round.Results.Select(result => result.EvidenceId), first.Snapshot.Sources.Select(result => result.EvidenceId));
-        Assert.Equal(Utc(2026, 8, 17, 11), first.Snapshot.EarliestValidityBound);
         Assert.Equal(
             Encoding.UTF8.GetBytes(DecisionSnapshotBuilder.BuildBrief(round)),
             Encoding.UTF8.GetBytes(first.Snapshot.DecisionBrief));
-        Assert.Contains(
-            "Earliest validity bound: 2026-08-17 11:00:00 UTC.",
-            first.Snapshot.DecisionBrief,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("T11:00:00", first.Snapshot.DecisionBrief, StringComparison.Ordinal);
+        Assert.DoesNotContain("valid", first.Snapshot.DecisionBrief, StringComparison.OrdinalIgnoreCase);
 
         detail = await dataService.GetReleaseDetailAsync(submission.ReleaseId);
         Assert.Single(detail!.DecisionSnapshots);
@@ -75,15 +70,14 @@ public sealed class DecisionIntegritySnapshotTests
         Utc(2026, 8, 17, 10),
         Utc(2026, 8, 17, 10, 1),
         [
-            Result(ReadinessCheck.Test, evidence[0], Utc(2026, 8, 18, 9)),
-            Result(ReadinessCheck.Security, evidence[1], Utc(2026, 8, 18, 9)),
-            Result(ReadinessCheck.Change, evidence[2], Utc(2026, 8, 17, 11)),
+            Result(ReadinessCheck.Test, evidence[0]),
+            Result(ReadinessCheck.Security, evidence[1]),
+            Result(ReadinessCheck.Change, evidence[2]),
         ]);
 
     private static BranchResult Result(
         ReadinessCheck check,
-        EvidenceRecord evidence,
-        UtcInstant validUntil) => new(
+        EvidenceRecord evidence) => new(
         Guid.NewGuid(),
         evidence.ReleaseId,
         1,
@@ -94,7 +88,6 @@ public sealed class DecisionIntegritySnapshotTests
         "Executed because no prior result exists.",
         evidence.Id,
         evidence.Kind,
-        validUntil,
         ["Attempt 1 succeeded."],
         new Dictionary<string, string> { ["ready"] = "Passed." },
         null,
@@ -301,9 +294,9 @@ internal sealed class DecisionFixture : IAsyncDisposable
             Utc(2026, 8, 17, 10),
             Utc(2026, 8, 17, 10, 1),
             [
-                Result(ReadinessCheck.Test, evidence[0], Utc(2026, 8, 17, 11)),
-                Result(ReadinessCheck.Security, evidence[1], Utc(2026, 8, 17, 12)),
-                Result(ReadinessCheck.Change, evidence[2], Utc(2026, 8, 17, 13)),
+                Result(ReadinessCheck.Test, evidence[0]),
+                Result(ReadinessCheck.Security, evidence[1]),
+                Result(ReadinessCheck.Change, evidence[2]),
             ]);
         await dataService.SaveEvaluationRoundAsync(
             round,
@@ -369,7 +362,6 @@ internal sealed class DecisionFixture : IAsyncDisposable
                 source.PlanningDetail,
                 source.EvidenceId,
                 source.EvidenceKind,
-                source.ValidUntil,
                 source.Attempts,
                 source.Findings,
                 source.ReuseSourceResultId,
@@ -402,11 +394,10 @@ internal sealed class DecisionFixture : IAsyncDisposable
 
     private static BranchResult Result(
         ReadinessCheck check,
-        EvidenceRecord evidence,
-        UtcInstant validUntil) => new(
+        EvidenceRecord evidence) => new(
         Guid.NewGuid(), evidence.ReleaseId, 1, check, BranchOutcome.Passed,
         ExecutionDisposition.Executed, PlanningReason.InitialEvaluation,
-        "Executed because no prior result exists.", evidence.Id, evidence.Kind, validUntil,
+        "Executed because no prior result exists.", evidence.Id, evidence.Kind,
         ["Attempt 1 succeeded."],
         new Dictionary<string, string> { ["ready"] = "Passed." }, null, null);
 

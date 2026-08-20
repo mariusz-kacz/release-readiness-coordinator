@@ -4,11 +4,8 @@ using DomainBranchWorkItem = ReleaseReadinessCoordinator.Domain.BranchWorkItem;
 
 namespace ReleaseReadinessCoordinator.Workflow;
 
-internal sealed class ResultReuse(TimeProvider timeProvider)
+internal sealed class ResultReuse
 {
-    private readonly TimeProvider _timeProvider =
-        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-
     public DomainBranchResult Create(
         Guid resultId,
         DomainBranchWorkItem workItem,
@@ -23,7 +20,7 @@ internal sealed class ResultReuse(TimeProvider timeProvider)
         }
 
         if (workItem.Disposition is not WorkDisposition.Reuse
-            || workItem.PlanningReason is not PlanningReason.StillCurrent
+            || workItem.PlanningReason is not PlanningReason.UnchangedEvidence
             || workItem.ReuseSourceResultId != source.Id)
         {
             throw new InvalidOperationException(
@@ -39,8 +36,7 @@ internal sealed class ResultReuse(TimeProvider timeProvider)
         }
 
         if (source.Outcome is not BranchOutcome.Passed
-            || !source.EvidenceId.HasValue
-            || !source.ValidUntil.HasValue)
+            || !source.EvidenceId.HasValue)
         {
             throw new InvalidOperationException("Only a complete passing result can be reused.");
         }
@@ -51,12 +47,6 @@ internal sealed class ResultReuse(TimeProvider timeProvider)
                 "Defensive reuse verification found that the current evidence identity changed.");
         }
 
-        if (!FreshnessDeadlines.IsCurrent(source.ValidUntil.Value, _timeProvider))
-        {
-            throw new InvalidOperationException(
-                "Defensive reuse verification found that the source result reached its validity deadline.");
-        }
-
         return new DomainBranchResult(
             resultId,
             workItem.ReleaseId,
@@ -64,11 +54,10 @@ internal sealed class ResultReuse(TimeProvider timeProvider)
             workItem.Check,
             BranchOutcome.Passed,
             ExecutionDisposition.Reused,
-            PlanningReason.StillCurrent,
+            PlanningReason.UnchangedEvidence,
             RoundPlanner.ExplainReuse(source.RoundNumber),
             source.EvidenceId,
             source.EvidenceKind,
-            source.ValidUntil,
             attempts: [],
             source.Findings,
             source.Id,

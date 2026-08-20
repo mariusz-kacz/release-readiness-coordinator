@@ -176,10 +176,16 @@ public sealed class DatabaseSchemaTests
                     [
                         "Id", "EvaluationRoundId", "Check", "Outcome", "Disposition",
                         "PlanningReason", "PlanningDetail", "EvidenceId", "EvidenceKind",
-                        "ValidUntilUtc", "AttemptsJson", "FindingsJson", "ReuseSourceResultId",
+                        "AttemptsJson", "FindingsJson", "ReuseSourceResultId",
                         "ReuseSourceRound", "OperationKey",
                     ],
                     await ReadColumnNames(verification, "BranchResults"));
+                Assert.Equal(
+                    [
+                        "Id", "ReleaseId", "EvaluationRoundId", "RoundNumber",
+                        "DecisionBrief", "CreatedAtUtc", "OperationKey",
+                    ],
+                    await ReadColumnNames(verification, "DecisionSnapshots"));
                 Assert.Equal(
                     ["DecisionSnapshotId", "Check", "BranchResultId", "EvidenceId"],
                     await ReadColumnNames(verification, "DecisionSnapshotSources"));

@@ -54,23 +54,19 @@ public static class ReleaseWorkflowFactory
 
         var planner = new ReadinessPlanner(
             submission.ReleaseId,
-            dataService,
-            timeProvider);
+            dataService);
         var test = new ReadinessBranchExecutor(
             submission,
             dependencies.TestEvidenceProvider,
-            dependencies.TestPolicy,
-            timeProvider);
+            dependencies.TestPolicy);
         var security = new ReadinessBranchExecutor(
             submission,
             dependencies.SecurityEvidenceProvider,
-            dependencies.SecurityPolicy,
-            timeProvider);
+            dependencies.SecurityPolicy);
         var change = new ReadinessBranchExecutor(
             submission,
             dependencies.ChangeEvidenceProvider,
-            dependencies.ChangePolicy,
-            timeProvider);
+            dependencies.ChangePolicy);
         var aggregator = new ReadinessAggregator(dataService, timeProvider);
         var snapshotBuilder = new DecisionSnapshotWorkflowExecutor(
             submission.ReleaseId,

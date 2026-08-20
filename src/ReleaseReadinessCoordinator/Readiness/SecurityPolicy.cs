@@ -10,11 +10,8 @@ internal interface ISecurityReadinessPolicy
         SecurityEvidenceRecord evidence);
 }
 
-internal sealed class SecurityReadinessPolicy(TimeProvider timeProvider) : ISecurityReadinessPolicy
+internal sealed class SecurityReadinessPolicy : ISecurityReadinessPolicy
 {
-    private readonly TimeProvider _timeProvider =
-        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-
     public SecurityPolicyEvaluation Evaluate(
         ReleaseSubmission submission,
         SecurityEvidenceRecord evidence)
@@ -57,7 +54,6 @@ internal sealed class SecurityReadinessPolicy(TimeProvider timeProvider) : ISecu
         {
             return new SecurityPolicyEvaluation(
                 BranchOutcome.MissingEvidence,
-                validUntil: null,
                 missing);
         }
 
@@ -74,7 +70,6 @@ internal sealed class SecurityReadinessPolicy(TimeProvider timeProvider) : ISecu
                 $"Unresolved critical findings: {string.Join(", ", evidence.UnresolvedCriticalFindingIds.Value)}.";
         }
 
-        var exceptionBounds = new List<UtcInstant>();
         foreach (var findingId in evidence.UnresolvedHighFindingIds!.Value.Distinct(StringComparer.Ordinal))
         {
             if (!evidence.ApprovedExceptions!.TryGetValue(findingId, out var approvedException))
@@ -98,26 +93,15 @@ internal sealed class SecurityReadinessPolicy(TimeProvider timeProvider) : ISecu
                 continue;
             }
 
-            exceptionBounds.Add(approvedException.ExpiresAt);
-        }
-
-        var earliestExceptionBound = exceptionBounds.Count == 0
-            ? (UtcInstant?)null
-            : exceptionBounds.Min();
-        var validUntil = FreshnessDeadlines.Calculate(evidence, earliestExceptionBound);
-        if (!FreshnessDeadlines.IsCurrent(validUntil, _timeProvider))
-        {
-            blockers["freshness"] = $"Security evidence reached its validity deadline at {validUntil.ToDisplayString()}.";
         }
 
         return blockers.Count > 0
-            ? new SecurityPolicyEvaluation(BranchOutcome.Blocked, validUntil: null, blockers)
+            ? new SecurityPolicyEvaluation(BranchOutcome.Blocked, blockers)
             : new SecurityPolicyEvaluation(
                 BranchOutcome.Passed,
-                validUntil,
                 new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["ready"] = "Security evidence satisfies the version, findings, exception, and freshness policy.",
+                    ["ready"] = "Security evidence satisfies the version, findings, and exception policy.",
                 });
     }
 }
@@ -126,7 +110,6 @@ internal sealed record SecurityPolicyEvaluation : IReadinessPolicyEvaluation
 {
     public SecurityPolicyEvaluation(
         BranchOutcome outcome,
-        UtcInstant? validUntil,
         IReadOnlyDictionary<string, string> findings)
     {
         if (outcome is BranchOutcome.TransientFailure)
@@ -136,21 +119,11 @@ internal sealed record SecurityPolicyEvaluation : IReadinessPolicyEvaluation
                 nameof(outcome));
         }
 
-        if ((outcome is BranchOutcome.Passed) != validUntil.HasValue)
-        {
-            throw new ArgumentException(
-                "Only a passing Security policy evaluation has a validity deadline.",
-                nameof(validUntil));
-        }
-
         Outcome = outcome;
-        ValidUntil = validUntil;
         Findings = findings.ToImmutableDictionary(StringComparer.Ordinal);
     }
 
     public BranchOutcome Outcome { get; }
-
-    public UtcInstant? ValidUntil { get; }
 
     public ImmutableDictionary<string, string> Findings { get; }
 }

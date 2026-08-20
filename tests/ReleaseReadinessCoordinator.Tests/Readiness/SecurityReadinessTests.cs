@@ -8,13 +8,12 @@ namespace ReleaseReadinessCoordinator.Tests.Readiness;
 public sealed class SecurityReadinessPolicyTests
 {
     private static readonly UtcInstant ScannedAt = Utc(2026, 8, 17, 8);
-    private static readonly UtcInstant FreshnessDeadline = Utc(2026, 8, 18, 8);
     private static readonly UtcInstant WindowEnd = Utc(2026, 8, 17, 11);
 
     [Fact]
     public void Required_security_facts_must_all_be_present()
     {
-        var policy = PolicyAt(Utc(2026, 8, 17, 9).Value);
+        var policy = Policy();
         SecurityEvidenceRecord[] evidenceWithMissingFacts =
         [
             Evidence(scanVersion: null),
@@ -40,22 +39,21 @@ public sealed class SecurityReadinessPolicyTests
     }
 
     [Fact]
-    public void Exact_version_with_no_findings_passes_until_the_freshness_deadline()
+    public void Exact_version_with_no_findings_passes_regardless_of_scan_age()
     {
-        var policy = PolicyAt(FreshnessDeadline.Value.AddTicks(-1));
+        var policy = Policy();
 
         var evaluation = policy.Evaluate(
             Submission(releaseVersion: "2.4.0"),
             Evidence(scanVersion: "2.4.0"));
 
         Assert.Equal(BranchOutcome.Passed, evaluation.Outcome);
-        Assert.Equal(FreshnessDeadline, evaluation.ValidUntil);
     }
 
     [Fact]
     public void Matching_exception_with_exact_scope_and_window_end_expiry_passes()
     {
-        var policy = PolicyAt(Utc(2026, 8, 17, 9).Value);
+        var policy = Policy();
         var exceptions = new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>
         {
             ["HIGH-1"] = ("orders", WindowEnd),
@@ -66,13 +64,12 @@ public sealed class SecurityReadinessPolicyTests
             Evidence(highFindings: ["HIGH-1"], approvedExceptions: exceptions));
 
         Assert.Equal(BranchOutcome.Passed, evaluation.Outcome);
-        Assert.Equal(WindowEnd, evaluation.ValidUntil);
     }
 
     [Fact]
     public void High_finding_without_a_matching_exception_blocks()
     {
-        var policy = PolicyAt(Utc(2026, 8, 17, 9).Value);
+        var policy = Policy();
 
         var evaluation = policy.Evaluate(
             Submission(),
@@ -90,7 +87,7 @@ public sealed class SecurityReadinessPolicyTests
         long expiryTicksFromWindowEnd,
         long requestedEndTicksAfterWindowEnd)
     {
-        var policy = PolicyAt(Utc(2026, 8, 17, 9).Value);
+        var policy = Policy();
         var exceptions = new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>
         {
             ["HIGH-1"] = (
@@ -103,13 +100,12 @@ public sealed class SecurityReadinessPolicyTests
             Evidence(highFindings: ["HIGH-1"], approvedExceptions: exceptions));
 
         Assert.Equal(BranchOutcome.Blocked, evaluation.Outcome);
-        Assert.Null(evaluation.ValidUntil);
     }
 
     [Fact]
     public void Unresolved_critical_finding_always_blocks()
     {
-        var policy = PolicyAt(Utc(2026, 8, 17, 9).Value);
+        var policy = Policy();
         var exceptions = new Dictionary<string, (string Scope, UtcInstant ExpiresAt)>
         {
             ["CRIT-1"] = ("orders", WindowEnd),
@@ -125,7 +121,7 @@ public sealed class SecurityReadinessPolicyTests
     [Fact]
     public void Version_must_match_exactly()
     {
-        var policy = PolicyAt(Utc(2026, 8, 17, 9).Value);
+        var policy = Policy();
 
         var evaluation = policy.Evaluate(
             Submission(releaseVersion: "2.4.0"),
@@ -134,28 +130,7 @@ public sealed class SecurityReadinessPolicyTests
         Assert.Equal(BranchOutcome.Blocked, evaluation.Outcome);
     }
 
-    [Theory]
-    [InlineData(-1, BranchOutcome.Passed)]
-    [InlineData(0, BranchOutcome.Blocked)]
-    public void Freshness_is_current_only_before_the_deadline(
-        long ticksFromDeadline,
-        BranchOutcome expected)
-    {
-        var policy = PolicyAt(FreshnessDeadline.Value.AddTicks(ticksFromDeadline));
-
-        var evaluation = policy.Evaluate(Submission(), Evidence());
-
-        Assert.Equal(expected, evaluation.Outcome);
-        if (ticksFromDeadline == 0)
-        {
-            Assert.Equal(
-                "Security evidence reached its validity deadline at 2026-08-18 08:00:00 UTC.",
-                evaluation.Findings["freshness"]);
-        }
-    }
-
-    private static SecurityReadinessPolicy PolicyAt(DateTimeOffset now) =>
-        new(new FixedTimeProvider(now));
+    private static SecurityReadinessPolicy Policy() => new();
 
     private static ReleaseSubmission Submission(
         string releaseVersion = "2.4.0",
@@ -192,10 +167,6 @@ public sealed class SecurityReadinessPolicyTests
     private static UtcInstant Utc(int year, int month, int day, int hour) =>
         new(new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero));
 
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
 }
 
 public sealed class SecurityReadinessWorkflowIntegrationTests
@@ -277,7 +248,6 @@ public sealed class SecurityReadinessWorkflowIntegrationTests
             CallCount++;
             return new SecurityPolicyEvaluation(
                 BranchOutcome.Passed,
-                Utc(2026, 8, 18, 8),
                 new Dictionary<string, string>
                 {
                     ["ready"] = "Security evidence satisfies the policy.",

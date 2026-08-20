@@ -233,9 +233,9 @@ internal sealed class ReleaseWorkflowService
         IApplicationDataService dataService,
         TimeProvider timeProvider) => new(
         new ApplicationDataTestEvidenceProvider(dataService),
-        new TestReadinessPolicy(timeProvider),
+        new TestReadinessPolicy(),
         new ApplicationDataSecurityEvidenceProvider(dataService),
-        new SecurityReadinessPolicy(timeProvider),
+        new SecurityReadinessPolicy(),
         new ApplicationDataChangeEvidenceProvider(dataService),
         new ChangeReadinessPolicy());
 
