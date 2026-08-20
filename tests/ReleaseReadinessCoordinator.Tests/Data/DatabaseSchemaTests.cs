@@ -1,0 +1,326 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using ReleaseReadinessCoordinator.Data;
+using ReleaseReadinessCoordinator.Domain;
+
+namespace ReleaseReadinessCoordinator.Tests.Data;
+
+public sealed class DatabaseSchemaTests
+{
+    [Fact]
+    public void Model_contains_every_durable_business_and_audit_store()
+    {
+        using var context = CreateContext("Data Source=:memory:");
+
+        var tables = context.Model.GetEntityTypes()
+            .Select(entity => entity.GetTableName())
+            .Where(table => table is not null)
+            .Select(table => table!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Subset(
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "Releases",
+                "EvidenceRecords",
+                "CurrentEvidence",
+                "EvaluationRounds",
+                "BranchResults",
+                "WorkflowRequests",
+                "RemediationSubmissions",
+                "DecisionSnapshots",
+                "DecisionSnapshotSources",
+                "HumanResponses",
+                "WorkflowCorrelations",
+                "TimelineEntries",
+            },
+            tables);
+    }
+
+    [Fact]
+    public void Model_enforces_identity_history_and_active_record_constraints()
+    {
+        using var context = CreateContext("Data Source=:memory:");
+
+        var release = context.Model.FindEntityType(typeof(ReleaseRow))!;
+        Assert.Equal(
+            [nameof(ReleaseRow.ReleaseId)],
+            release.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal(
+            PropertySaveBehavior.Throw,
+            release.FindProperty(nameof(ReleaseRow.ServiceName))!.GetAfterSaveBehavior());
+        Assert.Equal(
+            PropertySaveBehavior.Throw,
+            release.FindProperty(nameof(ReleaseRow.ReleaseVersion))!.GetAfterSaveBehavior());
+
+        AssertUniqueIndex<EvidenceRecordRow>(
+            context,
+            nameof(EvidenceRecordRow.ReleaseId),
+            nameof(EvidenceRecordRow.Kind),
+            nameof(EvidenceRecordRow.Version));
+        AssertUniqueIndex<BranchResultRow>(
+            context,
+            nameof(BranchResultRow.EvaluationRoundId),
+            nameof(BranchResultRow.Check));
+        AssertUniqueIndex<EvaluationRoundRow>(
+            context,
+            nameof(EvaluationRoundRow.ReleaseId),
+            nameof(EvaluationRoundRow.RoundNumber));
+        AssertUniqueIndex<WorkflowRequestRow>(
+            context,
+            nameof(WorkflowRequestRow.EvaluationRoundId),
+            nameof(WorkflowRequestRow.Kind));
+        var activeRequestIndex = AssertUniqueIndex<WorkflowRequestRow>(
+            context,
+            nameof(WorkflowRequestRow.ReleaseId));
+        Assert.Equal("IsActive = 1", activeRequestIndex.GetFilter());
+        var terminalResponseIndex = AssertUniqueIndex<HumanResponseRow>(
+            context,
+            nameof(HumanResponseRow.ReleaseId));
+        Assert.Null(terminalResponseIndex.GetFilter());
+        AssertUniqueIndex<HumanResponseRow>(context, nameof(HumanResponseRow.ApprovalRequestId));
+        var responseType = context.Model.FindEntityType(typeof(HumanResponseRow))!;
+        var requestForeignKey = Assert.Single(
+            responseType.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(WorkflowRequestRow));
+        Assert.Equal(
+            [nameof(HumanResponseRow.ApprovalRequestId)],
+            requestForeignKey.Properties.Select(property => property.Name));
+        Assert.DoesNotContain(
+            responseType.GetForeignKeys().SelectMany(foreignKey => foreignKey.Properties),
+            property => property.Name is "RequestId" or "SnapshotId");
+        var correlationType = context.Model.FindEntityType(typeof(WorkflowCorrelationRow))!;
+        var correlationRequestForeignKey = Assert.Single(
+            correlationType.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(WorkflowRequestRow));
+        Assert.Equal(
+            [nameof(WorkflowCorrelationRow.PendingDomainRequestId)],
+            correlationRequestForeignKey.Properties.Select(property => property.Name));
+        AssertUniqueIndex<WorkflowCorrelationRow>(
+            context,
+            nameof(WorkflowCorrelationRow.PendingDomainRequestId));
+
+        var currentEvidence = context.Model.FindEntityType(typeof(CurrentEvidenceRow))!;
+        Assert.Equal(
+            [
+                nameof(CurrentEvidenceRow.ReleaseId),
+                nameof(CurrentEvidenceRow.Kind),
+            ],
+            currentEvidence.FindPrimaryKey()!.Properties.Select(property => property.Name));
+
+        Assert.True(
+            context.Model.FindEntityType(typeof(WorkflowRequestRow))!
+                .FindProperty(nameof(WorkflowRequestRow.ConcurrencyToken))!
+                .IsConcurrencyToken);
+        Assert.Null(
+            context.Model.FindEntityType(typeof(DecisionSnapshotRow))!
+                .FindProperty("ConcurrencyToken"));
+        Assert.Equal(
+            PropertySaveBehavior.Throw,
+            context.Model.FindEntityType(typeof(EvidenceRecordRow))!
+                .FindProperty(nameof(EvidenceRecordRow.PayloadJson))!
+                .GetAfterSaveBehavior());
+        Assert.Equal(
+            PropertySaveBehavior.Throw,
+            context.Model.FindEntityType(typeof(DecisionSnapshotRow))!
+                .FindProperty(nameof(DecisionSnapshotRow.DecisionBrief))!
+                .GetAfterSaveBehavior());
+        Assert.Equal(
+            PropertySaveBehavior.Throw,
+            context.Model.FindEntityType(typeof(TimelineEntryRow))!
+                .FindProperty(nameof(TimelineEntryRow.Summary))!
+                .GetAfterSaveBehavior());
+        foreach (var entityType in context.Model.GetEntityTypes()
+                     .Where(entity => entity.FindProperty("OperationKey") is not null))
+        {
+            Assert.Contains(
+                entityType.GetIndexes(),
+                index => index.IsUnique
+                    && index.Properties.Select(property => property.Name)
+                        .SequenceEqual(["OperationKey"]));
+        }
+    }
+
+    [Fact]
+    public async Task Ensure_created_creates_expected_tables_and_indexes_without_migration_history()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"release-readiness-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            await using (var context = CreateContext($"Data Source={databasePath};Pooling=False"))
+            {
+                await context.Database.EnsureCreatedAsync();
+            }
+
+            await using (var verification = CreateContext($"Data Source={databasePath};Pooling=False"))
+            {
+                await verification.Database.OpenConnectionAsync();
+
+                var tables = await ReadSchemaObjectNames(verification, "table");
+                Assert.DoesNotContain("__EFMigrationsHistory", tables);
+                Assert.Contains("Releases", tables);
+                Assert.Contains("EvidenceRecords", tables);
+                Assert.Contains("BranchResults", tables);
+                Assert.Contains("DecisionSnapshots", tables);
+                Assert.Contains("TimelineEntries", tables);
+
+                var indexes = await ReadSchemaObjectNames(verification, "index");
+                Assert.Contains("UX_EvidenceRecords_Release_Kind_Version", indexes);
+                Assert.Contains("UX_BranchResults_Round_Check", indexes);
+                Assert.Contains("UX_WorkflowRequests_Round_Kind", indexes);
+                Assert.Contains("UX_WorkflowRequests_Active_Release", indexes);
+                Assert.Contains("UX_HumanResponses_Terminal_Release", indexes);
+
+                Assert.Equal(
+                    [
+                        "Id", "EvaluationRoundId", "Check", "Outcome", "Disposition",
+                        "PlanningReason", "PlanningDetail", "EvidenceId", "EvidenceKind",
+                        "ValidUntilUtc", "AttemptsJson", "FindingsJson", "ReuseSourceResultId",
+                        "ReuseSourceRound", "OperationKey",
+                    ],
+                    await ReadColumnNames(verification, "BranchResults"));
+                Assert.Equal(
+                    ["DecisionSnapshotId", "Check", "BranchResultId", "EvidenceId"],
+                    await ReadColumnNames(verification, "DecisionSnapshotSources"));
+                Assert.Equal(
+                    [
+                        "Id", "ReleaseId", "ApprovalRequestId", "Decision",
+                        "Responder", "Comment", "RespondedAtUtc", "OperationKey",
+                    ],
+                    await ReadColumnNames(verification, "HumanResponses"));
+                Assert.Equal(
+                    [
+                        "ReleaseId", "WorkflowSessionId", "PendingWorkflowRequestId",
+                        "PendingDomainRequestId", "PendingRequestKind", "CorrelatedAtUtc",
+                        "ConcurrencyToken", "OperationKey",
+                    ],
+                    await ReadColumnNames(verification, "WorkflowCorrelations"));
+            }
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Active_request_uses_optimistic_concurrency_in_sqlite()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"release-readiness-{Guid.NewGuid():N}.db");
+        var releaseId = $"release-{Guid.NewGuid():N}";
+        var requestId = Guid.NewGuid();
+
+        try
+        {
+            await using (var setup = CreateContext($"Data Source={databasePath};Pooling=False"))
+            {
+                await setup.Database.EnsureCreatedAsync();
+                setup.Releases.Add(new ReleaseRow
+                {
+                    ReleaseId = releaseId,
+                    ServiceName = "orders",
+                    ReleaseVersion = "1.0.0",
+                    RequestedWindowStartUtc = new DateTimeOffset(2026, 8, 17, 8, 0, 0, TimeSpan.Zero),
+                    RequestedWindowEndUtc = new DateTimeOffset(2026, 8, 17, 9, 0, 0, TimeSpan.Zero),
+                    SubmittedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 0, 0, TimeSpan.Zero),
+                    Phase = ProcessPhase.WaitingForRemediation,
+                    PhaseChangedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 1, 0, TimeSpan.Zero),
+                    OperationKey = $"submit:{releaseId}",
+                    ConcurrencyToken = "release-token-1",
+                });
+                setup.WorkflowRequests.Add(new WorkflowRequestRow
+                {
+                    Id = requestId,
+                    ReleaseId = releaseId,
+                    Kind = WorkflowRequestKind.Remediation,
+                    CreatedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 1, 0, TimeSpan.Zero),
+                    IsActive = true,
+                    ConcurrencyToken = "request-token-1",
+                    OperationKey = $"request:{requestId:N}",
+                });
+                await setup.SaveChangesAsync();
+            }
+
+            await using (var firstContext = CreateContext($"Data Source={databasePath};Pooling=False"))
+            await using (var staleContext = CreateContext($"Data Source={databasePath};Pooling=False"))
+            {
+                var first = await firstContext.WorkflowRequests.SingleAsync();
+                var stale = await staleContext.WorkflowRequests.SingleAsync();
+
+                first.IsActive = false;
+                first.ClosedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 2, 0, TimeSpan.Zero);
+                first.ConcurrencyToken = "request-token-2";
+                await firstContext.SaveChangesAsync();
+
+                stale.IsActive = false;
+                stale.ClosedAtUtc = new DateTimeOffset(2026, 8, 16, 8, 3, 0, TimeSpan.Zero);
+                stale.ConcurrencyToken = "request-token-stale";
+
+                await Assert.ThrowsAsync<DbUpdateConcurrencyException>(
+                    () => staleContext.SaveChangesAsync());
+            }
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    private static AppDbContext CreateContext(string connectionString)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite(connectionString)
+            .Options;
+        return new AppDbContext(options);
+    }
+
+    private static IReadOnlyIndex AssertUniqueIndex<TEntity>(
+        DbContext context,
+        params string[] propertyNames)
+    {
+        var entity = context.Model.FindEntityType(typeof(TEntity))!;
+        return Assert.Single(
+            entity.GetIndexes(),
+            index => index.IsUnique
+                && index.Properties.Select(property => property.Name).SequenceEqual(propertyNames));
+    }
+
+    private static async Task<HashSet<string>> ReadSchemaObjectNames(
+        DbContext context,
+        string objectType)
+    {
+        await using var command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_master WHERE type = $type";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$type";
+        parameter.Value = objectType;
+        command.Parameters.Add(parameter);
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    private static async Task<HashSet<string>> ReadColumnNames(
+        DbContext context,
+        string tableName)
+    {
+        await using var command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"PRAGMA table_info(\"{tableName}\")";
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(1));
+        }
+
+        return names;
+    }
+}

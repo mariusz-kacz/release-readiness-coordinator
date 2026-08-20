@@ -53,6 +53,6 @@ project.fragment.lock.json
 .env
 .env.*
 !.env.example
+app-data/
 .DS_Store
 Thumbs.db
-

@@ -1,0 +1,108 @@
+@page "/Releases/{releaseId}/Decision"
+@model ReleaseReadinessCoordinator.Pages.Releases.DecisionModel
+@{
+    var approval = Model.State.Approval;
+    var snapshot = approval.Snapshot;
+    ViewData["Title"] = $"Decision for release {snapshot.ReleaseId}";
+}
+
+<header class="detail-header mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-semibold mb-1">Release readiness approval</p>
+        <h1>Decision for release @snapshot.ReleaseId</h1>
+        <p class="lead mb-0">Review the closed decision package and record one terminal decision.</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Releases/Detail" asp-route-releaseId="@snapshot.ReleaseId.Value">Back to release detail</a>
+</header>
+
+<section class="detail-section" aria-labelledby="approval-request-heading">
+    <h2 id="approval-request-heading">Active approval request</h2>
+    <p class="mb-2">MAF request <code class="text-break">@Model.State.WorkflowRequestId</code></p>
+    <dl class="detail-facts mb-0">
+        <div><dt>Approval request</dt><dd><code class="text-break">@approval.Request.Id</code></dd></div>
+        <div><dt>Snapshot</dt><dd><code class="text-break">@snapshot.Id</code></dd></div>
+        <div><dt>Evaluation round</dt><dd>Round @snapshot.RoundNumber</dd></div>
+        <div><dt>Created</dt><dd><time datetime="@snapshot.CreatedAt.Value.ToString("O")">@DetailModel.FormatInstant(snapshot.CreatedAt)</time></dd></div>
+        <div><dt>Earliest validity bound</dt><dd><time datetime="@snapshot.EarliestValidityBound.Value.ToString("O")">@DetailModel.FormatInstant(snapshot.EarliestValidityBound)</time></dd></div>
+    </dl>
+</section>
+
+<section class="detail-section" aria-labelledby="decision-brief-heading">
+    <h2 id="decision-brief-heading">Immutable decision brief</h2>
+    <p class="mb-0">@DetailModel.FormatText(snapshot.DecisionBrief)</p>
+</section>
+
+<section class="detail-section" aria-labelledby="snapshot-sources-heading">
+    <h2 id="snapshot-sources-heading">Snapshot sources</h2>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <caption class="visually-hidden">Passing readiness results carried by snapshot @snapshot.Id</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Check</th>
+                    <th scope="col">Outcome</th>
+                    <th scope="col">Evidence</th>
+                    <th scope="col">Result</th>
+                    <th scope="col">Valid until</th>
+                    <th scope="col">Findings</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var source in snapshot.Sources)
+                {
+                    <tr>
+                        <th scope="row">@source.Check</th>
+                        <td>@source.Outcome</td>
+                        <td><code class="small text-break">@source.EvidenceId</code></td>
+                        <td><code class="small text-break">@source.Id</code></td>
+                        <td><time datetime="@source.ValidUntil!.Value.Value.ToString("O")">@DetailModel.FormatInstant(source.ValidUntil)</time></td>
+                        <td>
+                            @if (source.Findings.IsEmpty)
+                            {
+                                <span>None</span>
+                            }
+                            else
+                            {
+                                <dl class="finding-list mb-0">
+                                    @foreach (var finding in source.Findings.OrderBy(item => item.Key, StringComparer.Ordinal))
+                                    {
+                                        <dt>@finding.Key</dt><dd>@DetailModel.FormatText(finding.Value)</dd>
+                                    }
+                                </dl>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<form method="post" asp-route-releaseId="@snapshot.ReleaseId.Value" class="detail-section">
+    <div asp-validation-summary="All" class="text-danger" role="alert"></div>
+    <input asp-for="Input.ResponseId" type="hidden" />
+
+    <fieldset>
+        <legend class="h2">Record terminal decision</legend>
+        <p class="text-secondary"><span aria-hidden="true">*</span> Reviewer and comment are required. Approval and rejection are terminal.</p>
+        <div class="mb-3">
+            <label asp-for="Input.Responder" class="form-label">Reviewer <span aria-hidden="true">*</span></label>
+            <input asp-for="Input.Responder" class="form-control" required autocomplete="name" />
+            <span asp-validation-for="Input.Responder" class="text-danger"></span>
+        </div>
+        <div class="mb-3">
+            <label asp-for="Input.Comment" class="form-label">Comment <span aria-hidden="true">*</span></label>
+            <textarea asp-for="Input.Comment" class="form-control" rows="4" required></textarea>
+            <span asp-validation-for="Input.Comment" class="text-danger"></span>
+        </div>
+        <span asp-validation-for="Input.Decision" class="text-danger d-block mb-2"></span>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="submit" name="Input.Decision" value="Approve" class="btn btn-primary">Approve release</button>
+            <button type="submit" name="Input.Decision" value="Reject" class="btn btn-outline-danger">Reject release</button>
+        </div>
+    </fieldset>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

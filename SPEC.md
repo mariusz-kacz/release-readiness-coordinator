@@ -2,7 +2,7 @@
 
 **Status:** Approved input for implementation planning  
 **Document role:** Sole authoritative project specification  
-**Last updated:** 2026-08-11
+**Last updated:** 2026-08-20
 
 ## 1. Authority and change control
 
@@ -25,15 +25,15 @@ The system coordinates readiness evidence produced by simulated external systems
 
 The MVP must visibly demonstrate:
 
-- four independent readiness checks executed as one parallel evaluation round;
+- three independent readiness checks executed as one parallel evaluation round;
 - fan-out and complete fan-in aggregation;
 - expected branch-local blockers, missing evidence, and transient failures;
 - durable waits for external remediation and human approval;
 - selective re-execution of affected checks;
 - safe reuse of successful and still-current results;
 - checkpoint-based recovery after application restart;
-- rejection of stale human decisions;
-- one narrowly bounded LLM task separated from deterministic policy.
+- correlated continuation of typed external requests;
+- deterministic readiness policies and routing.
 
 The target is one understandable workflow, not a miniature release-management platform.
 
@@ -45,8 +45,8 @@ Can:
 
 - submit a release candidate and initial evidence;
 - inspect workflow, evidence, findings, and evaluation history;
-- supply corrected evidence or release information;
-- explicitly invalidate affected checks when submitting remediation.
+- supply new versions of branch evidence;
+- explicitly select checks for rerun when submitting remediation.
 
 ### Release manager
 
@@ -61,17 +61,17 @@ The MVP does not require production-grade identity or authorization. Actor names
 ## 4. Primary end-to-end journey
 
 1. A release coordinator submits one release candidate.
-2. Test, Security, Change, and Dependency checks run as one evaluation round.
+2. Test, Security, and Change checks run as one evaluation round.
 3. Each branch promptly returns one structured result.
-4. The workflow forms a complete four-branch result view.
+4. The workflow forms a complete three-branch result view.
 5. When any branch blocks, lacks evidence, or exhausts a known transient retry, the workflow creates one remediation request after fan-in and pauses.
-6. The coordinator supplies corrected evidence or release information.
-7. A new evaluation round executes only branches that are unsuccessful, affected, invalid, expired, or explicitly invalidated.
-8. Successful and still-valid branch results are reused without recomputation.
-9. When all four branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, then pauses for a human decision.
-10. Before accepting approval or rejection, the workflow revalidates the snapshot and all evidence freshness conditions.
-11. A current approval or rejection is persisted as a terminal decision.
-12. A stale response is rejected, affected checks are invalidated, and selective evaluation resumes.
+6. The coordinator supplies new versions of affected branch evidence.
+7. A new evaluation round executes only branches that are unsuccessful, use an evidence record that is no longer current, are expired, or are explicitly selected.
+8. Successful branch results whose evidence identity and deadline still match are reused without recomputation.
+9. When all three branches pass, the workflow creates an immutable decision snapshot and deterministic decision brief, locks evidence changes for that release, and pauses for a human decision.
+10. The application restores and verifies the active typed MAF approval request before sending the human response into the workflow.
+11. A response delivered through that request approves or rejects the immutable snapshot and is persisted once as a terminal decision.
+12. Mismatched, missing, corrupt, or incompatible continuation state is rejected before workflow resumption and creates no human-decision business record.
 13. A workflow waiting for remediation or approval can be restored after the application is stopped and restarted.
 
 The UI and timeline must make every evaluation round understandable, especially which checks were **Executed** and which were **Reused**.
@@ -80,15 +80,15 @@ The UI and timeline must make every evaluation round understandable, especially 
 
 A release submission contains:
 
-- unique release identifier and revision;
+- globally unique release identifier;
 - service name;
 - release version;
 - requested deployment window;
-- rollback-plan text;
-- dependency requirements;
-- initial Test, Security, Change, and Dependency evidence or references to local simulated evidence.
+- initial Test, Security, and Change evidence or references to local simulated evidence.
 
-Duplicate identifier/revision submissions return a conflict. Approved and rejected revisions are terminal and cannot be reopened. A materially changed release after a terminal decision requires a new revision.
+Service name, release version, and requested deployment window are immutable after submission. Remediation cannot edit them. Correcting any of these values requires a separate release submission with a new release identifier.
+
+Duplicate release identifiers return a conflict. Approved and rejected releases are terminal and cannot be reopened. The MVP has no numeric release revision, release-family grouping, supersession link, evidence/history migration between releases, withdrawal, or cancellation.
 
 ## 6. Workflow semantics
 
@@ -112,15 +112,17 @@ Do not create one universal status enum. Keep these concepts separate:
 - process phase: `Evaluating`, `WaitingForRemediation`, `WaitingForApproval`, `Approved`, `Rejected`, or `Failed`;
 - branch outcome: `Passed`, `Blocked`, `MissingEvidence`, or `TransientFailure`;
 - execution disposition: `Executed` or `Reused`;
-- computed result validity: current, expired, or invalidated, with reason codes.
+- planning reason: `InitialEvaluation`, `PreviousResultNotPassed`, `EvidenceChanged`, `Expired`, `ExplicitlySelected`, or `StillCurrent`.
+
+A historical `BranchResult` is immutable and is never mutated into an invalidated state. It records the exact evidence record used. A passing result also records an externally calculated `ValidUntil` deadline; non-passing results need no deadline because they are never reusable. The round planner decides whether that result is reusable in the current context.
 
 ### 6.3 Aggregation
 
-Every evaluation round must produce one result for each of Test, Security, Change, and Dependency.
+Every evaluation round must produce one result for each of Test, Security, and Change.
 
-The aggregator receives all four results before routing:
+The aggregator receives all three results before routing:
 
-- all four `Passed` → build decision snapshot and request human approval;
+- all three `Passed` → build decision snapshot and request human approval;
 - any non-pass result → create one remediation request containing every current problem and wait for remediation.
 
 ## 7. Minimal deterministic readiness policies
@@ -129,17 +131,17 @@ All authoritative readiness decisions are deterministic C# decisions.
 
 Fixed MVP policy constants:
 
-- Test, Security, and Dependency evidence is current for 24 hours unless an earlier evidence-specific bound applies;
+- Test and Security evidence is current for 24 hours unless an earlier evidence-specific bound applies;
+- a passing Change result is current until the end of its approved window;
 - Test pass rate must be at least 95 percent;
 - evidence release versions must match the submitted release version exactly;
-- policy constants are code-owned and versioned.
+- policy constants are code-owned.
 
 | Branch | Required evidence and pass policy | Result mapping |
 |---|---|---|
 | Test | Test run version, completion time, pass rate, and critical-suite failures. Pass when version matches, pass rate is at least 95%, no critical suite failed, and evidence is current. | Missing record or required field → `MissingEvidence`; deterministic policy miss → `Blocked`; exhausted known source failure → `TransientFailure`; otherwise `Passed`. |
 | Security | Scan version/time, unresolved critical findings, high findings, and approved exceptions with scope and expiry. Pass when version matches, no critical finding remains, every high finding has a matching exception valid through the release window, and evidence is current. | Missing scan or required exception facts → `MissingEvidence`; uncovered finding or invalid exception → `Blocked`; exhausted known source failure → `TransientFailure`; otherwise `Passed`. |
-| Change | Change approval, approved window, and rollback-plan analysis. Pass when the change is approved, the requested deployment is wholly inside the approved window, and all required rollback checklist findings satisfy deterministic policy. | Missing approval or rollback text → `MissingEvidence`; unapproved, out-of-window, absent, or ambiguous checklist evidence → `Blocked`; exhausted known source/analyser failure → `TransientFailure`; otherwise `Passed`. |
-| Dependency | Required/available versions, availability intervals, maintenance intervals, and observation time. Pass when versions are compatible, availability covers the release window, no maintenance interval conflicts, and evidence is current. | Missing required facts → `MissingEvidence`; incompatibility, unavailability, or conflict → `Blocked`; exhausted known source failure → `TransientFailure`; otherwise `Passed`. |
+| Change | Change approval and approved window in one versioned Change evidence record. Pass when the change is approved and the requested deployment is wholly inside the approved window. | Missing approval or approved window → `MissingEvidence`; unapproved or out-of-window evidence → `Blocked`; exhausted known source failure → `TransientFailure`; otherwise `Passed`. |
 
 Do not implement a configurable policy language, generic rules engine, or user-configurable governance platform.
 
@@ -150,100 +152,58 @@ Selective rerun is the defining feature. Rerunning every branch after remediatio
 A previous branch result may be reused only when it:
 
 - passed;
-- has not expired;
-- is based on unchanged evidence;
-- is based on unchanged relevant release inputs;
-- was produced by the current policy version;
-- for Change, was produced by the current rollback analyser version;
-- has not been explicitly invalidated.
+- has a `ValidUntil` later than the current time;
+- references the evidence record that is still current for that branch;
+- was not explicitly selected for rerun.
 
-A branch must execute again when its prior result did not pass, its evidence changed or expired, a relevant release input changed, its policy/analyser version changed, or it was explicitly invalidated.
+A branch must execute again for the corresponding planning reason when there is no prior result, the prior result did not pass, its evidence record is no longer current, its deadline was reached, or the coordinator explicitly selected it.
 
 A reused branch must:
 
 - perform no evidence-provider call;
 - perform no policy-evaluator call;
-- perform no LLM or analyser-cache call;
-- verify the supplied hashes and versions defensively;
+- verify the supplied evidence identity and deadline defensively;
 - emit a result for the new round linked to the source result and source round;
 - explain why reuse was safe.
 
-Use this explicit invalidation map; do not replace it with a generic dependency graph:
+Each branch has zero or one current immutable/versioned evidence record. Initial submission may omit a branch record to exercise `MissingEvidence`. A response to the active remediation request may create or replace current evidence for one or more branches; doing so affects only those matching branches. A newly current record always counts as changed evidence even when its facts equal an older record. Evidence replacement is rejected in every other phase, including while approval is pending.
 
-| Changed input | Invalidated checks |
-|---|---|
-| Release version | Test, Security, Change, Dependency |
-| Requested deployment window | Security, Change, Dependency |
-| Test/Security/Change/Dependency evidence | Matching branch only |
-| Dependency requirements | Dependency |
-| Rollback-plan text or analyser version | Change |
-| Branch policy version | Matching branch only |
-| Coordinator's explicit branch selection | Selected branches |
-| Clock reaches a result's validity bound | That result's branch |
+Release metadata does not participate in change detection because it is immutable after submission. Explicit branch selection and reaching a validity deadline affect the planner decision directly without changing evidence.
 
-Every round and timeline entry must state `Executed because …` or `Reused from round N because …`.
+The bounded application data service must atomically persist a new evidence version, link it to the record it supersedes, and make it current. Do not compute input generations, content fingerprints, canonical payloads, or hashes for release, evidence, result, snapshot, or decision-brief change detection.
 
-## 9. LLM boundary
+Every round and timeline entry must state `Executed because …` or `Reused from round N because …`. Persist the stable planning reason code and a concise human-readable detail; do not create a separate reason enum for each release field.
 
-Rollback-plan checklist analysis is the only LLM-backed MVP capability.
+When more than one condition applies, choose one planning reason deterministically in this order: `InitialEvaluation`, `ExplicitlySelected`, `EvidenceChanged`, `PreviousResultNotPassed`, `Expired`, then `StillCurrent`. Human-readable detail may mention additional facts without creating additional domain reason codes.
 
-The analyser receives rollback-plan text and an analyser version and returns structured findings for exactly:
+## 9. Change readiness
 
-1. application rollback;
-2. database rollback;
-3. configuration rollback;
-4. verification steps;
-5. rollback decision owner.
+Change evidence contains the approval state and approved deployment window. Change readiness passes when the change is approved and the requested deployment window is wholly inside the approved window.
 
-Each item returns:
+Approval or window corrections create a new immutable Change evidence version. The current evidence identity and approved-window deadline participate in selective reuse like the equivalent inputs for the other readiness branches.
 
-- `Present`, `Absent`, or `Ambiguous`;
-- a concise normalized observation;
-- zero or more short exact supporting excerpts;
-- character offsets for every supporting excerpt.
+## 10. Human decision
 
-The analyser must abstain with `Absent` or `Ambiguous` when support is missing or unclear and must never invent rollback steps. Strict validation rejects unknown checklist items, mismatched excerpts, invalid offsets, and unsupported output.
-
-Deterministic Change policy requires all five findings to be `Present`. The LLM must never:
-
-- emit a branch readiness outcome;
-- choose routing or rerun behavior;
-- generate the authoritative decision brief;
-- approve or reject a release.
-
-Valid analysis may be cached by normalized rollback-content SHA-256 plus `AnalyzerVersion`. The version identifies the prompt, schema, model/deployment family, and parsing rules. Do not cache exhausted transient failures. A reused Change branch must not enter the analyser path at all.
-
-Do not add release-metadata extraction, additional agents, agent handoffs, agent conversations, or LLM-generated authoritative summaries.
-
-## 10. Human decision integrity
-
-When all four branches pass, persist an immutable `DecisionSnapshot` containing:
+When all three branches pass, persist an immutable `DecisionSnapshot` containing:
 
 - the passing evaluation round;
-- resolved source result IDs and hashes for all four checks;
-- relevant evidence and release fingerprints;
-- policy and analyser versions;
+- resolved source result IDs and evidence IDs for all three checks;
 - the earliest validity bound;
-- a deterministic decision brief and brief hash.
+- the deterministic decision brief as immutable snapshot content.
 
-Approval or rejection must reference the active human request and latest fully passing snapshot.
+The approval `RequestPort` exposes only a typed reference to the durable human-decision request. SQLite remains the authority for the immutable snapshot and brief displayed to the manager. While that request is active, the release accepts no evidence replacement, remediation submission, or explicit rerun. This portfolio constraint makes the database snapshot a closed decision package without duplicating it into workflow-continuation state.
 
-Before accepting a response, deterministically revalidate:
+MAF continuation state is the authority for response correlation; SQLite is the authority for domain content. Before rendering or resuming, the application rebuilds the identical graph, restores the pending request, and exactly reconciles its workflow request ID, typed request/response contract, and durable domain request ID with the correlation and active request stored in SQLite. A missing, mismatched, corrupt, or incompatible request is rejected before any response enters the workflow and produces no human-response business record. Checkpoint storage must remain trusted private infrastructure because MAF restores complete runtime state before this application-level check. The application's checkpoint-carried wait payload supplies only correlation identity and never supplies domain content to the UI or business handlers.
 
-- current process phase and active request identity;
-- snapshot identity and concurrency token;
-- current evidence and relevant release-input fingerprints;
-- policy and analyser versions;
-- every result validity deadline;
-- decision-brief hash.
+The response contains the manager's `Approve` or `Reject` decision and audit fields. It does not submit a snapshot identity or a separate domain concurrency token; the reconciled durable request reference identifies the snapshot being answered. An exact replay is idempotent, while reuse of a response identity with different content is a technical conflict.
 
-A stale response is recorded as declined, with reasons. Only affected checks are invalidated and the workflow returns to selective evaluation. The old response must never be applied automatically after reevaluation.
+The decision brief is not regenerated or hashed when a response arrives. The handler does not compare current evidence IDs or revalidate result deadlines. A correctly resumed approval or rejection is persisted once and is terminal for that release.
 
-A current approval or rejection is persisted once and is terminal for that release revision.
+Human decision never routes back to the planner. Selective reevaluation is demonstrated only by the remediation path.
 
 ## 11. Retry and failure behavior
 
-Retry only typed, known transient evidence-provider or rollback-analyser failures.
+Retry only typed, known transient evidence-provider failures.
 
 Use one initial attempt plus two immediate retries per executing branch, with no delay. Do not retry missing evidence or deterministic policy blockers. Retry exhaustion returns `TransientFailure` with attempt details.
 
@@ -261,7 +221,6 @@ Build one deployable ASP.NET Core .NET 10 application with:
 - one small domain/workflow layer in the same bounded solution;
 - EF Core with SQLite for business and audit state;
 - local in-process, JSON, or SQLite-backed simulated evidence providers;
-- one `IChatClient`-backed rollback-plan analyser;
 - no separate client, service, worker, queue, scheduler, broker, event bus, or real-time channel.
 
 An HTTP request starts or resumes a workflow and runs it until the next external request or terminal result. Do not introduce a startup worker that automatically resumes workflows.
@@ -277,27 +236,23 @@ Use one static graph with stable executor IDs:
 ```mermaid
 flowchart TD
     S[Submit release] --> P[Round planner]
-    P -->|four Execute/Reuse work items| T[Test]
+    P -->|three Execute/Reuse work items| T[Test]
     P --> SE[Security]
     P --> C[Change]
-    P --> D[Dependency]
-    T --> A[Fixed four-source fan-in]
+    T --> A[Fixed three-source fan-in]
     SE --> A
     C --> A
-    D --> A
     A -->|any non-pass| R[Remediation external request]
     R -->|response| P
     A -->|all pass| B[Build decision snapshot and brief]
     B --> H[Approval external request]
-    H --> F[Freshness revalidation]
-    F -->|stale| P
-    F -->|approve| OK([Approved])
-    F -->|reject| NO([Rejected])
+    H -->|approve| OK([Approved])
+    H -->|reject| NO([Rejected])
 ```
 
-The planner emits exactly four `BranchWorkItem`s each round, one per readiness check, with disposition `Execute` or `Reuse`. Every branch emits exactly one `BranchResult`, allowing a deterministic fixed four-source fan-in while still ensuring reused checks perform no real work.
+The planner emits exactly three `BranchWorkItem`s each round, one per readiness check, with disposition `Execute` or `Reuse`. Every branch emits exactly one `BranchResult`, allowing a deterministic fixed three-source fan-in while still ensuring reused checks perform no real work.
 
-Represent remediation and approval with typed MAF external calls/`RequestPort`s. External requests occur only after fan-in. Pending requests must survive checkpoint restoration and resume through their correlated response.
+Represent remediation and approval with typed MAF external calls/`RequestPort`s whose request payloads contain only the corresponding durable request ID. External requests occur only after fan-in. Pending requests must survive checkpoint restoration, reconcile exactly with SQLite, and resume through their correlated response.
 
 Changing the MAF version requires source-driven reverification of fan-out/fan-in behavior, external-request restoration, checkpoint rehydration, and stable executor-ID compatibility before implementation continues.
 
@@ -305,22 +260,25 @@ Changing the MAF version requires source-driven reverification of fan-out/fan-in
 
 Use SQLite for:
 
-- releases and revisions;
+- releases identified by one globally unique release identifier;
 - immutable/versioned evidence;
 - evaluation rounds and branch results;
-- rollback analyses;
 - remediation requests and submissions;
 - decision snapshots and human responses;
-- workflow correlation metadata;
+- workflow correlation metadata, including the active durable request ID;
 - append-only display timeline entries.
 
 Use MAF `FileSystemJsonCheckpointStore` in a dedicated application-data directory for workflow continuation. Keep MAF checkpoint data outside SQLite and store only stable correlation identifiers between the two stores.
 
+SQLite supplies the workflow session ID used to select the latest checkpoint and the expected pending-wait tuple. MAF then restores its complete runtime state, including execution position, pending messages, and the external-request envelope. Only the application-defined request payload is restricted to the durable request reference; SQLite does not reconstruct MAF runner state.
+
+The revision-bearing pre-release SQLite database and filesystem checkpoints are disposable when the single-identifier contract is implemented. Delete and recreate both stores; do not add dual-read compatibility, a backfill, or a production data migration for this MVP correction.
+
 Use one application-lifetime checkpoint store and external synchronization around start/resume access because the store is process-exclusive and not thread-safe. This is a small critical section, not a queue or background execution architecture.
 
-The checkpoint store is workflow-continuation truth; idempotent SQLite records are business-history truth. Their writes are not atomic. Use stable operation keys and reconciliation to make replayed business writes harmless.
+The checkpoint store is workflow-continuation truth; idempotent SQLite records are business-history and domain-content truth. Their writes are not atomic. Use stable operation keys and exact identity reconciliation to make replayed business writes harmless. A checkpoint may authorize continuation only when its typed wait identity equals the SQLite correlation tuple; it may never replace, repair, or override SQLite domain content.
 
-On release-detail or response requests, reconstruct the identical graph with stable executor IDs, restore the latest valid checkpoint, verify the re-emitted request ID and type, and send the correlated response. Missing, corrupt, or incompatible continuation state becomes a visible technical failure; never silently start a fresh workflow.
+On release-detail or response requests, reconstruct the identical graph with stable executor IDs, restore the latest valid checkpoint, verify the re-emitted workflow request ID, typed port contract, and durable request ID against SQLite, and only then render SQLite content or send the correlated response. This application deliberately uses the durable rehydration path for every HTTP continuation because it does not retain live `StreamingRun` instances between requests; MAF also supports responding directly through a retained live run, but that is not this application's lifecycle. Missing, corrupt, mismatched, or incompatible continuation state becomes a visible technical failure; never silently start a fresh workflow.
 
 The MVP must demonstrate:
 
@@ -336,14 +294,14 @@ The MVP must demonstrate:
 
 The plan and implementation must preserve these concepts without turning them into a generic framework:
 
-- `ReleaseSubmission` / release revision;
+- `ReleaseSubmission` with one validated `ReleaseId` identity;
 - immutable or versioned `EvidenceRecord`;
 - `BranchWorkItem` with `Execute|Reuse`;
-- `BranchResult` with outcome, disposition, fingerprints, versions, validity, attempts, findings, and optional reuse source;
+- `BranchResult` with outcome, disposition, optional evidence ID and `ValidUntil`, attempts, findings, and optional reuse source; a passing result always has evidence and a deadline;
 - complete `EvaluationRound` containing one result per check;
 - `RemediationRequest` and `RemediationSubmission`;
 - immutable `DecisionSnapshot`;
-- correlated `HumanResponse` and validation result;
+- terminal `HumanResponse` delivered through the correlated MAF approval request;
 - workflow correlation record;
 - append-only display timeline.
 
@@ -353,10 +311,10 @@ Use EF Core directly through a bounded application data service. Do not add gene
 
 Use Razor Pages and manual refresh. The MVP UI contains only:
 
-- **Submit release:** release metadata, deployment window, rollback text, dependency requirements, and compact simulated evidence inputs or demo fixtures;
-- **Release/workflow detail:** process phase, four current results, evidence and findings, evaluation-round history, `Executed`/`Reused` reasons and source links, deterministic brief, active wait, and chronological timeline;
-- **Remediation interaction:** active problems, corrected evidence/release inputs, explicit invalidations, and request correlation token;
-- **Decision interaction:** immutable snapshot/brief, Approve/Reject controls, actor, comment, request/snapshot identity, and stale-response feedback.
+- **Submit release:** immutable release metadata, deployment window, and compact simulated evidence inputs or demo fixtures;
+- **Release/workflow detail:** process phase, three current results, evidence and findings, evaluation-round history, `Executed`/`Reused` reasons and source links, deterministic brief, active wait, and chronological timeline;
+- **Remediation interaction:** active problems, new evidence versions, explicit branch selections for rerun, and request correlation token; release metadata is display-only;
+- **Decision interaction:** immutable snapshot/brief, active MAF request identity, Approve/Reject controls, actor, comment, and safe continuation-error feedback.
 
 Do not add SPA state, SignalR, a design system, complex authentication/authorization, notifications, analytics, or deployment execution.
 
@@ -371,41 +329,30 @@ Use data-driven tests for:
 - readiness-policy boundaries and result mapping;
 - version, deployment-window, security-exception, maintenance-overlap, and freshness rules;
 - retry classification and limits;
-- selective reuse across evidence/input/time/policy/analyser/explicit invalidation changes;
-- snapshot freshness and stale-response handling.
+- selective reuse across evidence-identity, time, policy, and explicit-selection changes;
+- immutable decision-snapshot construction and terminal response idempotency.
 
 ### Workflow tests
 
 Use a small set of real-graph scenarios covering:
 
 1. all checks pass and a current human approval terminates `Approved`;
-2. multiple checks block, remediation changes their inputs, only affected checks execute, and other checks reuse without provider/policy/LLM calls;
+2. multiple checks block, remediation replaces their evidence records, only affected checks execute, and other checks reuse without provider or policy calls;
 3. missing evidence or exhausted known transient failure aggregates, waits only after fan-in, and resumes;
 4. the process restarts while waiting, restores checkpoint/domain correlation, re-emits the request, and resumes once;
-5. evidence expires while awaiting approval, the response is declined as stale, and only affected checks rerun;
-6. a current human rejection terminates `Rejected`.
-
-### LLM evaluation
-
-Use approximately ten curated rollback plans spanning complete plans, each missing checklist item, ambiguous ownership, misleading headings, contradictory steps, and citation fidelity.
-
-Evaluate:
-
-- item classification;
-- correct abstention;
-- structured-output validity;
-- exact citation grounding and offsets;
-- deterministic Change-policy mapping;
-- cache-key and invalidation behavior.
-
-Normal automated tests use deterministic fakes or recorded structured responses. A credentialed provider smoke test is optional and explicitly enabled; it is not part of normal CI.
+5. a restored approval request accepts one correlated approval and terminates `Approved` without routing back to the planner;
+6. a restored approval request accepts one correlated rejection and terminates `Rejected` without routing back to the planner.
 
 ### UI verification
 
-Use minimal browser smoke coverage for:
+Use focused Razor/Kestrel integration tests and presenter-led manual verification for:
 
 - submit → passing round → human decision;
 - blocker → remediation → selective rerun.
+
+Do not add a browser-automation dependency. Verify server-rendered output, PRG handlers,
+request correlation, and continuation safety in the focused test project; keep the two
+complete UI journeys as documented manual checks.
 
 Do not test DTO properties, constructors, obvious EF mappings, framework DI wiring, or redundant permutations.
 
@@ -440,7 +387,7 @@ The implementation plan may choose exact solution, project, namespace, and folde
 
 - Enable nullable reference types and use async APIs for I/O.
 - Prefer explicit, typed workflow messages and small concrete components.
-- Keep process phase, branch outcome, disposition, and validity separate.
+- Keep process phase, branch outcome, execution disposition, and planning reason separate; represent change with evidence identity and freshness with `ValidUntil`.
 - Preserve immutable/versioned evidence and append-only history where specified.
 - Use an injectable clock for all time-dependent behavior.
 - Prefer the smallest concrete implementation that satisfies this specification.
@@ -458,7 +405,6 @@ The implementation plan may choose exact solution, project, namespace, and folde
 - preserve selective rerun and provably safe reuse;
 - wait only after complete fan-in;
 - distinguish expected outcomes from technical failures;
-- retain exactly one LLM-backed MVP capability;
 - keep business history and MAF continuation conceptually separate;
 - verify MAF-specific assumptions against version-matched official sources when changing framework behavior.
 
@@ -469,7 +415,6 @@ The implementation plan may choose exact solution, project, namespace, and folde
 - adding a package not already justified by the specification;
 - changing public contracts or persisted-state semantics after they exist;
 - adding another deployable component or background process;
-- expanding the LLM's authority or adding another LLM capability;
 - adding authentication, authorization, notifications, or deployment behavior.
 
 ### Never for the MVP
@@ -488,18 +433,18 @@ The implementation plan may choose exact solution, project, namespace, and folde
 
 The MVP is complete when all of the following are demonstrably true:
 
-1. A release can be submitted through the web UI.
-2. MAF visibly fans out to Test, Security, Change, and Dependency and aggregates one result from each.
+1. A release with one globally unique identifier can be submitted through the web UI without a revision field.
+2. MAF visibly fans out to Test, Security, and Change and aggregates one result from each.
 3. All four expected branch outcomes are represented without converting technical defects into domain results.
 4. Multiple branch problems create one post-fan-in remediation request.
-5. Remediation starts a new round that executes only affected/invalid checks and reuses other valid results without provider, policy, or LLM calls.
+5. Evidence-only remediation starts a new round that executes only branches whose reuse conditions no longer hold and reuses the others without provider or policy calls.
 6. Round history and timeline explain execution versus reuse and link reused results to their source round.
 7. A waiting workflow survives application stop/restart and resumes the same pending request without duplicate domain records.
-8. Rollback text is analysed into citation-grounded checklist findings by the sole LLM-backed capability, while deterministic C# decides Change readiness.
+8. Deterministic C# decides Change readiness from approval and approved-window containment.
 9. A fully passing round produces an immutable snapshot and deterministic decision brief.
-10. A current human approval or rejection is terminal.
-11. A stale human response is rejected and routes only affected checks back to selective evaluation.
-12. The targeted deterministic, workflow, restart, LLM-evaluation, and UI checks pass.
+10. A response resumed through the active typed MAF approval request terminates as `Approved` or `Rejected` without returning to evaluation.
+11. Missing, mismatched, corrupt, or incompatible approval continuation state is rejected before workflow resumption and creates no human-response business record.
+12. The targeted deterministic, workflow, restart, and UI checks pass.
 13. The implementation remains one bounded application and contains none of the prohibited platform or multi-agent expansion.
 
 ## 19. Risks, assumptions, and open decisions
@@ -511,11 +456,14 @@ The MVP is complete when all of the following are demonstrably true:
 - `FileSystemJsonCheckpointStore` constrains the MVP to one process, which is intentional.
 - Simulated local evidence is authoritative for the MVP.
 - Actor names are entered rather than authenticated.
+- Evidence is intentionally locked while approval is pending, and human decisions approve or reject the immutable point-in-time snapshot without freshness revalidation. Production-grade continuously editable evidence is outside this portfolio MVP.
+- Release metadata is intentionally immutable after submission. Correcting it requires a separate release with a new identifier; release-family grouping, supersession, withdrawal, cancellation, and cross-release migration are deliberately not implemented.
+- Existing revision-bearing local SQLite and checkpoint data is pre-release and disposable; the identity correction resets those stores rather than preserving compatibility.
+- Safe reuse depends on routing every evidence replacement through the bounded application data service so that the new immutable version, supersession link, and current-evidence selection change atomically.
 
 ### Genuine open decisions for planning
 
 - exact solution, project, namespace, and folder names;
-- exact `IChatClient` provider/deployment available to the owner, provided it supports the required structured output;
 - exact UI page names and presentation details within the minimum UI boundary.
 
 No other architectural decision should be reopened during task planning unless repository reality or version-matched official MAF behavior directly conflicts with this specification.

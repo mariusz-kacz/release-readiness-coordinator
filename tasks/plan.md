@@ -2,12 +2,13 @@
 
 ## Overview
 
-Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed four-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, one tightly bounded `IChatClient` rollback analyser, and a minimal server-rendered UI. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
+Build the approved `SPEC.md` as one ASP.NET Core .NET 10 Razor Pages application named `ReleaseReadinessCoordinator`, backed by EF Core/SQLite for business history and Microsoft Agent Framework (MAF) filesystem checkpoints for workflow continuation. The implementation will deliver one fixed three-branch release-readiness workflow, deterministic policies and routing, safe selective reuse, typed remediation and approval waits, restart recovery, and a minimal server-rendered UI. Human decision intentionally uses a closed immutable snapshot and terminal approval/rejection so the portfolio emphasizes MAF orchestration rather than production-grade continuously editable approval evidence. Work is ordered to prove the highest-risk MAF 1.17.0 behavior before building business features.
 
 ## Planning Basis
 
 - `SPEC.md` is the sole authoritative product and architecture specification.
-- The repository is greenfield: only `SPEC.md`, a placeholder `README.md`, and `.gitignore` exist.
+- Tasks 1-15 are implemented and verified in the current repository. Task 16 is reopened to replace its production-oriented stale-decision contract with the approved portfolio-focused terminal MAF decision flow.
+- On 2026-08-19 the owner removed numeric release revisions from the MVP. Completed revision-bearing tasks remain historical records; Task 21 performs the compulsory single-identifier cutover before remaining UI work.
 - The NuGet V3 package index was checked on 2026-08-11 and includes `Microsoft.Agents.AI.Workflows` version `1.17.0`.
 - Official MAF documentation confirms the planned superstep synchronization barrier, typed `RequestPort` external requests, checkpoint capture of pending requests, stable topology/executor identity requirements during rehydration, and the process-exclusive/non-thread-safe filesystem checkpoint store. Because some API reference pages display an older package label, Tasks 2 and 3 require compiled 1.17.0 contract tests before feature implementation continues.
 
@@ -27,15 +28,14 @@ Official references:
 - Root namespace: `ReleaseReadinessCoordinator`
 - Razor routes:
   - `/Releases/New`
-  - `/Releases/{releaseId}/{revision}`
-  - `/Releases/{releaseId}/{revision}/Remediate`
-  - `/Releases/{releaseId}/{revision}/Decision`
+  - `/Releases/{releaseId}`
+  - `/Releases/{releaseId}/Remediate`
+  - `/Releases/{releaseId}/Decision`
 - One bounded application data service uses EF Core directly. There are no generic repositories, CQRS layers, event sourcing, workers, queues, or additional deployables.
 - Built-in `TimeProvider` is injected for all time-sensitive logic.
-- Canonical UTF-8 serialization plus SHA-256 produces evidence, release-input, result, rollback-content, and decision-brief fingerprints.
-- Policy versions and `AnalyzerVersion` are code-owned constants. Initial identifiers use explicit semantic strings such as `test-policy/1` and `rollback-analyzer/1`.
+- Every submission has one globally unique `ReleaseId`; there is no numeric revision or release-family relationship. Release metadata is immutable after submission, and corrections require a new release ID. Remediation replaces only immutable/versioned branch evidence, and planner reuse compares current evidence IDs and `ValidUntil` deadlines.
+- Evidence changes are allowed through remediation only and are locked while approval is pending. The restored typed MAF reference is the authority for approval-response correlation, while SQLite is the authority for decision content; human decision never routes back to the planner.
 - Local simulated providers implement typed evidence-source contracts. Only known typed transient failures receive one initial attempt plus two immediate retries.
-- The LLM integration consumes an injected `IChatClient`; deterministic fakes/recorded responses are used in normal tests. Provider-specific registration remains a documented composition choice after the owner identifies the available provider/deployment.
 - SQLite stores immutable/versioned business records and an append-only timeline. MAF checkpoints live under a configurable private application-data directory that is excluded from source control.
 - Stable operation keys make replayed SQLite writes idempotent. A single application-lifetime checkpoint store is protected by an async critical section.
 
@@ -43,20 +43,26 @@ Official references:
 
 ```mermaid
 flowchart TD
-    A[Solution and command baseline] --> B[MAF fan-out/fan-in proof]
-    B --> C[MAF request/checkpoint proof]
-    C --> D[Domain vocabulary and fingerprints]
-    D --> E[SQLite schema and bounded data service]
-    E --> F[Release submission]
-    D --> G[Test, Security, Change, Dependency slices]
-    F --> H[Selective round planner]
-    G --> H
-    H --> I[Complete aggregation and remediation]
-    I --> J[Decision snapshot and response integrity]
-    J --> K[Restart recovery and reconciliation]
-    K --> L[Razor Pages interactions]
-    L --> M[Workflow, LLM, and browser evaluation]
-    M --> N[Documentation and final acceptance]
+    T1[Task 1: Solution and command baseline] --> T2[Task 2: MAF conditional-routing/fan-in proof]
+    T2 --> T3[Task 3: MAF request/checkpoint proof]
+    T3 --> T4[Task 4: Immutable release and evidence contracts]
+    T4 --> T5[Task 5: Evaluation and reuse contracts]
+    T5 --> T6[Task 6: Decision and audit contracts]
+    T5 --> T7[Task 7: Evidence identity and freshness rules]
+    T6 --> T8_9[Tasks 8-9: SQLite schema and bounded data service]
+    T7 --> T8_9
+    T8_9 --> T10[Task 10: Release submission]
+    T7 --> T11_13[Tasks 11-13: Test, Security, Change slices]
+    T10 --> T14[Task 14: Selective round planner]
+    T11_13 --> T14
+    T14 --> T15[Task 15: Complete aggregation and remediation]
+    T15 --> T16[Task 16: Decision snapshot and response integrity]
+    T16 --> T17_19[Tasks 17-19: Identity vocabulary simplification]
+    T17_19 --> T20[Task 20: Restart recovery and reconciliation]
+    T20 --> T21[Task 21: Single release-identifier cutover]
+    T21 --> T22_24[Tasks 22-24: Razor Pages interactions]
+    T22_24 --> T25[Task 25: Workflow evaluation]
+    T25 --> T26[Task 26: Documentation and final acceptance]
 ```
 
 ## Task List
@@ -65,107 +71,113 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 
 ### Phase 1: Fail-Fast Framework Foundation
 
-- [ ] Task 1: Bootstrap the .NET 10 solution and command baseline
-- [ ] Task 2: Prove the fixed MAF four-branch graph
-- [ ] Task 3: Prove typed waits and checkpoint rehydration
+- [x] Task 1: Bootstrap the .NET 10 solution and command baseline
+- [x] Task 2: Prove the fixed MAF three-branch graph
+- [x] Task 3: Prove typed waits and checkpoint rehydration
 
 ### Checkpoint A: Framework Viability
 
-- [ ] Exact MAF 1.17.0 reference restores and compiles
-- [ ] A real graph emits exactly four branch results before aggregation
-- [ ] A pending typed request survives filesystem-checkpoint rehydration
+- [x] Exact MAF 1.17.0 reference restores and compiles
+- [x] A real graph emits exactly three branch results before aggregation
+- [x] A pending typed request survives filesystem-checkpoint rehydration
 - [ ] Human review confirms no version or topology deviation is required
 
 ### Phase 2: Domain and Durable Business History
 
-- [ ] Task 4: Define the release-readiness domain vocabulary
-- [ ] Task 5: Implement fingerprints, validity, and invalidation primitives
+- [x] Task 4: Model immutable releases and versioned evidence
+- [x] Task 5: Define evaluation and selective-reuse contracts
+- [x] Task 6: Define decision, correlation, and audit contracts
+- [x] Task 7: Establish evidence-identity and freshness rules
 
 ### Checkpoint B1: Domain Semantics
 
-- [ ] Domain types keep phase, outcome, disposition, and validity separate
-- [ ] The explicit invalidation map is covered by deterministic tests
+- [x] Immutable releases/evidence and durable decision/audit vocabulary are defined
+- [x] Phase, outcome, disposition, and planning reason remain separate bounded concepts
+- [x] Evidence-identity and freshness-deadline rules are covered by deterministic tests
 
-- [ ] Task 6: Create the SQLite schema and migrations
-- [ ] Task 7: Implement the bounded idempotent application data service
+- [x] Task 8: Create the SQLite schema and migrations
+- [x] Task 9: Implement the bounded idempotent application data service
 
 ### Checkpoint B2: Durable Foundation
 
-- [ ] SQLite schema, constraints, and replay-safe writes are verified
-- [ ] Immutable/versioned records and append-only history are preserved
+- [x] SQLite schema, constraints, and replay-safe writes are verified
+- [x] Immutable/versioned records and append-only history are preserved
 
-### Phase 3: Submission and Four Readiness Slices
+### Phase 3: Submission and Three Readiness Slices
 
-- [ ] Task 8: Deliver release submission and demo fixtures
-- [ ] Task 9: Deliver the Test readiness slice
-- [ ] Task 10: Deliver the Security readiness slice
+- [x] Task 10: Deliver release submission and demo fixtures
+- [x] Task 11: Deliver the Test readiness slice
+- [x] Task 12: Deliver the Security readiness slice
 
 ### Checkpoint C1: Submission and First Policies
 
-- [ ] A release can be submitted once and starts a correlated workflow
-- [ ] Test and Security boundaries/outcome mappings are verified
+- [x] A release can be submitted once and starts a correlated workflow
+- [x] Test and Security boundaries/outcome mappings are verified
 
-- [ ] Task 11: Deliver validated and cached rollback analysis
-- [ ] Task 12: Deliver the Change readiness slice
-- [ ] Task 13: Deliver the Dependency readiness slice
+- [x] Task 13: Deliver the Change readiness slice
 
 ### Checkpoint C2: Deterministic Readiness
 
-- [ ] Every branch maps missing, blocked, transient, and passing outcomes correctly
-- [ ] Retry count and classification are proven
-- [ ] The LLM can only produce validated rollback findings; C# owns readiness
+- [x] Every branch maps missing, blocked, transient, and passing outcomes correctly
+- [x] Retry count and classification are proven
+- [x] Change readiness uses approval and approved-window containment only
 
 ### Phase 4: Selective Workflow and Human Integrity
 
-- [ ] Task 14: Implement selective execution and safe reuse planning
-- [ ] Task 15: Complete aggregation and remediation resumption
-- [ ] Task 16: Build immutable snapshots and handle human decisions
+- [x] Task 14: Implement selective execution and safe reuse planning
+- [x] Task 15: Complete aggregation and remediation resumption
+- [x] Task 16: Build immutable snapshots and terminal MAF human decisions
+- [x] Task 17: Allocate round and result identities once
+- [x] Task 18: Separate workflow waits from business requests
+- [x] Task 19: Clarify persisted approval-response references
 
 ### Checkpoint D: Core End-to-End Workflow
 
-- [ ] Every round contains four results with explicit Executed/Reused reasons
-- [ ] Multiple current problems create one wait after complete fan-in
-- [ ] Passing results form one immutable snapshot and deterministic brief
-- [ ] Current decisions terminate; stale decisions selectively reevaluate
+- [x] Every round contains three results with explicit Executed/Reused reasons
+- [x] Multiple current problems create one wait after complete fan-in
+- [x] Passing results form one immutable snapshot and deterministic brief
+- [x] Restored approval requests terminate as Approved/Rejected, invalid continuation has no business effect, and human decision has no edge back to the planner
+- [x] Entity-owned IDs remain conventional while every cross-entity and workflow-engine reference has an unambiguous name
 
 ### Phase 5: Recovery and Minimal Razor UI
 
-- [ ] Task 17: Add restart recovery, synchronization, and reconciliation
-- [ ] Task 18: Build release detail and timeline UI
+- [x] Task 20: Add restart recovery, synchronization, and reconciliation
+- [x] Task 21: Remove numeric release revisions across the application
+- [x] Task 22: Build release detail and timeline UI
 
 ### Checkpoint E1: Recovery and Read Model
 
-- [ ] Stop/restart/resume works for remediation and approval waits
-- [ ] The detail page explains current state and immutable history
+- [x] Stop/restart/resume works for remediation and approval waits
+- [x] Release identity, persistence, workflow sessions, and routes use only `ReleaseId`
+- [x] The detail page explains current state and immutable history
 
-- [ ] Task 19: Build remediation interaction UI
-- [ ] Task 20: Build decision interaction UI
+- [x] Task 23: Build remediation interaction UI
+- [x] Task 24 prerequisite: Reconcile minimal typed MAF references with SQLite domain content
+- [x] Task 24: Build decision interaction UI
 
 ### Checkpoint E2: Demonstrable MVP
 
-- [ ] No replay creates duplicate business records
-- [ ] Manual UI journeys expose evidence, findings, rounds, waits, and reasons
+- [x] No replay creates duplicate business records
+- [x] Manual UI journeys expose evidence, findings, rounds, waits, and reasons
 
 ### Phase 6: Evaluation and Delivery
 
-- [ ] Task 21: Complete real-graph workflow scenario coverage
-- [ ] Task 22: Add the curated rollback-analysis evaluation corpus
-- [ ] Task 23: Add minimal browser smoke coverage
+- [x] Task 25: Complete real-graph workflow scenario coverage
 
 ### Checkpoint F1: Evaluation
 
-- [ ] Required workflow, LLM, and browser scenarios pass
-- [ ] Test evidence covers orchestration risks and both user journeys
+- [x] Required workflow scenarios pass
+- [x] Deterministic test evidence covers orchestration risks
 
-- [ ] Task 24: Finish documentation, full verification, and spec audit
+- [x] Task 26: Finish documentation, full verification, and spec audit
 
 ### Checkpoint F2: Complete
 
-- [ ] All 13 MVP acceptance criteria in `SPEC.md` are demonstrated
-- [ ] Restore, build, tests, formatting, runtime checks, and browser checks pass
-- [ ] No prohibited architecture or LLM authority has been introduced
-- [ ] Complete diff is reviewed and residual risks/unrun checks are reported
-- [ ] Human review approves implementation readiness
+- [x] All 13 MVP acceptance criteria in `SPEC.md` are demonstrated
+- [x] Restore, build, tests, formatting, and documented manual runtime checks pass
+- [x] No prohibited architecture has been introduced
+- [x] Complete diff is reviewed and residual risks/unrun checks are reported
+- [x] Human review approves implementation readiness
 
 ## Risks and Mitigations
 
@@ -173,17 +185,17 @@ Detailed acceptance criteria, verification commands, dependencies, and likely fi
 |---|---|---|
 | MAF 1.17.0 APIs differ from current documentation examples | High | Tasks 2-3 compile and execute version-pinned topology, request, checkpoint, and stable-ID probes before domain implementation. Any conflict is reported; the version is never changed silently. |
 | SQLite writes and filesystem checkpoints cannot be atomic | High | Use stable operation keys, unique constraints, replay-safe upserts, correlation verification, and explicit reconciliation tests. |
-| Reuse accidentally calls providers, policies, or the analyser | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
-| A stale human response is accepted | High | Bind responses to request ID, snapshot ID, concurrency token, hashes, versions, deadlines, and brief hash; persist declined responses with reason codes. |
-| LLM output invents or misquotes rollback evidence | High | Strict schema/item allowlist, exact substring/offset checks, abstention rules, recorded adversarial corpus, and deterministic Change policy. |
+| Reuse accidentally calls providers or policies | High | Represent Execute/Reuse in planner output, keep reuse as a separate defensive code path, inject counting fakes, and assert zero forbidden calls. |
+| Incorrect immutable release metadata cannot be remediated in place | Medium | Validate submission strictly, make the limitation visible, and require a separate release ID without adding grouping, supersession, or cancellation behavior to the MVP. |
+| Removing revision changes established domain, persisted, route, and checkpoint identities | High | Land Task 21 before further UI work, reset disposable pre-release SQLite/checkpoint stores, update all contracts and tests together, and add no compatibility layer. |
+| An approval response resumes the wrong external request | High | Rebuild the identical graph, restore the pending request, and exactly reconcile its MAF request ID, typed port contract, and durable request ID with SQLite before sending the response. Invalid continuation has no business effect. |
+| A restored MAF request reference cannot be materialized or differs from SQLite correlation | High | Characterize the pinned 1.17.0 `PortableValue` round trip for the minimal typed reference and fail closed without reconstructing or overriding either store. |
 | Mutable release/evidence data erases audit history | Medium | Append immutable/versioned records and expose current projections without updating historical facts. |
 | Checkpoint store is accessed concurrently or from multiple instances | Medium | Register one application-lifetime store, guard all start/resume access, document the single-process constraint, and test concurrent response handling. |
-| Provider choice delays LLM integration | Medium | Build against `IChatClient`, use deterministic test doubles for normal development, and isolate provider-specific composition to one registration point. |
 | UI scope expands beyond the portfolio MVP | Medium | Implement only four Razor routes, PRG interactions, manual refresh, and the exact fields/views in `SPEC.md`. |
 
 ## Open Questions
 
-- Which concrete `IChatClient` provider, model/deployment, endpoint configuration, and credential mechanism is available to the owner? This must be decided before wiring the optional credentialed smoke path; it does not block deterministic implementation or tests.
 - Does the owner prefer any visual styling beyond accessible semantic HTML and a small local stylesheet? The default plan is deliberately minimal.
 
 No other architectural decisions are reopened by this plan. A discovered conflict with MAF 1.17.0, a new package outside the specification, or a change to public/persisted contracts must be brought to the owner before implementation proceeds.

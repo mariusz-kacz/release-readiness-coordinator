@@ -1,0 +1,537 @@
+@page "/Releases/{releaseId}"
+@model ReleaseReadinessCoordinator.Pages.Releases.DetailModel
+@using ReleaseReadinessCoordinator.Domain
+@{
+    ViewData["Title"] = $"Release {Model.Detail.Release.Submission.ReleaseId}";
+    var submission = Model.Detail.Release.Submission;
+}
+
+@if (TempData[ReleaseReadinessCoordinator.Pages.Releases.RemediateModel.FeedbackKey] is string workflowFeedback)
+{
+    <div class="alert alert-info" role="status">@workflowFeedback</div>
+}
+
+<header class="detail-header mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-semibold mb-1">Release readiness</p>
+        <h1 class="mb-1">Release @submission.ReleaseId</h1>
+        <p class="lead mb-0">@submission.ServiceName <span aria-hidden="true">&middot;</span> @submission.ReleaseVersion</p>
+    </div>
+    <nav class="detail-actions" aria-label="Release actions">
+        <a class="btn btn-primary" asp-page="/Releases/Detail" asp-route-releaseId="@submission.ReleaseId.Value">Refresh status</a>
+        <a class="btn btn-outline-secondary" asp-page="/Releases/New">Submit another release</a>
+    </nav>
+</header>
+
+@if (Model.Detail.Release.Phase is ProcessPhase.Failed)
+{
+    <div class="alert alert-danger" role="alert">
+        <h2 class="h5 alert-heading">Workflow processing failed</h2>
+        <p class="mb-0">The failure is visible below. Full diagnostic details are available in application logs.</p>
+    </div>
+}
+
+<section class="detail-section" aria-labelledby="release-state-heading">
+    <h2 id="release-state-heading">Release state</h2>
+    <dl class="detail-facts">
+        <div>
+            <dt>Process phase</dt>
+            <dd><span class="phase-badge">@Model.Detail.Release.Phase</span></dd>
+        </div>
+        <div>
+            <dt>Phase changed</dt>
+            <dd><time datetime="@Model.Detail.Release.PhaseChangedAt.Value.ToString("O")">@DetailModel.FormatInstant(Model.Detail.Release.PhaseChangedAt)</time></dd>
+        </div>
+        <div>
+            <dt>Deployment window</dt>
+            <dd>
+                <time datetime="@submission.RequestedDeploymentWindow.Start.Value.ToString("O")">@DetailModel.FormatInstant(submission.RequestedDeploymentWindow.Start)</time>
+                <span aria-hidden="true">&ndash;</span>
+                <time datetime="@submission.RequestedDeploymentWindow.End.Value.ToString("O")">@DetailModel.FormatInstant(submission.RequestedDeploymentWindow.End)</time>
+            </dd>
+        </div>
+        <div>
+            <dt>Submitted</dt>
+            <dd><time datetime="@submission.SubmittedAt.Value.ToString("O")">@DetailModel.FormatInstant(submission.SubmittedAt)</time></dd>
+        </div>
+    </dl>
+</section>
+
+<section class="detail-section" aria-labelledby="current-results-heading">
+    <div class="section-heading">
+        <div>
+            <h2 id="current-results-heading">Current results</h2>
+            <p class="text-secondary mb-0">The latest result for each fixed readiness check.</p>
+        </div>
+        @if (Model.LatestRound is not null)
+        {
+            <a href="#round-@Model.LatestRound.RoundNumber">View round @Model.LatestRound.RoundNumber</a>
+        }
+    </div>
+
+    <div class="table-responsive">
+        <table class="table align-middle result-table">
+            <caption class="visually-hidden">Current Test, Security, and Change readiness results</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Check</th>
+                    <th scope="col">Outcome</th>
+                    <th scope="col">Execution</th>
+                    <th scope="col">Evidence</th>
+                    <th scope="col">Valid until</th>
+                    <th scope="col">Attempts and findings</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var check in DetailModel.Checks)
+                {
+                    var result = Model.CurrentResult(check);
+                    if (result is null)
+                    {
+                        <tr>
+                            <th scope="row">@check</th>
+                            <td colspan="5"><span class="text-secondary">Not evaluated</span></td>
+                        </tr>
+                    }
+                    else
+                    {
+                        <tr>
+                            <th scope="row">@result.Check</th>
+                            <td><span class="result-outcome">@result.Outcome</span></td>
+                            <td>
+                                <span class="d-block fw-semibold">@result.Disposition</span>
+                                <span class="small">@DetailModel.FormatPlanningDetail(result.PlanningDetail)</span>
+                                @if (result.ReuseSourceRound.HasValue)
+                                {
+                                    <a class="d-block small mt-1" href="#round-@result.ReuseSourceRound">View source round @result.ReuseSourceRound</a>
+                                }
+                            </td>
+                            <td>
+                                @if (result.EvidenceId.HasValue)
+                                {
+                                    <a class="small text-break" href="#evidence-@result.EvidenceId"><code>@result.EvidenceId</code></a>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">None</span>
+                                }
+                            </td>
+                            <td>
+                                @if (result.ValidUntil.HasValue)
+                                {
+                                    <time datetime="@result.ValidUntil.Value.Value.ToString("O")">@DetailModel.FormatInstant(result.ValidUntil)</time>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">Not reusable</span>
+                                }
+                            </td>
+                            <td>
+                                <span class="fw-semibold">Attempts</span>
+                                @if (result.Attempts.IsEmpty)
+                                {
+                                    <span class="d-block small text-secondary">None; result reused without execution.</span>
+                                }
+                                else
+                                {
+                                    <ul class="compact-list small mb-2">
+                                        @foreach (var attempt in result.Attempts)
+                                        {
+                                            <li>@DetailModel.FormatAttempt(attempt)</li>
+                                        }
+                                    </ul>
+                                }
+                                <span class="fw-semibold">Findings</span>
+                                @if (result.Findings.IsEmpty)
+                                {
+                                    <span class="d-block small text-secondary">No findings recorded.</span>
+                                }
+                                else
+                                {
+                                    <dl class="finding-list small mb-0">
+                                        @foreach (var finding in result.Findings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                                        {
+                                            <dt>@finding.Key</dt>
+                                            <dd>@DetailModel.FormatText(finding.Value)</dd>
+                                        }
+                                    </dl>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <section class="detail-section h-100" aria-labelledby="active-wait-heading">
+            <h2 id="active-wait-heading">Active wait</h2>
+            @if (Model.ActiveWait is { } activeWait)
+            {
+                <p class="fs-5 fw-semibold mb-1">Awaiting @activeWait.PendingRequestKind.ToString().ToLowerInvariant() response</p>
+                <p class="text-secondary mb-0">
+                    Active since <time datetime="@activeWait.CorrelatedAt.Value.ToString("O")">@DetailModel.FormatInstant(activeWait.CorrelatedAt)</time>.
+                    Refresh this page after the response is submitted.
+                </p>
+                @if (activeWait.PendingRequestKind is WorkflowRequestKind.Remediation)
+                {
+                    <a class="btn btn-primary mt-3" asp-page="/Releases/Remediate" asp-route-releaseId="@submission.ReleaseId.Value">Open remediation form</a>
+                }
+                else if (activeWait.PendingRequestKind is WorkflowRequestKind.Approval)
+                {
+                    <a class="btn btn-primary mt-3" asp-page="/Releases/Decision" asp-route-releaseId="@submission.ReleaseId.Value">Open decision form</a>
+                }
+            }
+            else
+            {
+                <p class="text-secondary mb-0">No active workflow wait.</p>
+            }
+        </section>
+    </div>
+    <div class="col-lg-6">
+        <section class="detail-section h-100" aria-labelledby="decision-brief-heading">
+            <h2 id="decision-brief-heading">Deterministic decision brief</h2>
+            @if (Model.LatestDecisionSnapshot is { } snapshot)
+            {
+                <p>@DetailModel.FormatText(snapshot.DecisionBrief)</p>
+                <p class="small text-secondary mb-0">
+                    Snapshot from round @snapshot.RoundNumber; earliest validity bound
+                    <time datetime="@snapshot.EarliestValidityBound.Value.ToString("O")">@DetailModel.FormatInstant(snapshot.EarliestValidityBound)</time>.
+                </p>
+                @if (Model.Detail.TerminalResponse is { } terminal)
+                {
+                    <hr />
+                    <h3 class="h6">Terminal decision</h3>
+                    <dl class="mb-0">
+                        <dt>Decision</dt>
+                        <dd>@terminal.Response.Decision</dd>
+                        <dt>Responder</dt>
+                        <dd>@terminal.Response.Responder</dd>
+                        <dt>Comment</dt>
+                        <dd>@terminal.Response.Comment</dd>
+                        <dt>Responded</dt>
+                        <dd><time datetime="@terminal.Response.RespondedAt.Value.ToString("O")">@DetailModel.FormatInstant(terminal.Response.RespondedAt)</time></dd>
+                    </dl>
+                }
+            }
+            else
+            {
+                <p class="text-secondary mb-0">No decision brief is available until all three checks pass.</p>
+            }
+        </section>
+    </div>
+</div>
+
+<section class="detail-section" aria-labelledby="evidence-history-heading">
+    <h2 id="evidence-history-heading">Evidence history</h2>
+    @if (Model.Detail.EvidenceHistory.IsEmpty)
+    {
+        <p class="text-secondary mb-0">No evidence has been supplied.</p>
+    }
+    else
+    {
+        var evidenceById = Model.Detail.EvidenceHistory.ToDictionary(evidence => evidence.Id);
+        var evidenceEvents = Model.Detail.EvidenceHistory
+            .GroupBy(evidence => evidence.RecordedAt)
+            .OrderByDescending(group => group.Key.Value);
+
+        <p id="evidence-history-order" class="text-secondary">Newest updates first. Evidence recorded at the same time is grouped into one event.</p>
+        <ol class="evidence-timeline mb-0" aria-describedby="evidence-history-order">
+            @foreach (var evidenceEvent in evidenceEvents)
+            {
+                var eventEvidence = evidenceEvent.OrderBy(evidence => evidence.Kind).ToArray();
+                <li class="evidence-timeline-event">
+                    <header class="evidence-event-heading">
+                        <div>
+                            <span class="d-block small text-secondary">Evidence update</span>
+                            <time class="fw-semibold" datetime="@evidenceEvent.Key.Value.ToString("O")">@DetailModel.FormatInstant(evidenceEvent.Key)</time>
+                        </div>
+                        <span class="badge text-bg-light border">@eventEvidence.Length evidence @(eventEvidence.Length == 1 ? "record" : "records")</span>
+                    </header>
+                    <div class="evidence-event-records">
+                        @foreach (var evidence in eventEvidence)
+                        {
+                            <article class="evidence-record" id="evidence-@evidence.Id" aria-labelledby="evidence-title-@evidence.Id">
+                                <header class="section-heading">
+                                    <div>
+                                        <h3 id="evidence-title-@evidence.Id" class="h5 mb-1">@evidence.Kind evidence</h3>
+                                        <div class="d-flex flex-wrap align-items-center gap-2">
+                                            <span class="fw-semibold">Version @evidence.Version</span>
+                                            @if (evidence.SupersedesEvidenceId is { } supersededId
+                                                && evidenceById.TryGetValue(supersededId, out var supersededEvidence))
+                                            {
+                                                <a class="small" href="#evidence-@supersededId">Replaces @supersededEvidence.Kind version @supersededEvidence.Version</a>
+                                            }
+                                            else
+                                            {
+                                                <span class="small text-secondary">Initial version</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    @if (Model.IsCurrentEvidence(evidence))
+                                    {
+                                        <span class="badge text-bg-primary">Current</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-secondary">Historical</span>
+                                    }
+                                </header>
+                                <dl class="evidence-facts">
+                                    @switch (evidence)
+                                    {
+                                        case TestEvidenceRecord test:
+                                <div>
+                                    <dt>Test run version</dt>
+                                    <dd>@(test.TestRunVersion ?? "Not supplied")</dd>
+                                </div>
+                                <div>
+                                    <dt>Completed</dt>
+                                    <dd>@DetailModel.FormatInstant(test.CompletedAt)</dd>
+                                </div>
+                                <div>
+                                    <dt>Pass rate</dt>
+                                    <dd>@(test.PassRate.HasValue ? test.PassRate.Value.ToString("P0") : "Not supplied")</dd>
+                                </div>
+                                <div>
+                                    <dt>Critical suite failures</dt>
+                                    <dd>
+                                        @if (test.CriticalSuiteFailures is not { } failures)
+                                        {
+                                            <span>Not supplied</span>
+                                        }
+                                        else if (failures.IsEmpty)
+                                        {
+                                            <span>None</span>
+                                        }
+                                        else
+                                        {
+                                            <ul class="compact-list mb-0">
+                                                @foreach (var failure in failures)
+                                                {
+                                                    <li>@failure</li>
+                                                }
+                                            </ul>
+                                        }
+                                    </dd>
+                                </div>
+                                            break;
+                                        case SecurityEvidenceRecord security:
+                                <div>
+                                    <dt>Scan version</dt>
+                                    <dd>@(security.ScanVersion ?? "Not supplied")</dd>
+                                </div>
+                                <div>
+                                    <dt>Scanned</dt>
+                                    <dd>@DetailModel.FormatInstant(security.ScannedAt)</dd>
+                                </div>
+                                <div>
+                                    <dt>Critical findings</dt>
+                                    <dd>@FormatItems(security.UnresolvedCriticalFindingIds)</dd>
+                                </div>
+                                <div>
+                                    <dt>High findings</dt>
+                                    <dd>@FormatItems(security.UnresolvedHighFindingIds)</dd>
+                                </div>
+                                <div class="evidence-fact-wide">
+                                    <dt>Approved exceptions</dt>
+                                    <dd>
+                                        @if (security.ApprovedExceptions is null)
+                                        {
+                                            <span>Not supplied</span>
+                                        }
+                                        else if (security.ApprovedExceptions.IsEmpty)
+                                        {
+                                            <span>None</span>
+                                        }
+                                        else
+                                        {
+                                            <ul class="compact-list mb-0">
+                                                @foreach (var exception in security.ApprovedExceptions.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                                                {
+                                                    <li>
+                                                        @exception.Key &mdash; @exception.Value.Scope, expires
+                                                        <time datetime="@exception.Value.ExpiresAt.Value.ToString("O")">@DetailModel.FormatInstant(exception.Value.ExpiresAt)</time>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        }
+                                    </dd>
+                                </div>
+                                            break;
+                                        case ChangeEvidenceRecord change:
+                                <div>
+                                    <dt>Approved</dt>
+                                    <dd>@(change.IsApproved.HasValue ? (change.IsApproved.Value ? "Yes" : "No") : "Not supplied")</dd>
+                                </div>
+                                <div class="evidence-fact-wide">
+                                    <dt>Approved window</dt>
+                                    <dd>
+                                        @if (change.ApprovedWindow is { } window)
+                                        {
+                                            <time datetime="@window.Start.Value.ToString("O")">@DetailModel.FormatInstant(window.Start)</time>
+                                            <span aria-hidden="true">&ndash;</span>
+                                            <time datetime="@window.End.Value.ToString("O")">@DetailModel.FormatInstant(window.End)</time>
+                                        }
+                                        else
+                                        {
+                                            <span>Not supplied</span>
+                                        }
+                                    </dd>
+                                </div>
+                                            break;
+                                    }
+                                </dl>
+                                <details class="evidence-audit small">
+                                    <summary>Audit identifiers</summary>
+                                    <dl class="mb-0 mt-2">
+                                        <dt>Evidence ID</dt>
+                                        <dd><code class="text-break">@evidence.Id</code></dd>
+                                        @if (evidence.SupersedesEvidenceId is { } previousEvidenceId)
+                                        {
+                                            <dt>Previous evidence ID</dt>
+                                            <dd><code class="text-break">@previousEvidenceId</code></dd>
+                                        }
+                                    </dl>
+                                </details>
+                            </article>
+                        }
+                    </div>
+                </li>
+            }
+        </ol>
+    }
+</section>
+
+<section class="detail-section" aria-labelledby="evaluation-rounds-heading">
+    <h2 id="evaluation-rounds-heading">Evaluation rounds</h2>
+    @if (Model.Detail.EvaluationRounds.IsEmpty)
+    {
+        <p class="text-secondary mb-0">No evaluation rounds have completed.</p>
+    }
+    else
+    {
+        <div class="round-list">
+            @foreach (var round in Model.Detail.EvaluationRounds.OrderByDescending(item => item.RoundNumber))
+            {
+                <article class="round-record" id="round-@round.RoundNumber">
+                    <header class="section-heading">
+                        <div>
+                            <h3 class="h4 mb-1">Round @round.RoundNumber</h3>
+                            <p class="small text-secondary mb-0">
+                                <time datetime="@round.StartedAt.Value.ToString("O")">@DetailModel.FormatInstant(round.StartedAt)</time>
+                                <span aria-hidden="true">&ndash;</span>
+                                <time datetime="@round.CompletedAt.Value.ToString("O")">@DetailModel.FormatInstant(round.CompletedAt)</time>
+                            </p>
+                        </div>
+                        @if (round == Model.LatestRound)
+                        {
+                            <span class="badge text-bg-primary">Latest</span>
+                        }
+                    </header>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <caption class="visually-hidden">Readiness results for evaluation round @round.RoundNumber</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Check</th>
+                                    <th scope="col">Result</th>
+                                    <th scope="col">Planning reason</th>
+                                    <th scope="col">Valid until</th>
+                                    <th scope="col">Attempts</th>
+                                    <th scope="col">Findings</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var result in round.Results)
+                                {
+                                    <tr>
+                                        <th scope="row">@result.Check</th>
+                                        <td>@result.Outcome <span class="d-block small text-secondary">@result.Disposition</span></td>
+                                        <td>
+                                            @DetailModel.FormatPlanningDetail(result.PlanningDetail)
+                                            @if (result.ReuseSourceRound.HasValue)
+                                            {
+                                                <a class="d-block small mt-1" href="#round-@result.ReuseSourceRound">View source round @result.ReuseSourceRound</a>
+                                            }
+                                        </td>
+                                        <td>@DetailModel.FormatInstant(result.ValidUntil)</td>
+                                        <td>
+                                            @if (result.Attempts.IsEmpty)
+                                            {
+                                                <span>None</span>
+                                            }
+                                            else
+                                            {
+                                                <ul class="compact-list mb-0">
+                                                    @foreach (var attempt in result.Attempts)
+                                                    {
+                                                        <li>@DetailModel.FormatAttempt(attempt)</li>
+                                                    }
+                                                </ul>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (result.Findings.IsEmpty)
+                                            {
+                                                <span>None</span>
+                                            }
+                                            else
+                                            {
+                                                <dl class="finding-list mb-0">
+                                                    @foreach (var finding in result.Findings.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                                                    {
+                                                        <dt>@finding.Key</dt>
+                                                        <dd>@DetailModel.FormatText(finding.Value)</dd>
+                                                    }
+                                                </dl>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="detail-section" aria-labelledby="timeline-heading">
+    <h2 id="timeline-heading">Timeline</h2>
+    @if (Model.Detail.Timeline.IsEmpty)
+    {
+        <p class="text-secondary mb-0">No timeline entries are available.</p>
+    }
+    else
+    {
+        <ol class="timeline mb-0">
+            @foreach (var entry in Model.Detail.Timeline.OrderBy(item => item.Sequence))
+            {
+                <li class="timeline-entry @(entry.Kind is TimelineEntryKind.WorkflowFailed ? "timeline-entry-failed" : null)">
+                    <div class="d-flex flex-wrap justify-content-between gap-2">
+                        <span class="fw-semibold">@entry.Kind</span>
+                        <time class="small text-secondary" datetime="@entry.OccurredAt.Value.ToString("O")">@DetailModel.FormatInstant(entry.OccurredAt)</time>
+                    </div>
+                    <p class="mb-0">@DetailModel.SafeTimelineSummary(entry)</p>
+                </li>
+            }
+        </ol>
+    }
+</section>
+
+@functions {
+    private static string FormatItems<T>(System.Collections.Immutable.ImmutableArray<T>? items)
+    {
+        if (items is not { } values)
+        {
+            return "Not supplied";
+        }
+
+        return values.IsEmpty ? "None" : string.Join(", ", values);
+    }
+}
