@@ -26,22 +26,24 @@ flowchart LR
     D --> NO[Rejected]
 ```
 
-## Selective execution in action
+## Release readiness at a glance
 
-Here, Test and Security run again after receiving evidence, while the still-current Change result is reused from round 1. Each result explains its planning reason and links reused work to its source round.
+The release detail page brings the current workflow phase, latest Test, Security, and Change results, evidence, findings, and active human wait into one view.
 
-![Two evaluation rounds showing Test and Security executed while Change is safely reused](docs/img/3.png)
+![Release detail showing a remediation wait and the latest result for each readiness check](docs/img/1.png)
 
 <details>
 <summary><strong>More screenshots</strong></summary>
 
-### Current readiness results and active remediation wait
-
-![Release detail showing a remediation wait and the latest result for each readiness check](docs/img/1.png)
-
 ### Immutable, versioned evidence history
 
 ![Release detail showing versioned Test, Security, and Change evidence](docs/img/2.png)
+
+### Selective execution and reuse history
+
+Here, Test and Security run again after receiving evidence, while the still-current Change result is reused from round 1. Each result explains its planning reason and links reused work to its source round.
+
+![Two evaluation rounds showing Test and Security executed while Change is safely reused](docs/img/3.png)
 
 </details>
 
